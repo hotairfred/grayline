@@ -31,12 +31,20 @@ GOCLUSTER_PORT = 8300
 CALLSIGN = "WF8Z"
 LOGIN_COMMANDS = [
     "SET GRID EM79sm",
+    "PASS BAND ALL",       # clear any stale BAND blocks left over from prior sessions
     "PASS NEARBY OFF",
     "PASS CONFIDENCE V P S C",
     "PASS MODE FT8 FT4",
     "PASS SOURCE ALL",
     "PASS DECONT NA",      # only North American spotters reach us — server-side first stage
 ]
+
+# Per-band award scopes. HF chases DXCC×band (ARRL Challenge / 5BDXCC). 6m chases
+# BOTH DXCC×band AND grids (FFMA + 6m DXCC are both meaningful awards). 2m and up
+# chase grids only (VUCC is grid-based; DXCC on VHF/UHF is real but extremely
+# specialized, and most operators just want to know "is this a new grid").
+DXCC_BANDS = {"160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"}
+GRID_BANDS = {"6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm"}
 HTTP_PORT = 8080
 SPOT_TTL = 600        # seconds
 MAX_SPOTS = 5000      # hard cap
@@ -52,13 +60,25 @@ FLEX_HOST = "192.168.1.238"
 FLEX_PORT = 4992
 FLEX_ENABLED = True
 
+# Phase 2 panadapter injection tuning
+FLEX_INJECT_ENABLED = True
+FLEX_INJECT_RATE_SEC = 0.5         # max 2 spots/sec to the radio (gentle on the API)
+FLEX_INJECT_LIFETIME_SEC = 600     # how long Flex keeps each spot before auto-expiring it
+FLEX_INJECT_DEDUP_SEC = 300        # don't re-inject the same (band, freq, call) within this window
+FLEX_INJECT_SKIP_MODES = {"FT8", "FT4"}  # WSJT-X handles digital modes natively via DAX
+
 # Loaded at startup
 _cty: CtyDat | None = None
 _worked: WorkedState | None = None
 _flex: flexradio.FlexRadioClient | None = None
+_flex_inject_queue: asyncio.Queue | None = None
+_flex_recent_injects: dict[tuple, float] = {}
 
 # Highest-freq band first, descending. Matches SmartSDR / HRD convention.
-BAND_ORDER = ["2m", "6m", "10m", "12m", "15m", "17m",
+# Includes microwave bands so they have tab slots if spots ever arrive (rare via
+# cluster but possible during contests / activations).
+BAND_ORDER = ["3cm", "6cm", "9cm", "13cm", "23cm", "33cm", "70cm", "1.25m",
+              "2m", "6m", "10m", "12m", "15m", "17m",
               "20m", "30m", "40m", "60m", "80m", "160m"]
 
 # In-memory copy of GTBridge's QRZ cache. Loaded at startup; reloaded
@@ -191,6 +211,78 @@ def qrz_lookup_worker():
         time.sleep(_LOOKUP_RATE_SEC)
 
 
+def _should_inject_to_flex(record: dict, active_bands: set[str]) -> bool:
+    """True if this cached spot record should be queued for panadapter injection."""
+    if not FLEX_INJECT_ENABLED or not _flex or not _flex.connected:
+        return False
+    if record["band"] not in active_bands:
+        return False
+    mode = (record.get("mode") or "").upper()
+    if mode in FLEX_INJECT_SKIP_MODES:
+        return False
+    key = (record["band"], round(record["freq_khz"], 1), record["dx_call"])
+    last = _flex_recent_injects.get(key)
+    if last and (time.time() - last) < FLEX_INJECT_DEDUP_SEC:
+        return False
+    return True
+
+
+def _maybe_queue_flex_inject(record: dict):
+    """Best-effort enqueue for Flex injection. Called from add_spot. Non-blocking."""
+    if _flex_inject_queue is None:
+        return
+    snap = active_bands_snapshot()
+    if not snap.get("connected"):
+        return
+    active = set(snap.get("bands", []))
+    if not active:
+        return
+    if not _should_inject_to_flex(record, active):
+        return
+    try:
+        _flex_inject_queue.put_nowait(record)
+    except asyncio.QueueFull:
+        pass  # queue saturated; skip rather than block ingest
+
+
+async def flex_inject_worker():
+    """Drain the inject queue at rate limit, push each spot to the Flex panadapter.
+
+    Per-spot rate limit (FLEX_INJECT_RATE_SEC = 0.5s) keeps API command load
+    well below the level that competed with SmartSDR's audio DPCs in the
+    earlier GTBridge-firehose era. With a 600s spot lifetime on the Flex
+    side, we re-inject each spot at most once per 5 minutes (dedup window),
+    so a typical cache of ~50 active-band non-FT spots produces ~10
+    injects/min steady-state — orders of magnitude below the breaking point."""
+    global _flex_inject_queue
+    while True:
+        try:
+            record = await _flex_inject_queue.get()
+        except asyncio.CancelledError:
+            break
+        try:
+            if not _flex or not _flex.connected:
+                continue
+            await _flex.spot_add(
+                callsign=record["dx_call"],
+                freq_mhz=record["freq_khz"] / 1000.0,
+                mode=(record.get("mode") or ""),
+                comment=(record.get("spotter") or ""),
+                lifetime_seconds=FLEX_INJECT_LIFETIME_SEC,
+            )
+            key = (record["band"], round(record["freq_khz"], 1), record["dx_call"])
+            _flex_recent_injects[key] = time.time()
+            # Periodic cleanup of stale dedup entries
+            if len(_flex_recent_injects) > 2000:
+                cutoff = time.time() - FLEX_INJECT_DEDUP_SEC
+                stale = [k for k, t in _flex_recent_injects.items() if t < cutoff]
+                for k in stale:
+                    _flex_recent_injects.pop(k, None)
+        except Exception as e:
+            log.warning("Flex inject failed for %s: %s", record.get("dx_call"), e)
+        await asyncio.sleep(FLEX_INJECT_RATE_SEC)
+
+
 def active_bands_snapshot() -> dict:
     """Return current Flex slice state as {bands: [list], slices: {n: {freq_mhz, mode, band}}}.
     Empty if Flex is disconnected or disabled."""
@@ -310,7 +402,16 @@ def add_spot(spot, _cluster_name):
     # not the DX's QTH (where the rare station is). If a spotter near you
     # hears it, propagation suggests you might too — that's the useful filter
     # for "what can I work right now."
+    #
+    # If we can't verify the spotter's grid (not in QRZ cache, no grid set
+    # in their QRZ profile, etc.), drop the spot at ingest. We can't filter
+    # what we can't measure, and unverifiable spotters correlate with junk
+    # (FG1G/4/30 spotting EU on 2m, etc.). spotter_distance_mi() queues the
+    # callsign for active QRZ lookup as a side effect, so subsequent spots
+    # from a real-but-unresolved spotter will pass once the lookup completes.
     distance_mi = spotter_distance_mi(spot.spotter)
+    if distance_mi is None:
+        return
 
     # cty.dat enrichment for the DX call (entity name doubles as the
     # bridge to your logbook's `country` field)
@@ -327,12 +428,15 @@ def add_spot(spot, _cluster_name):
     call_status = "new"
     dxcc_band_status = "new"
     dxcc_band_mode_status = "new"
+    grid_band_status = "new"
     if _worked:
         call_status = _worked.call_status(spot.dx_call)
         if country:
             dxcc_band_status = _worked.country_band_status(country, band)
             if mode:
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
+        if spot.grid:
+            grid_band_status = _worked.grid_band_status(spot.grid, band)
 
     with _lock:
         _cache[key] = {
@@ -352,6 +456,7 @@ def add_spot(spot, _cluster_name):
             "call_status": call_status,                     # 'new' | 'worked' | 'confirmed'
             "dxcc_band_status": dxcc_band_status,           # same enum, scoped to country+band (mixed-mode, ARRL Challenge)
             "dxcc_band_mode_status": dxcc_band_mode_status, # scoped to country+band+mode (DXCC-CW, DXCC-FT8, etc.)
+            "grid_band_status": grid_band_status,           # scoped to grid×band (FFMA on 6m, VUCC on 2m+)
             "comment": spot.comment[:60] if spot.comment else "",
             "time_utc": spot.time_utc,
         }
@@ -359,6 +464,13 @@ def add_spot(spot, _cluster_name):
         _cache.move_to_end(key)
         while len(_cache) > MAX_SPOTS:
             _cache.popitem(last=False)
+
+    # Phase 2 Flex integration: queue this spot for panadapter injection if
+    # the band has an active slice and the mode isn't FT8/FT4. The worker
+    # drains the queue at a rate limit that keeps SmartSDR's API channel
+    # well clear of the saturation point that caused the original audio
+    # dropouts in GTBridge.
+    _maybe_queue_flex_inject(_cache[key])
 
 
 def purge_loop():
@@ -419,6 +531,15 @@ td.country.worked {                                  /* worked the entity, not c
   color: #fb6;
 }
 .country.confirmed { color: #888; }                  /* confirmed on this band — dim */
+/* Grid×band highlighting for VHF+ (FFMA on 6m, VUCC on 2m+) — same orange convention as DXCC */
+td.grid.gnew {
+  background: #ffa500; color: #000; font-weight: 700;
+}
+td.grid.gworked {
+  box-shadow: inset 0 0 0 1.5px #ffa500;
+  color: #fb6;
+}
+.grid.gconfirmed { color: #888; }
 .cont { color: #5cf; font-size: 0.78em; text-align: center; }
 .dist { color: #fa9; font-size: 0.85em; text-align: right; }
 .dist.far { color: #555; }
@@ -537,7 +658,10 @@ details[open] .gear-icon { color: #fff; }
 <div class="band-mode-toggles" id="band_mode_toggles"></div>
 <div class="band-content" id="band_content"></div>
 <script>
-const BAND_ORDER = ["2m","6m","10m","12m","15m","17m","20m","30m","40m","60m","80m","160m"];
+const BAND_ORDER = ["3cm","6cm","9cm","13cm","23cm","33cm","70cm","1.25m","2m","6m","10m","12m","15m","17m","20m","30m","40m","60m","80m","160m"];
+// Per-band award scopes — drives which cells get the orange highlight treatment.
+const DXCC_BANDS = new Set(["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"]);
+const GRID_BANDS = new Set(["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]);
 const RADIUS_MI = 300;
 function bandIdx(b) { const i = BAND_ORDER.indexOf(b); return i < 0 ? 99 : i; }
 function fmtAge(s) {
@@ -790,7 +914,14 @@ async function refresh() {
           if (s.distance_mi > RADIUS_MI) distClass += " far";
         }
         const callStatus = s.call_status || "new";
-        const dxccStatus = activeDxccStatus(s);
+        // DXCC×band highlight only applies on bands where Fred chases DXCC (HF + 6m).
+        // 2m+ stays plain — VUCC is grid-based, not entity-based.
+        const dxccStatus = DXCC_BANDS.has(s.band) ? activeDxccStatus(s) : "confirmed";
+        // Grid×band highlight applies on 6m + all VHF/UHF — FFMA on 6m, VUCC on 2m+.
+        const gridStatus = GRID_BANDS.has(s.band) ? (s.grid_band_status || "new") : null;
+        const gridCellClass = gridStatus
+          ? `grid g${gridStatus}`
+          : "grid";
         const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
         const rowClass = isUs ? "us-spotted" : "";
         const spotterClass = isUs ? "spotter us" : "spotter";
@@ -798,7 +929,7 @@ async function refresh() {
           <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
           <td class="country ${dxccStatus}">${escapeHTML(s.country || "")}</td>
           <td class="cont">${escapeHTML(s.continent || "")}</td>
-          <td class="grid">${escapeHTML(s.grid)}</td>
+          <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
           <td class="freq">${s.freq_khz.toFixed(1)}</td>
           <td class="${snrClass}">${snrCell}</td>
           <td class="${spotterClass}">${escapeHTML(s.spotter)}</td>
@@ -914,18 +1045,27 @@ async def main():
         login_commands=LOGIN_COMMANDS,
     )
 
-    # Phase 1 Flex integration: connect, subscribe to slice updates, expose /active_bands.
-    # No spot injection or click-to-tune yet — just slice tracking visibility.
+    # Flex integration:
+    # Phase 1 — connect, subscribe to slice updates, expose /active_bands
+    # Phase 2 — band-filtered panadapter injection: any non-FT spot whose
+    #   band has an active slice gets queued, then pushed to the radio at
+    #   a rate limit (FLEX_INJECT_RATE_SEC) that keeps the API channel
+    #   well clear of the audio-DPC saturation point.
     flex_task = None
+    flex_inject_task = None
+    global _flex_inject_queue
     if FLEX_ENABLED:
         _flex = flexradio.FlexRadioClient(host=FLEX_HOST, port=FLEX_PORT)
+        _flex_inject_queue = asyncio.Queue(maxsize=1000)
         flex_task = asyncio.create_task(_flex.run())
+        flex_inject_task = asyncio.create_task(flex_inject_worker())
 
     try:
         await client.connect()
     finally:
-        if flex_task and not flex_task.done():
-            flex_task.cancel()
+        for t in (flex_task, flex_inject_task):
+            if t and not t.done():
+                t.cancel()
 
 
 if __name__ == "__main__":
