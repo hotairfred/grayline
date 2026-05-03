@@ -519,11 +519,10 @@ h1 { font-size: 1.1em; margin: 0 0 0.3em; color: #0f0; }
 .status { color: #888; font-size: 0.85em; margin-bottom: 0.8em; }
 .status .count { color: #ff0; font-weight: bold; }
 .status .wanted { color: #ff5; font-weight: bold; }
-.bands { display: flex; flex-wrap: wrap; gap: 1em; }
-.band { min-width: 480px; flex: 1; }
-.band h2 { font-size: 0.95em; margin: 0 0 0.2em; color: #ff0; border-bottom: 1px solid #444; padding-bottom: 2px; }
-.mode-block { margin-bottom: 0.6em; }
-.mode-hdr { font-size: 0.8em; color: #bcf; margin: 0.4em 0 0.1em; }
+/* Legacy band-container styles deleted in Stage 8 — the <div class="band">
+   layout was replaced by the flat-table-with-band-column layout. The .band
+   class now applies to a <td>; styling lives further down with the rest of
+   the cell rules. */
 table { border-collapse: collapse; width: 100%; font-size: 0.78em; font-variant-numeric: tabular-nums; }
 th, td { padding: 1px 6px; text-align: left; border-bottom: 1px dotted #1a1a1a; white-space: nowrap; }
 th { color: #ff0; font-weight: normal; font-size: 0.75em; background: #1a1a00; }
@@ -572,7 +571,6 @@ details > summary { cursor: pointer; user-select: none; list-style: none; outlin
 details > summary::-webkit-details-marker { display: none; }
 details > summary::before { content: "▶ "; color: #555; font-size: 0.7em; display: inline-block; transition: transform 0.1s; }
 details[open] > summary::before { transform: rotate(90deg); }
-.band > details > summary { font-size: 0.95em; color: #ff0; border-bottom: 1px solid #444; padding-bottom: 2px; margin-bottom: 0.2em; font-weight: bold; }
 .mode-block > details > summary { font-size: 0.8em; color: #bcf; margin: 0.4em 0 0.1em; }
 .legend { font-size: 0.75em; color: #666; margin-left: 2em; }
 .legend span { padding: 0 0.4em; }
