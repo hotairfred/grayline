@@ -712,6 +712,18 @@ const BAND_ORDER = ["3cm","6cm","9cm","13cm","23cm","33cm","70cm","1.25m","2m","
 const DXCC_BANDS = new Set(["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"]);
 const GRID_BANDS = new Set(["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]);
 const RADIUS_MI = 300;
+// Common ADIF modes — pre-seed the gear-panel "Modes" list so users can
+// disable rare modes (WSPR, SSTV, etc.) BEFORE the first spot of that mode
+// arrives, instead of having to wait for traffic to reveal the checkbox.
+// Rare modes still appear dynamically when their spots land. Order is
+// roughly: voice, CW, then digital from most-common to less. The actual
+// display sort is alphabetical so this just controls which checkboxes are
+// guaranteed to be present.
+const COMMON_MODES = [
+  "CW", "SSB", "USB", "LSB", "AM", "FM",
+  "FT8", "FT4", "RTTY", "PSK31", "JS8", "MSK144",
+  "JT65", "JT9", "Q65", "FST4", "WSPR"
+];
 function bandIdx(b) { const i = BAND_ORDER.indexOf(b); return i < 0 ? 99 : i; }
 function fmtAge(s) {
   if (s < 60) return s + "s";
@@ -933,8 +945,13 @@ function renderSettingsPanel(spots) {
     });
   });
 
-  // Modes: dynamic from current spots so we don't list ones that aren't here
-  const modesSeen = new Set(spots.map(s => s.mode));
+  // Modes: pre-seed COMMON_MODES so users can configure visibility before
+  // any spot of that mode arrives, then merge in any modes from current
+  // spots so rare modes (FELDHELL, OLIVIA, etc.) appear when traffic does.
+  // Also include any modes already in disabledModes — so an unchecked rare
+  // mode keeps its checkbox visible even after traffic dies down (otherwise
+  // the user couldn't re-enable it).
+  const modesSeen = new Set([...COMMON_MODES, ...spots.map(s => s.mode), ...disabledModes]);
   const sortedModes = [...modesSeen].sort();
   const modesBox = document.getElementById("settings_modes");
   modesBox.innerHTML = sortedModes.map(m =>

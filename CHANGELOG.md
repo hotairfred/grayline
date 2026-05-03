@@ -95,6 +95,15 @@ everything lives under `[Unreleased]` until the first tagged release.
   scope is irrelevant to that spot. CW spots show DXCC-CW; SSB
   shows DXCC-Phone; FT8/RTTY/etc. show DXCC-Digital. Mixed-mode
   scope (DXCC-Mixed) shows on every spot since any mode counts.
+- **Pre-seeded mode list in gear-panel settings.** The Modes
+  section now starts with 17 common modes pre-loaded
+  (CW / SSB / USB / LSB / AM / FM / FT8 / FT4 / RTTY / PSK31 /
+  JS8 / MSK144 / JT65 / JT9 / Q65 / FST4 / WSPR) so users can
+  configure visibility (e.g., uncheck WSPR or SSTV) before the
+  first spot of that mode arrives. Rare modes still appear
+  dynamically as their traffic lands. Modes already in
+  `disabledModes` always remain visible so they can be
+  re-enabled after their spots have aged out.
 
 ### Vendor / reference
 
