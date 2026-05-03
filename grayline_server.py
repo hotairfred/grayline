@@ -560,6 +560,8 @@ td.grid.gworked {
 }
 .grid.gconfirmed { color: #888; }
 .cont { color: #5cf; font-size: 0.78em; text-align: center; }
+.band { color: #ff0; font-size: 0.85em; text-align: center; font-weight: 600; }
+.mode { color: #bcf; font-size: 0.8em; text-align: center; }
 .dist { color: #fa9; font-size: 0.85em; text-align: right; }
 .dist.far { color: #555; }
 .controls { margin-bottom: 0.8em; font-size: 0.85em; }
@@ -1123,18 +1125,37 @@ async function refresh() {
   }
   const bands = Object.keys(byBand).sort((a,b) => bandIdx(a) - bandIdx(b));
 
-  // ---- Tab strip: one button per active band, with count ----
-  let activeBand = getActiveBand();
-  // If active band is no longer in the visible set, default to first available
-  if (!bands.includes(activeBand) && bands.length) {
-    activeBand = bands[0];
+  // ---- Tab strip: "All" pseudo-tab plus one button per active band ----
+  // The "All" tab (sentinel "*") shows every band's spots in one combined
+  // flat table — useful for low-activity periods where you want an overview
+  // without clicking through each tab. Each band tab still drills down to a
+  // single band when activity is concentrated.
+  let activeBand = getActiveBand() || "*";
+  // If active band is no longer in the visible set, fall back to All
+  if (activeBand !== "*" && !bands.includes(activeBand)) {
+    activeBand = "*";
     setActiveBand(activeBand);
   }
   const tabStrip = document.getElementById("tab_strip");
   if (bands.length === 0) {
     tabStrip.innerHTML = '<span class="empty">No spots match current filters.</span>';
   } else {
-    tabStrip.innerHTML = bands.map(b => {
+    // All tab — counter aggregates wanted/total across every visible band
+    let allTotal = 0, allWanted = 0;
+    for (const b of bands) {
+      for (const list of Object.values(byBand[b])) {
+        for (const s of list) {
+          allTotal++;
+          if (anyScopeNeeded(s)) allWanted++;
+        }
+      }
+    }
+    const allCounter = allWanted > 0
+      ? `<span class="count"><span class="wanted">${allWanted}</span><span class="sep">/</span>${allTotal}</span>`
+      : `<span class="count">${allTotal}</span>`;
+    const allCls = (activeBand === "*") ? "active" : "";
+    let tabHTML = `<button class="${allCls}" data-band="*">All${allCounter}</button>`;
+    tabHTML += bands.map(b => {
       let total = 0, wanted = 0;
       for (const list of Object.values(byBand[b])) {
         for (const s of list) {
@@ -1148,6 +1169,7 @@ async function refresh() {
         : `<span class="count">${total}</span>`;
       return `<button class="${cls}" data-band="${b}">${escapeHTML(b)}${counter}</button>`;
     }).join("");
+    tabStrip.innerHTML = tabHTML;
     tabStrip.querySelectorAll("button[data-band]").forEach(btn => {
       btn.addEventListener("click", () => {
         setActiveBand(btn.dataset.band);
@@ -1156,9 +1178,39 @@ async function refresh() {
     });
   }
 
-  // ---- Per-band mode toggles for the active band ----
+  // ---- Mode toggles row ----
+  // In single-band view: per-band-mode disable (existing bandModeMap)
+  // In All view: global disable (the disabledModes set, which the gear
+  //              panel already drives) — this gives one place to silence
+  //              a mode across all bands at once.
   const modeTogglesBox = document.getElementById("band_mode_toggles");
-  if (!activeBand || !byBand[activeBand]) {
+  if (activeBand === "*") {
+    // Aggregate modes seen across every visible band, count totals
+    const modeCounts = {};
+    for (const b of bands) {
+      for (const m of Object.keys(byBand[b])) {
+        modeCounts[m] = (modeCounts[m] || 0) + byBand[b][m].length;
+      }
+    }
+    const modesAll = Object.keys(modeCounts).sort();
+    if (modesAll.length === 0) {
+      modeTogglesBox.innerHTML = '<span class="empty">No modes in current view.</span>';
+    } else {
+      modeTogglesBox.innerHTML = `<strong style="color:#ff0;margin-right:0.8em">All modes:</strong>` +
+        modesAll.map(m => {
+          const enabled = !disabledModes.has(m);
+          return `<label><input type="checkbox" data-allmode="${m}" ${enabled ? "checked" : ""}>${escapeHTML(m)} (${modeCounts[m]})</label>`;
+        }).join("");
+      modeTogglesBox.querySelectorAll("input[data-allmode]").forEach(el => {
+        el.addEventListener("change", () => {
+          const m = el.dataset.allmode;
+          if (el.checked) disabledModes.delete(m); else disabledModes.add(m);
+          saveDisabledSet("grayline_disabled_modes", disabledModes);
+          refresh();
+        });
+      });
+    }
+  } else if (!byBand[activeBand]) {
     modeTogglesBox.innerHTML = '<span class="empty">Select a band to view spots.</span>';
   } else {
     const modesInBand = Object.keys(byBand[activeBand]).sort();
@@ -1176,64 +1228,90 @@ async function refresh() {
     });
   }
 
-  // ---- Render ONLY the active band's tables ----
+  // ---- Render: one flat table, sorted by band then freq.
+  // Single-band view shows just that band, with Mode column.
+  // All view shows every band with both Band and Mode columns. ----
   let html = "";
-  if (activeBand && byBand[activeBand]) {
-    const b = activeBand;
-    const modes = Object.keys(byBand[b]).sort().filter(m => !isBandModeDisabled(b, m));
-    if (modes.length === 0) {
-      html = '<div class="empty">All modes for this band are toggled off.</div>';
-    }
-    for (const m of modes) {
-      const rows = byBand[b][m].sort((x,y) => x.freq_khz - y.freq_khz);
-      let bandHTML = `<div class="mode-block"><div class="mode-hdr">${escapeHTML(m)} · ${rows.length}</div>`;
-      bandHTML += '<table><tr><th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th><th>Award</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
-      for (const s of rows) {
-        const age = Math.floor(now - s.ts);
-        let snrCell = "";
-        let snrClass = "snr";
-        if (s.snr !== null && s.snr !== undefined) {
-          snrCell = (s.snr > 0 ? "+" : "") + s.snr;
-          snrClass += s.snr < 0 ? " neg" : " pos";
-        }
-        let distCell = "";
-        let distClass = "dist";
-        if (s.distance_mi === null || s.distance_mi === undefined) {
-          distCell = "—";
-        } else {
-          distCell = s.distance_mi.toLocaleString() + " mi";
-          if (s.distance_mi > RADIUS_MI) distClass += " far";
-        }
-        const callStatus = s.call_status || "new";
-        // DXCC and Grid cell highlights are driven by the *enabled* award scopes
-        // for this band — weakest (most-needed) status wins. Cell stays plain
-        // when no scope from that family is enabled.
-        const dxccEff = effectiveDxccStatus(s);
-        const dxccCellClass = "country" + (dxccEff ? " " + dxccEff : "");
-        const gridEff = effectiveGridStatus(s);
-        const gridCellClass = "grid" + (gridEff ? " g" + gridEff : "");
-        const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
-        const rowClass = isUs ? "us-spotted" : "";
-        const spotterClass = isUs ? "spotter us" : "spotter";
-        const awardCell = scopeTags(s).map(t =>
-          `<span class="pill ${t.status}">${escapeHTML(t.label)}</span>`
-        ).join("");
-        bandHTML += `<tr class="${rowClass}">
-          <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
-          <td class="${dxccCellClass}">${escapeHTML(s.country || "")}</td>
-          <td class="cont">${escapeHTML(s.continent || "")}</td>
-          <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
-          <td class="awards">${awardCell}</td>
-          <td class="freq">${s.freq_khz.toFixed(1)}</td>
-          <td class="${snrClass}">${snrCell}</td>
-          <td class="${spotterClass}">${escapeHTML(s.spotter)}</td>
-          <td class="${distClass}">${distCell}</td>
-          <td class="age">${fmtAge(age)}</td>
-        </tr>`;
+  let allRows = [];
+  if (activeBand === "*") {
+    for (const b of bands) {
+      for (const m of Object.keys(byBand[b])) {
+        // In All view we don't apply per-band-mode disable — that was the
+        // single-band drill-down semantic. Use the global disabledModes set
+        // (already filtered upstream in the spot.filter pipeline). Spots
+        // that survived the filter all show here.
+        allRows.push(...byBand[b][m]);
       }
-      bandHTML += "</table></div>";
-      html += bandHTML;
     }
+  } else if (byBand[activeBand]) {
+    for (const m of Object.keys(byBand[activeBand])) {
+      if (isBandModeDisabled(activeBand, m)) continue;
+      allRows.push(...byBand[activeBand][m]);
+    }
+  }
+  // Sort: band order, then freq within band
+  allRows.sort((x, y) => {
+    const bd = bandIdx(x.band) - bandIdx(y.band);
+    if (bd !== 0) return bd;
+    return x.freq_khz - y.freq_khz;
+  });
+
+  if (allRows.length === 0) {
+    html = '<div class="empty">No spots in current view.</div>';
+  } else {
+    const showBandCol = (activeBand === "*");
+    let table = '<table><tr>';
+    table += '<th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th>';
+    if (showBandCol) table += '<th>Band</th>';
+    table += '<th>Mode</th><th>Award</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
+    for (const s of allRows) {
+      const age = Math.floor(now - s.ts);
+      let snrCell = "";
+      let snrClass = "snr";
+      if (s.snr !== null && s.snr !== undefined) {
+        snrCell = (s.snr > 0 ? "+" : "") + s.snr;
+        snrClass += s.snr < 0 ? " neg" : " pos";
+      }
+      let distCell = "";
+      let distClass = "dist";
+      if (s.distance_mi === null || s.distance_mi === undefined) {
+        distCell = "—";
+      } else {
+        distCell = s.distance_mi.toLocaleString() + " mi";
+        if (s.distance_mi > RADIUS_MI) distClass += " far";
+      }
+      const callStatus = s.call_status || "new";
+      // DXCC and Grid cell highlights driven by the *enabled* award scopes
+      // for this band — weakest (most-needed) status wins. Cell stays plain
+      // when no scope from that family is enabled.
+      const dxccEff = effectiveDxccStatus(s);
+      const dxccCellClass = "country" + (dxccEff ? " " + dxccEff : "");
+      const gridEff = effectiveGridStatus(s);
+      const gridCellClass = "grid" + (gridEff ? " g" + gridEff : "");
+      const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
+      const rowClass = isUs ? "us-spotted" : "";
+      const spotterClass = isUs ? "spotter us" : "spotter";
+      const awardCell = scopeTags(s).map(t =>
+        `<span class="pill ${t.status}">${escapeHTML(t.label)}</span>`
+      ).join("");
+      const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
+      table += `<tr class="${rowClass}">
+        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
+        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}</td>
+        <td class="cont">${escapeHTML(s.continent || "")}</td>
+        <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
+        ${bandCell}
+        <td class="mode">${escapeHTML(s.mode)}</td>
+        <td class="awards">${awardCell}</td>
+        <td class="freq">${s.freq_khz.toFixed(1)}</td>
+        <td class="${snrClass}">${snrCell}</td>
+        <td class="${spotterClass}">${escapeHTML(s.spotter)}</td>
+        <td class="${distClass}">${distCell}</td>
+        <td class="age">${fmtAge(age)}</td>
+      </tr>`;
+    }
+    table += '</table>';
+    html = table;
   }
   // Status counts: total / wanted (any enabled scope is new) / new+confirmed calls / spots we heard
   let wantedCount = 0, newCallCount = 0, confirmedCount = 0, usCount = 0;

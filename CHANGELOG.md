@@ -120,6 +120,29 @@ everything lives under `[Unreleased]` until the first tagged release.
   on first load — any scope not in storage gets its default
   state.
 
+### Changed
+
+- **Flat-table layout, mode-as-column.** Drops the per-mode
+  sub-tables that grouped spots into FT8/FT4/CW chunks within
+  each band tab. Now every band shows one flat table with `Mode`
+  as a column. Sort order: freq within band. Cleaner read at a
+  glance and reduces visual fragmentation when a band has many
+  modes spotted.
+- **"All" pseudo-tab as the leftmost tab.** Click it to see every
+  band's spots in one combined table sorted by band then freq,
+  with both `Band` and `Mode` columns. Useful for low-activity
+  periods where you have ~13 wanted spots scattered across 20
+  bands and want the overview without clicking through each tab.
+  Click any band tab to drill back down.
+- **Mode-toggle row branches on view.** In single-band view, the
+  toggles drive the existing per-band-mode disable map (fast
+  triage of a hot band's modes). In All view, toggling a mode
+  drives the global `disabledModes` set — one place to silence
+  WSPR or SSTV across all bands at once.
+- **First-time-default tab is now All.** Fresh users land on the
+  combined view rather than a single band, surfacing the new
+  layout naturally.
+
 ### Vendor / reference
 
 - **DXLab Suite manuals** (`docs/dxlab/DXKeeper.pdf`,
