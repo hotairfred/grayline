@@ -21,7 +21,7 @@ from socketserver import ThreadingMixIn
 import dxcluster
 import flexradio
 from ctydat import CtyDat
-from worked_state import WorkedState
+from worked_state import WorkedState, mode_class
 
 log = logging.getLogger("grayline")
 
@@ -428,6 +428,8 @@ def add_spot(spot, _cluster_name):
     call_status = "new"
     dxcc_band_status = "new"
     dxcc_band_mode_status = "new"
+    dxcc_band_modeclass_status = "new"
+    modeclass = mode_class(mode) if mode else ""
     grid_band_status = "new"
     if _worked:
         call_status = _worked.call_status(spot.dx_call)
@@ -435,6 +437,7 @@ def add_spot(spot, _cluster_name):
             dxcc_band_status = _worked.country_band_status(country, band)
             if mode:
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
+                dxcc_band_modeclass_status = _worked.country_band_modeclass_status(country, band, modeclass)
         if spot.grid:
             grid_band_status = _worked.grid_band_status(spot.grid, band)
 
@@ -454,8 +457,10 @@ def add_spot(spot, _cluster_name):
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
             "call_status": call_status,                     # 'new' | 'worked' | 'confirmed'
-            "dxcc_band_status": dxcc_band_status,           # same enum, scoped to country+band (mixed-mode, ARRL Challenge)
-            "dxcc_band_mode_status": dxcc_band_mode_status, # scoped to country+band+mode (DXCC-CW, DXCC-FT8, etc.)
+            "dxcc_band_status": dxcc_band_status,           # same enum, scoped to country+band (mixed-mode, ARRL Challenge / DXCC-Mixed)
+            "dxcc_band_mode_status": dxcc_band_mode_status, # scoped to country+band+literal-mode (e.g. country+band+FT8)
+            "dxcc_band_modeclass_status": dxcc_band_modeclass_status,  # scoped to country+band+ARRL-class (CW/Phone/Digital/Other) for DXCC variants
+            "modeclass": modeclass,                         # CW | Phone | Digital | Other — derived from mode_class(mode)
             "grid_band_status": grid_band_status,           # scoped to grid×band (FFMA on 6m, VUCC on 2m+)
             "comment": spot.comment[:60] if spot.comment else "",
             "time_utc": spot.time_utc,
