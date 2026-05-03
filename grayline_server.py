@@ -638,6 +638,20 @@ details[open] .gear-icon { color: #fff; }
 }
 .gear-panel label { color: #ccc; cursor: pointer; user-select: none; white-space: nowrap; }
 .gear-panel label input { margin-right: 0.3em; vertical-align: middle; }
+.gear-panel .scope-grid {
+  display: grid;
+  grid-template-columns: 4em repeat(5, minmax(5em, auto));
+  gap: 0.15em 0.6em;
+  font-size: 0.78em;
+  align-items: center;
+}
+.gear-panel .scope-grid .band-label { color: #ff0; font-weight: 600; text-align: right; }
+.gear-panel .scope-grid .scope-hdr { color: #aaa; font-size: 0.85em; text-align: center; padding-bottom: 0.2em; border-bottom: 1px solid #333; }
+.gear-panel .scope-grid .cell { text-align: center; }
+.gear-panel .scope-grid .cell label { display: inline; }
+.gear-panel .scope-grid .cell input { margin: 0; }
+.gear-panel .scope-grid .cell.disabled { color: #333; }
+.gear-panel .scope-help { font-size: 0.7em; color: #888; margin-top: 0.4em; max-width: 36em; }
 .gear-panel .actions { font-size: 0.8em; margin-top: 0.5em; }
 .gear-panel .actions button {
   background: #222; color: #ccc; border: 1px solid #444;
@@ -659,25 +673,34 @@ details[open] .gear-icon { color: #fff; }
         <h3>Modes</h3>
         <div class="checkbox-grid" id="settings_modes"></div>
       </div>
+      <div class="group">
+        <h3>Award scopes per band</h3>
+        <div class="scope-grid" id="settings_scopes"></div>
+        <div class="scope-help">
+          ARRL-tracked award scopes only. Personal goals
+          (DXCC-FT8-only, etc.) coming as a separate Custom Goals
+          section.
+        </div>
+      </div>
       <div class="actions">
         <button id="settings_all_bands">All bands</button>
         <button id="settings_no_bands">No bands</button>
         <button id="settings_all_modes">All modes</button>
         <button id="settings_no_modes">No modes</button>
+        <button id="settings_reset_scopes">Reset scopes to defaults</button>
       </div>
     </div>
   </details>
 </div>
 <div class="status" id="status">Loading…</div>
 <div class="controls">
-  <label><input type="checkbox" id="needed_only"> Show only needed DXCC×band</label>
-  <label style="margin-left:1em"><input type="checkbox" id="mode_aware"> Mode-aware (DXCC × band × mode)</label>
+  <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
   <label style="margin-left:1em"><input type="checkbox" id="filter300"> Spotters within 300 mi of EM79sm only</label>
   <span class="legend">
     <span style="color:#f0f">callsign new</span> ·
     <span style="color:#ff5">worked</span> ·
     <span style="color:#5c5">confirmed</span> ·
-    <span style="color:#000;background:#ffa500;padding:0 4px;border-radius:2px">DXCC needed</span>
+    <span style="color:#000;background:#ffa500;padding:0 4px;border-radius:2px">scope needed</span>
   </span>
 </div>
 <div class="tab-strip" id="tab_strip"></div>
@@ -707,63 +730,146 @@ filterCB.addEventListener("change", () => {
   refresh();
 });
 
-// "Needed only" filter — show just spots where the active dxcc-status === 'new'
-const neededCB = document.getElementById("needed_only");
-neededCB.checked = localStorage.getItem("grayline_needed_only") === "1";
-neededCB.addEventListener("change", () => {
-  localStorage.setItem("grayline_needed_only", neededCB.checked ? "1" : "0");
+// "Show wanted" filter — show only spots where any enabled scope status === 'new'
+const showWantedCB = document.getElementById("show_wanted");
+showWantedCB.checked = localStorage.getItem("grayline_show_wanted") === "1";
+showWantedCB.addEventListener("change", () => {
+  localStorage.setItem("grayline_show_wanted", showWantedCB.checked ? "1" : "0");
   refresh();
 });
 
-// Mode-aware DXCC tracking (per-band-per-mode vs per-band only)
-const modeCB = document.getElementById("mode_aware");
-modeCB.checked = localStorage.getItem("grayline_mode_aware") === "1";
-modeCB.addEventListener("change", () => {
-  localStorage.setItem("grayline_mode_aware", modeCB.checked ? "1" : "0");
-  refresh();
-});
+// ---- Per-band award scope settings (replaces mode_aware + needed_only) ----
+//
+// Each band has a set of available scopes; each scope is independently toggleable.
+// Defaults follow the ARRL-tracked-only principle: only ship scopes ARRL actually
+// issues as awards, with sane defaults that match what most operators chase out
+// of the box. Personal goals (DXCC-FT8-only, etc.) live in a future Custom
+// Goals section — not in default settings.
+//
+// Available scopes per band:
+//   HF (160m–10m):     DXCC-Mixed, DXCC-CW, DXCC-Phone, DXCC-Digital
+//   6m:                DXCC-Mixed, DXCC-CW, DXCC-Phone, DXCC-Digital, VUCC
+//   2m and above:      VUCC
+//
+// FFMA (6m CONUS-48 grids) is intentionally not yet exposed — needs the
+// strict-grid-list constraint wired up first.
+const ALL_DXCC_SCOPES = ["DXCC-Mixed", "DXCC-CW", "DXCC-Phone", "DXCC-Digital"];
+const ALL_GRID_SCOPES = ["VUCC"];
 
-// Pick the active dxcc-status field based on mode_aware toggle
-function activeDxccStatus(s) {
-  return modeCB.checked ? (s.dxcc_band_mode_status || "new") : (s.dxcc_band_status || "new");
+function availableScopesForBand(band) {
+  const scopes = [];
+  if (DXCC_BANDS.has(band)) scopes.push(...ALL_DXCC_SCOPES);
+  if (GRID_BANDS.has(band)) scopes.push(...ALL_GRID_SCOPES);
+  return scopes;
 }
 
-// Award scope tags for a spot row. Each tag is { label, status } where
-// status ∈ {"new","worked","confirmed"}. The set is determined by per-band
-// routing — HF + 6m get DXCC scopes; 6m + VHF/UHF get a Grid scope. Order
-// matters for display: Mixed first, then class, then Grid.
+function defaultScopesForBand(band) {
+  const out = {};
+  if (DXCC_BANDS.has(band)) out["DXCC-Mixed"] = true;
+  if (GRID_BANDS.has(band)) out["VUCC"] = true;
+  return out;
+}
+
+function loadAwardScopes() {
+  try {
+    const raw = localStorage.getItem("grayline_award_scopes");
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* fall through to defaults */ }
+  // First load — populate per-band defaults
+  const out = {};
+  for (const b of BAND_ORDER) out[b] = defaultScopesForBand(b);
+  return out;
+}
+function saveAwardScopes(scopes) {
+  localStorage.setItem("grayline_award_scopes", JSON.stringify(scopes));
+}
+let awardScopes = loadAwardScopes();
+
+function isScopeEnabled(band, scope) {
+  return !!(awardScopes[band] && awardScopes[band][scope]);
+}
+
+function setScopeEnabled(band, scope, enabled) {
+  if (!awardScopes[band]) awardScopes[band] = {};
+  if (enabled) awardScopes[band][scope] = true;
+  else delete awardScopes[band][scope];
+  saveAwardScopes(awardScopes);
+}
+
+function resetAwardScopesToDefaults() {
+  awardScopes = {};
+  for (const b of BAND_ORDER) awardScopes[b] = defaultScopesForBand(b);
+  saveAwardScopes(awardScopes);
+}
+
+// Status of a specific (spot, scope) pair, or null if the scope doesn't apply.
+// A spot only contributes to a scope it can actually advance — a 17m FT8 spot
+// can advance DXCC-Mixed and DXCC-Digital but NOT DXCC-CW (working FT8 doesn't
+// earn DXCC-CW credit), so DXCC-CW returns null on it.
+function scopeStatus(s, scope) {
+  switch (scope) {
+    case "DXCC-Mixed":
+      return DXCC_BANDS.has(s.band) && s.country ? (s.dxcc_band_status || "new") : null;
+    case "DXCC-CW":
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "CW"
+        ? (s.dxcc_band_modeclass_status || "new") : null;
+    case "DXCC-Phone":
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Phone"
+        ? (s.dxcc_band_modeclass_status || "new") : null;
+    case "DXCC-Digital":
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Digital"
+        ? (s.dxcc_band_modeclass_status || "new") : null;
+    case "VUCC":
+      return GRID_BANDS.has(s.band) && s.grid ? (s.grid_band_status || "new") : null;
+    default:
+      return null;
+  }
+}
+
+// Award pills for a spot. Returns only the scopes that (a) the user has
+// enabled for this band AND (b) this spot can actually advance.
 function scopeTags(s) {
   const out = [];
-  if (DXCC_BANDS.has(s.band) && s.country) {
-    out.push({ label: "DXCC", status: s.dxcc_band_status || "new" });
-    const cls = s.modeclass;
-    if (cls && cls !== "Other") {
-      const cstat = s.dxcc_band_modeclass_status || "new";
-      // Only emit the class pill if it differs from Mixed — saves visual noise
-      // when both are confirmed (or both new).
-      if (cstat !== (s.dxcc_band_status || "new")) {
-        out.push({ label: "DXCC-" + cls, status: cstat });
-      } else if (cstat === "new") {
-        // Both Mixed and class are new — collapse to a single class pill
-        // (DXCC-Mixed pill above already says "new" so this would dupe).
-        // Replace the Mixed pill with the class pill for clarity.
-        out.length = 0;
-        out.push({ label: "DXCC-" + cls, status: cstat });
-      }
-    }
-  }
-  if (GRID_BANDS.has(s.band) && s.grid) {
-    // Stage 5 will split this into FFMA (6m, CONUS-48 only) vs VUCC (6m+).
-    // For now a single "Grid" pill carries the grid_band_status.
-    out.push({ label: "Grid", status: s.grid_band_status || "new" });
+  for (const scope of availableScopesForBand(s.band)) {
+    if (!isScopeEnabled(s.band, scope)) continue;
+    const status = scopeStatus(s, scope);
+    if (status === null) continue;
+    out.push({ label: scope, status });
   }
   return out;
 }
 
-// True if any applicable scope for this spot is currently "new" (unworked).
-// Used by the wanted/total tab counter and (Stage 5) the Show-Wanted toggle.
+// True if any enabled scope for this spot is currently "new" (unworked).
+// Drives the Show-wanted filter and the per-band wanted/total counter.
 function anyScopeNeeded(s) {
   return scopeTags(s).some(t => t.status === "new");
+}
+
+// Status enum order — used for picking the "weakest" (most-needed) status.
+const STATUS_ORDER = { new: 0, worked: 1, confirmed: 2 };
+
+// Cell color status — weakest enabled scope status in the relevant family.
+// Drives the orange treatment of the Country and Grid cells. Returns null
+// if no scope from that family is enabled (cell stays plain).
+function effectiveDxccStatus(s) {
+  let weakest = null;
+  for (const t of scopeTags(s)) {
+    if (!t.label.startsWith("DXCC")) continue;
+    if (weakest === null || STATUS_ORDER[t.status] < STATUS_ORDER[weakest]) {
+      weakest = t.status;
+    }
+  }
+  return weakest;
+}
+function effectiveGridStatus(s) {
+  let weakest = null;
+  for (const t of scopeTags(s)) {
+    if (t.label !== "VUCC" && t.label !== "FFMA") continue;
+    if (weakest === null || STATUS_ORDER[t.status] < STATUS_ORDER[weakest]) {
+      weakest = t.status;
+    }
+  }
+  return weakest;
 }
 
 // ---- Settings gear: per-band and per-mode visibility ----
@@ -842,6 +948,45 @@ function renderSettingsPanel(spots) {
       refresh();
     });
   });
+
+  // Award scopes: per-band grid, columns are scope keys, rows are bands.
+  // Cells are checkboxes for scopes that apply to that band; cells are blank
+  // (not just disabled) when the scope doesn't apply (e.g. DXCC-CW on 2m).
+  renderScopeGrid();
+}
+
+function renderScopeGrid() {
+  const grid = document.getElementById("settings_scopes");
+  if (!grid) return;
+  const allScopes = [...ALL_DXCC_SCOPES, ...ALL_GRID_SCOPES];
+  // Header row: blank corner + scope labels
+  let html = `<div class="scope-hdr"></div>`;
+  for (const sc of allScopes) {
+    // Compress for display: drop the "DXCC-" prefix on DXCC scopes (column header
+    // is implicitly DXCC, the four scopes there are Mixed/CW/Phone/Digital).
+    const short = sc.startsWith("DXCC-") ? sc.slice(5) : sc;
+    html += `<div class="scope-hdr">${short}</div>`;
+  }
+  // One row per band
+  for (const b of BAND_ORDER) {
+    const avail = new Set(availableScopesForBand(b));
+    html += `<div class="band-label">${b}</div>`;
+    for (const sc of allScopes) {
+      if (!avail.has(sc)) {
+        html += `<div class="cell disabled">·</div>`;
+        continue;
+      }
+      const checked = isScopeEnabled(b, sc) ? "checked" : "";
+      html += `<div class="cell"><input type="checkbox" data-band="${b}" data-scope="${sc}" ${checked}></div>`;
+    }
+  }
+  grid.innerHTML = html;
+  grid.querySelectorAll("input[data-band][data-scope]").forEach(el => {
+    el.addEventListener("change", () => {
+      setScopeEnabled(el.dataset.band, el.dataset.scope, el.checked);
+      refresh();
+    });
+  });
 }
 
 document.getElementById("settings_all_bands").addEventListener("click", () => {
@@ -867,6 +1012,10 @@ document.getElementById("settings_no_modes").addEventListener("click", () => {
   saveDisabledSet("grayline_disabled_modes", disabledModes);
   refresh();
 });
+document.getElementById("settings_reset_scopes").addEventListener("click", () => {
+  resetAwardScopesToDefaults();
+  refresh();
+});
 
 async function refresh() {
   let data;
@@ -879,17 +1028,17 @@ async function refresh() {
   }
   let spots = data.spots, now = data.now;
   const filterOn = filterCB.checked;
-  const neededOnly = neededCB.checked;
+  const showWanted = showWantedCB.checked;
   let filteredOut = 0;
 
   // Re-render settings panel with current modes-seen
   renderSettingsPanel(spots);
 
-  // Apply filters in order: band/mode visibility, needed-only (uses active dxcc status), 300mi
+  // Apply filters in order: band/mode visibility, show-wanted (any enabled scope is new), 300mi
   spots = spots.filter(s => {
     if (disabledBands.has(s.band)) { filteredOut++; return false; }
     if (disabledModes.has(s.mode)) { filteredOut++; return false; }
-    if (neededOnly && activeDxccStatus(s) !== "new") { filteredOut++; return false; }
+    if (showWanted && !anyScopeNeeded(s)) { filteredOut++; return false; }
     if (filterOn) {
       if (s.distance_mi !== null && s.distance_mi !== undefined && s.distance_mi > RADIUS_MI) {
         filteredOut++;
@@ -987,14 +1136,13 @@ async function refresh() {
           if (s.distance_mi > RADIUS_MI) distClass += " far";
         }
         const callStatus = s.call_status || "new";
-        // DXCC×band highlight only applies on bands where Fred chases DXCC (HF + 6m).
-        // 2m+ stays plain — VUCC is grid-based, not entity-based.
-        const dxccStatus = DXCC_BANDS.has(s.band) ? activeDxccStatus(s) : "confirmed";
-        // Grid×band highlight applies on 6m + all VHF/UHF — FFMA on 6m, VUCC on 2m+.
-        const gridStatus = GRID_BANDS.has(s.band) ? (s.grid_band_status || "new") : null;
-        const gridCellClass = gridStatus
-          ? `grid g${gridStatus}`
-          : "grid";
+        // DXCC and Grid cell highlights are driven by the *enabled* award scopes
+        // for this band — weakest (most-needed) status wins. Cell stays plain
+        // when no scope from that family is enabled.
+        const dxccEff = effectiveDxccStatus(s);
+        const dxccCellClass = "country" + (dxccEff ? " " + dxccEff : "");
+        const gridEff = effectiveGridStatus(s);
+        const gridCellClass = "grid" + (gridEff ? " g" + gridEff : "");
         const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
         const rowClass = isUs ? "us-spotted" : "";
         const spotterClass = isUs ? "spotter us" : "spotter";
@@ -1003,7 +1151,7 @@ async function refresh() {
         ).join("");
         bandHTML += `<tr class="${rowClass}">
           <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
-          <td class="country ${dxccStatus}">${escapeHTML(s.country || "")}</td>
+          <td class="${dxccCellClass}">${escapeHTML(s.country || "")}</td>
           <td class="cont">${escapeHTML(s.continent || "")}</td>
           <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
           <td class="awards">${awardCell}</td>
@@ -1018,20 +1166,19 @@ async function refresh() {
       html += bandHTML;
     }
   }
-  // GT-style counts: total heard / shown / wanted (= new DXCC×band, or ×mode if mode-aware)
+  // Status counts: total / wanted (any enabled scope is new) / new+confirmed calls / spots we heard
   let wantedCount = 0, newCallCount = 0, confirmedCount = 0, usCount = 0;
   for (const s of spots) {
-    if (activeDxccStatus(s) === "new" && s.country) wantedCount++;
+    if (anyScopeNeeded(s)) wantedCount++;
     if (s.call_status === "new") newCallCount++;
     if (s.call_status === "confirmed") confirmedCount++;
     if ((s.spotter || "").toUpperCase().startsWith("WF8Z")) usCount++;
   }
-  const anyFilter = filterOn || neededOnly || disabledBands.size > 0 || disabledModes.size > 0;
+  const anyFilter = filterOn || showWanted || disabledBands.size > 0 || disabledModes.size > 0;
   const filterTag = anyFilter ? ` (${filteredOut} hidden)` : "";
-  const scopeLabel = modeCB.checked ? "DXCC×band×mode" : "DXCC×band";
   document.getElementById("status").innerHTML =
     `<span class="count">${spots.length}</span> spots · ` +
-    `<span class="wanted">${wantedCount}</span> needed (${scopeLabel}) · ` +
+    `<span class="wanted">${wantedCount}</span> wanted · ` +
     `<span style="color:#5f5">${usCount} we heard</span> · ` +
     `${newCallCount} new calls · ${confirmedCount} confirmed · ` +
     `${bands.length} bands · ${new Date().toLocaleTimeString()}${filterTag}`;

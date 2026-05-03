@@ -70,6 +70,31 @@ everything lives under `[Unreleased]` until the first tagged release.
   count splits into a red "wanted" prefix (spots where any
   applicable scope is `new`) and a neutral total. Tabs with
   zero wanted spots fall back to a plain count.
+- **Per-band award scope settings panel.** New "Award scopes per
+  band" section in the gear dropdown — one row per band, columns
+  for DXCC-Mixed / DXCC-CW / DXCC-Phone / DXCC-Digital / VUCC.
+  Cells are blank where the scope doesn't apply (DXCC on 2m,
+  VUCC on 80m, etc.). Defaults follow the ARRL-tracked-only
+  principle: DXCC-Mixed on for HF + 6m, VUCC on for 6m + VHF/UHF.
+  Settings persist via localStorage; a Reset-to-defaults button
+  is available.
+- **`Show wanted only` toggle replaces `needed_only` + `mode_aware`.**
+  Single checkbox; filters spots where any *enabled* scope is
+  currently `new`. The mode-aware toggle's behavior is now
+  expressed as "enable DXCC-CW / DXCC-Phone / DXCC-Digital
+  on the bands you care about."
+- **Country and Grid cell highlighting now scope-driven.** The
+  orange DXCC and Grid cell fills/outlines reflect the *weakest
+  enabled* DXCC-family or Grid-family scope status — so if you
+  enable both DXCC-Mixed and DXCC-CW on 17m and a CW spot from
+  Peru shows up where you've worked Peru-Mixed but not Peru-CW,
+  the Country cell goes orange (most-needed scope wins).
+- **Award pills only show on relevant spots.** A 17m FT8 spot
+  no longer shows a `DXCC-CW` pill even if you have DXCC-CW
+  enabled — working FT8 doesn't earn DXCC-CW credit, so the
+  scope is irrelevant to that spot. CW spots show DXCC-CW; SSB
+  shows DXCC-Phone; FT8/RTTY/etc. show DXCC-Digital. Mixed-mode
+  scope (DXCC-Mixed) shows on every spot since any mode counts.
 
 ### Vendor / reference
 
