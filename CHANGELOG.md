@@ -58,6 +58,18 @@ everything lives under `[Unreleased]` until the first tagged release.
   existing four status fields. The JSON feed exposes it ready
   for UI surfacing in later stages. `modeclass` derived from
   `mode_class(spot.mode)` is stashed alongside.
+- **Award column in the spot table.** Each row now shows a
+  short pill list — `DXCC` (Mixed status), `DXCC-CW`/`DXCC-Phone`/
+  `DXCC-Digital` when the class status differs from Mixed, and
+  `Grid` for VHF+ (FFMA on 6m, VUCC on 2m+). Pills color-code
+  by status: orange-fill for needed, orange-outline for
+  worked-not-confirmed, dim for confirmed. Live cluster confirms
+  the differentiation works — e.g., 17m Peru CW shows
+  `DXCC: confirmed` + `DXCC-CW: new`.
+- **Per-band tab counter shows `wanted/total`.** Each band tab's
+  count splits into a red "wanted" prefix (spots where any
+  applicable scope is `new`) and a neutral total. Tabs with
+  zero wanted spots fall back to a plain count.
 
 ### Vendor / reference
 

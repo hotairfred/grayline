@@ -574,8 +574,29 @@ details[open] > summary::before { transform: rotate(90deg); }
 }
 .tab-strip button.active:hover { background: #ff0; color: #000; }
 .tab-strip .count { opacity: 0.7; margin-left: 0.5em; }
+.tab-strip .count .wanted { color: #ff5050; font-weight: 700; }   /* red wanted-count, neutral total */
+.tab-strip .count .sep { color: #555; }
 .tab-strip button.active .count { opacity: 1; }
+.tab-strip button.active .count .wanted { color: #c00; }          /* darker red on yellow active-tab background */
+.tab-strip button.active .count .sep { color: #333; }
 .tab-strip .empty { color: #555; }
+
+/* Award column — one pill per applicable scope (DXCC-Mixed / DXCC-CW etc., Grid). */
+.awards { font-size: 0.7em; line-height: 1.4; }
+.awards .pill {
+  display: inline-block; padding: 0px 4px; margin-right: 2px;
+  border-radius: 3px; border: 1px solid transparent;
+  font-weight: 600; letter-spacing: 0.02em;
+}
+.awards .pill.new {                                                /* this scope is needed — orange fill */
+  background: #ffa500; color: #000;
+}
+.awards .pill.worked {                                             /* worked, not confirmed — orange outline */
+  border-color: #ffa500; color: #fb6;
+}
+.awards .pill.confirmed {                                          /* already confirmed for this scope — dim */
+  color: #666; border-color: #2a2a2a;
+}
 
 /* Per-band mode toggles row */
 .band-mode-toggles {
@@ -705,6 +726,44 @@ modeCB.addEventListener("change", () => {
 // Pick the active dxcc-status field based on mode_aware toggle
 function activeDxccStatus(s) {
   return modeCB.checked ? (s.dxcc_band_mode_status || "new") : (s.dxcc_band_status || "new");
+}
+
+// Award scope tags for a spot row. Each tag is { label, status } where
+// status ∈ {"new","worked","confirmed"}. The set is determined by per-band
+// routing — HF + 6m get DXCC scopes; 6m + VHF/UHF get a Grid scope. Order
+// matters for display: Mixed first, then class, then Grid.
+function scopeTags(s) {
+  const out = [];
+  if (DXCC_BANDS.has(s.band) && s.country) {
+    out.push({ label: "DXCC", status: s.dxcc_band_status || "new" });
+    const cls = s.modeclass;
+    if (cls && cls !== "Other") {
+      const cstat = s.dxcc_band_modeclass_status || "new";
+      // Only emit the class pill if it differs from Mixed — saves visual noise
+      // when both are confirmed (or both new).
+      if (cstat !== (s.dxcc_band_status || "new")) {
+        out.push({ label: "DXCC-" + cls, status: cstat });
+      } else if (cstat === "new") {
+        // Both Mixed and class are new — collapse to a single class pill
+        // (DXCC-Mixed pill above already says "new" so this would dupe).
+        // Replace the Mixed pill with the class pill for clarity.
+        out.length = 0;
+        out.push({ label: "DXCC-" + cls, status: cstat });
+      }
+    }
+  }
+  if (GRID_BANDS.has(s.band) && s.grid) {
+    // Stage 5 will split this into FFMA (6m, CONUS-48 only) vs VUCC (6m+).
+    // For now a single "Grid" pill carries the grid_band_status.
+    out.push({ label: "Grid", status: s.grid_band_status || "new" });
+  }
+  return out;
+}
+
+// True if any applicable scope for this spot is currently "new" (unworked).
+// Used by the wanted/total tab counter and (Stage 5) the Show-Wanted toggle.
+function anyScopeNeeded(s) {
+  return scopeTags(s).some(t => t.status === "new");
 }
 
 // ---- Settings gear: per-band and per-mode visibility ----
@@ -858,9 +917,18 @@ async function refresh() {
     tabStrip.innerHTML = '<span class="empty">No spots match current filters.</span>';
   } else {
     tabStrip.innerHTML = bands.map(b => {
-      const total = Object.values(byBand[b]).reduce((acc, list) => acc + list.length, 0);
+      let total = 0, wanted = 0;
+      for (const list of Object.values(byBand[b])) {
+        for (const s of list) {
+          total++;
+          if (anyScopeNeeded(s)) wanted++;
+        }
+      }
       const cls = (b === activeBand) ? "active" : "";
-      return `<button class="${cls}" data-band="${b}">${escapeHTML(b)}<span class="count">${total}</span></button>`;
+      const counter = wanted > 0
+        ? `<span class="count"><span class="wanted">${wanted}</span><span class="sep">/</span>${total}</span>`
+        : `<span class="count">${total}</span>`;
+      return `<button class="${cls}" data-band="${b}">${escapeHTML(b)}${counter}</button>`;
     }).join("");
     tabStrip.querySelectorAll("button[data-band]").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -901,7 +969,7 @@ async function refresh() {
     for (const m of modes) {
       const rows = byBand[b][m].sort((x,y) => x.freq_khz - y.freq_khz);
       let bandHTML = `<div class="mode-block"><div class="mode-hdr">${escapeHTML(m)} · ${rows.length}</div>`;
-      bandHTML += '<table><tr><th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
+      bandHTML += '<table><tr><th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th><th>Award</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
       for (const s of rows) {
         const age = Math.floor(now - s.ts);
         let snrCell = "";
@@ -930,11 +998,15 @@ async function refresh() {
         const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
         const rowClass = isUs ? "us-spotted" : "";
         const spotterClass = isUs ? "spotter us" : "spotter";
+        const awardCell = scopeTags(s).map(t =>
+          `<span class="pill ${t.status}">${escapeHTML(t.label)}</span>`
+        ).join("");
         bandHTML += `<tr class="${rowClass}">
           <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
           <td class="country ${dxccStatus}">${escapeHTML(s.country || "")}</td>
           <td class="cont">${escapeHTML(s.continent || "")}</td>
           <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
+          <td class="awards">${awardCell}</td>
           <td class="freq">${s.freq_khz.toFixed(1)}</td>
           <td class="${snrClass}">${snrCell}</td>
           <td class="${spotterClass}">${escapeHTML(s.spotter)}</td>
