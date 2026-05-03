@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+secrets.json
+qrz_cache.json
+qrz_logbook.json
+qrz_logbook.adi
+*.log
+*.bak
