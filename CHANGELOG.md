@@ -104,6 +104,21 @@ everything lives under `[Unreleased]` until the first tagged release.
   dynamically as their traffic lands. Modes already in
   `disabledModes` always remain visible so they can be
   re-enabled after their spots have aged out.
+- **FFMA award scope, CONUS-48 grid filter wired up.** The
+  Fred Fish Memorial Award is now a proper scope: 488 canonical
+  grid squares from `data/ffma_grids.json` (sourced from the
+  ARRL FFMA program page, attribution in NOTICE). FFMA scope is
+  6m-only and only emits a pill on CONUS-48 grids — a 6m EU or
+  Hawaiian grid spot won't show FFMA even if FFMA is enabled,
+  because those grids don't count toward the award. Default-on
+  for 6m alongside DXCC-Mixed and VUCC.
+- **Award scope storage now uses explicit true/false.** Previously
+  unchecked scopes were deleted from localStorage; now they're
+  stored as `false`. This lets future scope additions fill in
+  defaults for genuinely-new scopes without re-enabling things
+  the user explicitly turned off. Existing settings are migrated
+  on first load — any scope not in storage gets its default
+  state.
 
 ### Vendor / reference
 

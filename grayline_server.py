@@ -494,6 +494,20 @@ def snapshot():
     return rows
 
 
+# ---------------- FFMA grid list (CONUS-48, ARRL canonical) ----------------
+def _load_ffma_grids() -> list[str]:
+    try:
+        path = Path(__file__).parent / "data" / "ffma_grids.json"
+        return json.loads(path.read_text())["grids"]
+    except Exception as e:
+        log.warning("FFMA grid list unavailable (%s); FFMA scope will not function", e)
+        return []
+
+
+_FFMA_GRIDS = _load_ffma_grids()
+log.info("FFMA grid list loaded: %d grids", len(_FFMA_GRIDS))
+
+
 # ---------------- HTML ----------------
 HTML_PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8">
@@ -640,7 +654,7 @@ details[open] .gear-icon { color: #fff; }
 .gear-panel label input { margin-right: 0.3em; vertical-align: middle; }
 .gear-panel .scope-grid {
   display: grid;
-  grid-template-columns: 4em repeat(5, minmax(5em, auto));
+  grid-template-columns: 4em repeat(6, minmax(4.5em, auto));
   gap: 0.15em 0.6em;
   font-size: 0.78em;
   align-items: center;
@@ -724,6 +738,15 @@ const COMMON_MODES = [
   "FT8", "FT4", "RTTY", "PSK31", "JS8", "MSK144",
   "JT65", "JT9", "Q65", "FST4", "WSPR"
 ];
+
+// FFMA — Fred Fish Memorial Award. 488 CONUS-48 grid squares to be
+// worked on 6m. The grid list is canonical from ARRL, injected at server
+// render time from data/ffma_grids.json.
+const FFMA_GRIDS = new Set([__FFMA_GRIDS_INJECT__]);
+function isFfmaGrid(grid4) {
+  if (!grid4) return false;
+  return FFMA_GRIDS.has(grid4.toUpperCase().slice(0, 4));
+}
 function bandIdx(b) { const i = BAND_ORDER.indexOf(b); return i < 0 ? 99 : i; }
 function fmtAge(s) {
   if (s < 60) return s + "s";
@@ -766,30 +789,48 @@ showWantedCB.addEventListener("change", () => {
 // FFMA (6m CONUS-48 grids) is intentionally not yet exposed — needs the
 // strict-grid-list constraint wired up first.
 const ALL_DXCC_SCOPES = ["DXCC-Mixed", "DXCC-CW", "DXCC-Phone", "DXCC-Digital"];
-const ALL_GRID_SCOPES = ["VUCC"];
+// Grid-family scopes. FFMA is 6m only (CONUS-48 grids); VUCC is 6m+ (any grid).
+const ALL_GRID_SCOPES = ["FFMA", "VUCC"];
 
 function availableScopesForBand(band) {
   const scopes = [];
   if (DXCC_BANDS.has(band)) scopes.push(...ALL_DXCC_SCOPES);
-  if (GRID_BANDS.has(band)) scopes.push(...ALL_GRID_SCOPES);
+  if (band === "6m") scopes.push("FFMA");
+  if (GRID_BANDS.has(band)) scopes.push("VUCC");
   return scopes;
 }
 
 function defaultScopesForBand(band) {
   const out = {};
   if (DXCC_BANDS.has(band)) out["DXCC-Mixed"] = true;
+  if (band === "6m") out["FFMA"] = true;
   if (GRID_BANDS.has(band)) out["VUCC"] = true;
   return out;
 }
 
+// Award scope storage uses explicit true/false per scope-band combo (rather
+// than delete-on-off) so future scope additions can fill in defaults without
+// clobbering user choices. A scope key not in stored prefs is treated as
+// "never seen by this user," and gets its default state on next load.
 function loadAwardScopes() {
+  let stored = null;
   try {
     const raw = localStorage.getItem("grayline_award_scopes");
-    if (raw) return JSON.parse(raw);
-  } catch (e) { /* fall through to defaults */ }
-  // First load — populate per-band defaults
+    if (raw) stored = JSON.parse(raw);
+  } catch (e) { /* ignored */ }
   const out = {};
-  for (const b of BAND_ORDER) out[b] = defaultScopesForBand(b);
+  for (const b of BAND_ORDER) {
+    const defaults = defaultScopesForBand(b);
+    const userPrefs = (stored && stored[b]) || {};
+    out[b] = {};
+    for (const sc of availableScopesForBand(b)) {
+      if (sc in userPrefs) {
+        out[b][sc] = !!userPrefs[sc];               // user has explicit choice
+      } else {
+        out[b][sc] = !!defaults[sc];                // new scope, take default state
+      }
+    }
+  }
   return out;
 }
 function saveAwardScopes(scopes) {
@@ -798,19 +839,24 @@ function saveAwardScopes(scopes) {
 let awardScopes = loadAwardScopes();
 
 function isScopeEnabled(band, scope) {
-  return !!(awardScopes[band] && awardScopes[band][scope]);
+  return !!(awardScopes[band] && awardScopes[band][scope] === true);
 }
 
 function setScopeEnabled(band, scope, enabled) {
   if (!awardScopes[band]) awardScopes[band] = {};
-  if (enabled) awardScopes[band][scope] = true;
-  else delete awardScopes[band][scope];
+  awardScopes[band][scope] = !!enabled;             // explicit true OR false
   saveAwardScopes(awardScopes);
 }
 
 function resetAwardScopesToDefaults() {
   awardScopes = {};
-  for (const b of BAND_ORDER) awardScopes[b] = defaultScopesForBand(b);
+  for (const b of BAND_ORDER) {
+    awardScopes[b] = {};
+    const defaults = defaultScopesForBand(b);
+    for (const sc of availableScopesForBand(b)) {
+      awardScopes[b][sc] = !!defaults[sc];
+    }
+  }
   saveAwardScopes(awardScopes);
 }
 
@@ -833,6 +879,12 @@ function scopeStatus(s, scope) {
         ? (s.dxcc_band_modeclass_status || "new") : null;
     case "VUCC":
       return GRID_BANDS.has(s.band) && s.grid ? (s.grid_band_status || "new") : null;
+    case "FFMA":
+      // FFMA is 6m only and counts only CONUS-48 grids. A 6m spot from a
+      // ZL3 or EU grid is irrelevant to FFMA progress, so the scope returns
+      // null for those — no FFMA pill on those rows.
+      return s.band === "6m" && s.grid && isFfmaGrid(s.grid)
+        ? (s.grid_band_status || "new") : null;
     default:
       return null;
   }
@@ -1223,7 +1275,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            self._send(HTML_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            # Inject the FFMA grid list as a JS array literal into the page so
+            # the client doesn't need a second fetch + cache step. ~3KB.
+            ffma_js = ",".join('"' + g + '"' for g in _FFMA_GRIDS)
+            page = HTML_PAGE.replace("__FFMA_GRIDS_INJECT__", ffma_js)
+            self._send(page.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/spots.json":
             payload = {"spots": snapshot(), "now": time.time()}
             self._send(json.dumps(payload).encode(), "application/json")
