@@ -6,3 +6,7 @@ qrz_logbook.json
 qrz_logbook.adi
 *.log
 *.bak
+# Vendor reference PDFs (DXLab manuals etc.) — re-downloadable, not our work
+docs/dxlab/*.pdf
+# Vendor source clones for cross-reference (GridTracker2, etc.) — re-cloneable
+vendor/
