@@ -219,6 +219,13 @@ class WorkedState:
         self.worked_country_band_mode: set[tuple[str, str, str]] = set()  # (country, band, mode)
         self.confirmed_country_band_mode: set[tuple[str, str, str]] = set()
 
+        # Per-band-per-modeclass (CW / Phone / Digital / Other) — for ARRL DXCC
+        # variants. Mixed is NOT stored here; it's equivalent to country_band_status.
+        # ARRL recognizes DXCC-Mixed, DXCC-CW, DXCC-Phone, DXCC-Digital as the four
+        # tracked variants; this set powers the per-band scope highlighting.
+        self.worked_country_band_modeclass: set[tuple[str, str, str]] = set()  # (country, band, class)
+        self.confirmed_country_band_modeclass: set[tuple[str, str, str]] = set()
+
         self.worked_grid_band: set[tuple[str, str]] = set()  # (grid4, band)
         self.confirmed_grid_band: set[tuple[str, str]] = set()
 
@@ -255,6 +262,8 @@ class WorkedState:
         confirmed_country_band: set[tuple[str, str]] = set()
         worked_country_band_mode: set[tuple[str, str, str]] = set()
         confirmed_country_band_mode: set[tuple[str, str, str]] = set()
+        worked_country_band_modeclass: set[tuple[str, str, str]] = set()
+        confirmed_country_band_modeclass: set[tuple[str, str, str]] = set()
         worked_grid_band: set[tuple[str, str]] = set()
         confirmed_grid_band: set[tuple[str, str]] = set()
         worked_dxcc: set[str] = set()
@@ -301,6 +310,11 @@ class WorkedState:
                     worked_country_band_mode.add((country, band, mode))
                     if confirmed:
                         confirmed_country_band_mode.add((country, band, mode))
+                if band and mode:
+                    cls = mode_class(mode)
+                    worked_country_band_modeclass.add((country, band, cls))
+                    if confirmed:
+                        confirmed_country_band_modeclass.add((country, band, cls))
 
             if grid4 and band:
                 worked_grid_band.add((grid4, band))
@@ -315,6 +329,8 @@ class WorkedState:
         self.confirmed_country_band = confirmed_country_band
         self.worked_country_band_mode = worked_country_band_mode
         self.confirmed_country_band_mode = confirmed_country_band_mode
+        self.worked_country_band_modeclass = worked_country_band_modeclass
+        self.confirmed_country_band_modeclass = confirmed_country_band_modeclass
         self.worked_grid_band = worked_grid_band
         self.confirmed_grid_band = confirmed_grid_band
         self.worked_dxcc = worked_dxcc
@@ -382,6 +398,31 @@ class WorkedState:
             if key in self.confirmed_country_band_mode:
                 return "confirmed"
             if key in self.worked_country_band_mode:
+                return "worked"
+        return "new"
+
+    def country_band_modeclass_status(self, country: str, band: str, modeclass: str) -> str:
+        """Per-band-per-modeclass status for ARRL DXCC variants.
+
+        modeclass ∈ {"Mixed", "CW", "Phone", "Digital", "Other"}.
+
+        - "Mixed" routes to country_band_status (any mode counts — DXCC-Mixed)
+        - "CW" / "Phone" / "Digital" / "Other" check the modeclass set built
+          from mode_class(mode) at load time
+
+        Returns "new" / "worked" / "confirmed".
+        """
+        if not country or not band or not modeclass:
+            return "new"
+        if modeclass == "Mixed":
+            return self.country_band_status(country, band)
+        b = _norm_band(band)
+        c = modeclass.strip()
+        for name in (country, _qrz_country(country)):
+            key = (name, b, c)
+            if key in self.confirmed_country_band_modeclass:
+                return "confirmed"
+            if key in self.worked_country_band_modeclass:
                 return "worked"
         return "new"
 
