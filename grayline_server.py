@@ -852,26 +852,41 @@ def _adif_field(record: str, tag: str) -> str:
 
 def _remove_qso_from_adif(n1mm_id: str) -> bool:
     """Rewrite qso_logged.adi without the record whose APP_N1MM_ID == n1mm_id.
-    Atomic (temp file + rename). Returns True if a record was removed. Header
-    lines (no <EOR>) are always preserved."""
+
+    ADIF is RECORD-delimited by <EOR>, NOT line-oriented — multiple records can
+    share a physical line. So we split on the header (<EOH>) and then on <EOR>
+    and operate on whole records, never whole lines (a line-based delete could
+    take an unrelated record that happens to share the line). The rewrite also
+    re-normalizes the body to one record per line so concatenation can't recur.
+    Atomic (temp file + rename). Returns True if a record was removed."""
     if not n1mm_id or not QSO_LOG_PATH.exists():
         return False
     try:
-        lines = QSO_LOG_PATH.read_text().splitlines(keepends=True)
+        text = QSO_LOG_PATH.read_text()
     except Exception as e:
         log.warning("ADIF edit: failed reading %s: %s", QSO_LOG_PATH, e)
         return False
+    m = re.search(r"<EOH>", text, re.I)
+    header, body = (text[:m.end()], text[m.end():]) if m else ("", text)
     kept, removed = [], 0
-    for ln in lines:
-        if "<EOR>" in ln.upper() and _adif_field(ln, "APP_N1MM_ID") == n1mm_id:
+    # re.split keeps everything between <EOR> delimiters; the final element is
+    # the trailing remainder (whitespace) after the last record — dropped.
+    chunks = re.split(r"(?i)<EOR>", body)
+    for chunk in chunks[:-1]:
+        record = chunk.strip()
+        if not record:
+            continue
+        full = record + " <EOR>"
+        if _adif_field(full, "APP_N1MM_ID") == n1mm_id:
             removed += 1
             continue
-        kept.append(ln)
+        kept.append(full)
     if not removed:
         return False
     try:
+        out = header.rstrip("\n") + "\n" + ("\n".join(kept) + "\n" if kept else "")
         tmp = QSO_LOG_PATH.with_suffix(".adi.tmp")
-        tmp.write_text("".join(kept))
+        tmp.write_text(out)
         tmp.replace(QSO_LOG_PATH)
     except Exception as e:
         log.warning("ADIF edit: failed rewriting %s: %s", QSO_LOG_PATH, e)
