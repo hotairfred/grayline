@@ -267,6 +267,30 @@ def _qrz_country(cty_name: str) -> str:
     return CTY_TO_LOGBOOK_NAME.get(cty_name, cty_name)
 
 
+# Resolve a callsign to its canonical cty.dat entity name — the SAME name spot
+# ingest uses. Keying worked-state by this collapses the per-source country-label
+# variants ("Bosnia and Herzegovina" from QRZ, "BOSNIA-HERZEGOVINA" from LoTW,
+# "Bosnia-Herzegovina" from cty.dat) that otherwise scatter a worked entity across
+# three keys and produce false "needed" flags on bands the spot lookup can't find.
+_CTY_FOR_NAMES = None
+def _cty_entity(call: str) -> str:
+    global _CTY_FOR_NAMES
+    if _CTY_FOR_NAMES is None:
+        try:
+            from ctydat import CtyDat
+            _CTY_FOR_NAMES = CtyDat(str(Path(__file__).parent / "cty.dat"))
+        except Exception as e:
+            log.warning("cty.dat unavailable for country canonicalization: %s", e)
+            _CTY_FOR_NAMES = False
+    if not _CTY_FOR_NAMES or not call:
+        return ""
+    try:
+        e = _CTY_FOR_NAMES.lookup(call)
+        return (e.entity or "") if e else ""
+    except Exception:
+        return ""
+
+
 def _norm_band(s: str) -> str:
     return (s or "").strip().lower()
 
@@ -476,6 +500,15 @@ class WorkedState:
             # entity names — otherwise the lookup at spot ingest (which uses
             # cty.dat) misses historical QSOs labeled with the older string.
             country = QRZ_TO_CTY_COUNTRY.get(country, country)
+            # Authoritative: resolve the canonical entity from the callsign via
+            # cty.dat (the exact name spots are keyed by). This collapses the
+            # QRZ/LoTW/local label variants of the same entity onto one key, so
+            # band-slot status is computed against the operator's full history
+            # rather than whichever spelling happened to match. Falls back to the
+            # COUNTRY-field value above if cty.dat can't resolve the call.
+            canon = _cty_entity(q.get("call", ""))
+            if canon:
+                country = canon
             state = (q.get("state") or "").strip().upper()
             cqz = (q.get("cqz") or "").strip()
             # Normalize CQ zone: drop leading zeros, keep "0" if all-zero.
