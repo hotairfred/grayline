@@ -15,6 +15,7 @@ import math
 import re
 import threading
 import time
+import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -72,6 +73,17 @@ FLEX_INJECT_LIFETIME_SEC = 600     # how long Flex keeps each spot before auto-e
 FLEX_INJECT_DEDUP_SEC = 300        # don't re-inject the same (band, freq, call) within this window
 FLEX_INJECT_SKIP_MODES = {"FT8", "FT4"}  # WSJT-X handles digital modes natively via DAX
 
+# ---------------- Local skimmer suppression ----------------
+# Our home CW skimmer spots under the bare callsign WF8Z (SparkGap historically
+# under WF8Z-1). During contests it busts a high volume of calls and floods the
+# feed with junk. Flip EXCLUDE_LOCAL_SKIMMER True to drop those at ingest — kills
+# them everywhere downstream (web UI, Flex inject, SDC telnet feed). WSJT-X local
+# decodes (source WSJTX-LOCAL) are NOT skimmer spots and are always kept.
+# Turn this back False after the contest — our own skimmer's real decodes are
+# normally the highest-value spots.
+EXCLUDE_LOCAL_SKIMMER = False   # set True during contests to drop our skimmer's busted spots
+LOCAL_SKIMMER_SPOTTERS = {"WF8Z", "WF8Z-1"}
+
 # ---------------- SDC / DX-cluster telnet feed ----------------
 # Re-broadcast GrayLine's filtered, annotated spots as a standard DX Spider
 # telnet node so SDC-Connectors (or any DX cluster client) can consume them.
@@ -99,6 +111,24 @@ WSJTX_LISTEN_PORT = 2237             # WSJT-X default UDP server port
 WSJTX_AUDIO_MIN_HZ = 200             # WSJT-X passband minimum (below this, decoder doesn't see signal)
 WSJTX_AUDIO_MAX_HZ = 3000            # WSJT-X passband maximum
 WSJTX_STATE_TTL_SEC = 60             # forget WSJT-X state if no heartbeat/status for this long
+
+# N1MM / SDC-Connectors QSO logging
+# Listen for N1MM-compatible <contactinfo> UDP broadcasts (from N1MM Logger+ or
+# SDC-Connectors) and mark the station worked in real time — award pills flip
+# 'new'->'worked' on the next /spots.json poll, reusing the same ingest pipeline
+# as WSJT-X logging (ADIF append + worked-state + logbook upload). Useful when
+# running a contest in N1MM/SDC instead of WSJT-X.
+N1MM_ENABLED = True
+N1MM_LISTEN_HOST = "0.0.0.0"
+N1MM_LISTEN_PORT = 12060             # N1MM "Contact" broadcast port (matches GTBridge)
+
+# Master switch for real-time logbook uploads (QRZ/ClubLog/eQSL) fired on every
+# QSO logged via WSJT-X or N1MM. When True, every logged QSO appears on QRZ
+# almost immediately — which during a contest is a non-radio confirmation
+# channel (a station could verify a QSO via your QRZ page instead of off the
+# air), something most contest rules prohibit. Keep it FALSE while contesting
+# and batch-upload the clean local ADIF afterward; flip True for everyday ops.
+LOGBOOK_UPLOAD_ENABLED = True   # set False during contests (avoid live-log off-air QSO confirmation)
 
 # Modes operated through WSJT-X (or a JTDX/MSHV equivalent that speaks the same
 # UDP protocol). When clicking a spot in any of these modes, click-to-tune
@@ -792,6 +822,7 @@ def _build_adif_record(parsed: dict, country: str = "", dxcc: str = "", band: st
     if dxcc:
         add("DXCC", dxcc)
     add("PROP_MODE", parsed.get("adif_prop_mode"))
+    add("APP_N1MM_ID", parsed.get("app_n1mm_id"))
 
     return " ".join(fields) + " <EOR>"
 
@@ -808,6 +839,44 @@ def _append_to_qso_log_adif(adif_record: str):
             f.write(adif_record + "\n")
     except Exception as e:
         log.warning("Failed to append to QSO log %s: %s", QSO_LOG_PATH, e)
+
+
+def _adif_field(record: str, tag: str) -> str:
+    """Extract one field's value from a single ADIF record line. '' if absent."""
+    m = re.search(rf"<{re.escape(tag)}:(\d+)(?::[^>]*)?>", record, re.I)
+    if not m:
+        return ""
+    start = m.end()
+    return record[start:start + int(m.group(1))]
+
+
+def _remove_qso_from_adif(n1mm_id: str) -> bool:
+    """Rewrite qso_logged.adi without the record whose APP_N1MM_ID == n1mm_id.
+    Atomic (temp file + rename). Returns True if a record was removed. Header
+    lines (no <EOR>) are always preserved."""
+    if not n1mm_id or not QSO_LOG_PATH.exists():
+        return False
+    try:
+        lines = QSO_LOG_PATH.read_text().splitlines(keepends=True)
+    except Exception as e:
+        log.warning("ADIF edit: failed reading %s: %s", QSO_LOG_PATH, e)
+        return False
+    kept, removed = [], 0
+    for ln in lines:
+        if "<EOR>" in ln.upper() and _adif_field(ln, "APP_N1MM_ID") == n1mm_id:
+            removed += 1
+            continue
+        kept.append(ln)
+    if not removed:
+        return False
+    try:
+        tmp = QSO_LOG_PATH.with_suffix(".adi.tmp")
+        tmp.write_text("".join(kept))
+        tmp.replace(QSO_LOG_PATH)
+    except Exception as e:
+        log.warning("ADIF edit: failed rewriting %s: %s", QSO_LOG_PATH, e)
+        return False
+    return True
 
 
 def _ingest_wsjtx_qso_logged(parsed: dict):
@@ -852,7 +921,10 @@ def _ingest_wsjtx_qso_logged(parsed: dict):
     # Fire parallel uploads to QRZ / ClubLog / eQSL. Background thread,
     # fire-and-forget, never blocks the WSJT-X UDP handler. Results land
     # in /home/fred/grayline/qso_uploads.log per service per QSO.
-    logbook_uploads.upload_qso_to_all(adif_record, dx_call=dx_call)
+    if LOGBOOK_UPLOAD_ENABLED:
+        logbook_uploads.upload_qso_to_all(adif_record, dx_call=dx_call)
+    else:
+        log.info("QSO %s: logbook uploads DISABLED (LOGBOOK_UPLOAD_ENABLED=False)", dx_call)
 
     log.info("QSO Logged: %s on %s %s (country=%r grid=%r) — ADIF appended, "
              "worked-state updated, uploads dispatched",
@@ -907,6 +979,175 @@ async def wsjtx_listener_task():
     transport, _protocol = await loop.create_datagram_endpoint(
         _WsjtxProtocol,
         local_addr=(WSJTX_LISTEN_HOST, WSJTX_LISTEN_PORT))
+    try:
+        while True:
+            await asyncio.sleep(3600)  # task body — protocol handles datagrams
+    except asyncio.CancelledError:
+        transport.close()
+        raise
+
+
+# ---------------- N1MM / SDC-Connectors QSO logging ----------------
+def _n1mm_contactinfo_to_parsed(root) -> dict | None:
+    """Map an N1MM <contactinfo> XML element to the parsed-QSO dict that
+    _ingest_wsjtx_qso_logged() consumes, so N1MM/SDC contest logging reuses the
+    exact same ADIF-append + worked-state + upload pipeline as WSJT-X. Returns
+    None if there's no callsign to log."""
+    def t(tag: str) -> str:
+        return (root.findtext(tag, "") or "").strip()
+
+    dx_call = t("call")
+    if not dx_call:
+        return None
+
+    # N1MM rxfreq is in tens of Hz (e.g. 1407400 -> 14074000 Hz). Same unit
+    # GTBridge decodes from SDC-Connectors.
+    try:
+        freq_hz = int(t("rxfreq") or "0") * 10
+    except ValueError:
+        freq_hz = 0
+
+    # timestamp "YYYY-MM-DD HH:MM:SS" -> ADIF QSO_DATE / TIME_ON (and OFF).
+    date_s = time_s = ""
+    ts = t("timestamp")
+    if ts:
+        try:
+            dp, tp = ts.split()
+            date_s = dp.replace("-", "")
+            time_s = tp.replace(":", "")
+        except ValueError:
+            pass
+
+    # Keep the contest exchange in the local log so the ADIF isn't lossy
+    # (award status doesn't need it, but the operator's log should have it).
+    snt_nr, rcv_nr = t("sntnr"), t("rcvnr")
+    exch = " ".join(p for p in (f"snt {snt_nr}" if snt_nr else "",
+                                f"rcv {rcv_nr}" if rcv_nr else "") if p)
+    comment = (t("comment") + (" " + exch if exch else "")).strip()
+
+    return {
+        "dx_call": dx_call,
+        "dx_grid": t("gridsquare"),
+        "mode": t("mode").upper(),
+        "freq_hz": freq_hz,
+        "date_on": date_s, "time_on": time_s,
+        "date_off": date_s, "time_off": time_s,
+        "report_sent": t("snt"), "report_rcvd": t("rcv"),
+        "tx_power": t("power"),
+        "my_call": t("mycall") or CALLSIGN,
+        "operator_call": t("operator"),
+        "my_grid": HOME_GRID,
+        "name": t("name"),
+        "comments": comment or None,
+        # N1MM's per-QSO GUID. Stored in the ADIF (APP_N1MM_ID) so a later
+        # <contactdelete>/<contactreplace> can find and remove/replace this exact
+        # record. contactreplace carries the same field set, so this parser
+        # serves all three message types.
+        "app_n1mm_id": t("ID"),
+    }
+
+
+def _n1mm_apply_mutation_reload():
+    """After an in-process ADIF edit (delete/replace), recompute worked-state
+    from scratch (force_reload, not incremental — so removals are reflected) and
+    refresh the cached spot pills so the award badges revert/update live."""
+    if _worked:
+        _worked.force_reload()
+    _refresh_cache_worked_status()
+
+
+def _n1mm_delete(root):
+    """Handle N1MM <contactdelete>: remove the matching QSO from the local ADIF
+    (keyed on N1MM <ID>) and recompute worked-state so award pills revert.
+    Does NOT delete from remote logbooks (QRZ/ClubLog/eQSL) — those can't be
+    un-uploaded automatically; if real-time uploads were on, fix them by hand."""
+    n1mm_id = (root.findtext("ID", "") or "").strip()
+    call = (root.findtext("call", "") or "").strip() or "?"
+    if not n1mm_id:
+        log.warning("N1MM contactdelete for %s had no <ID> — cannot match; ignoring", call)
+        return
+    if _remove_qso_from_adif(n1mm_id):
+        _n1mm_apply_mutation_reload()
+        log.info("N1MM contactdelete: removed %s (ID=%s) from ADIF, worked-state recomputed",
+                 call, n1mm_id)
+    else:
+        log.info("N1MM contactdelete: no local ADIF record matched ID=%s (%s) — nothing to do",
+                 n1mm_id, call)
+
+
+def _n1mm_replace(root):
+    """Handle N1MM <contactreplace> (an edited QSO): drop the stale ADIF record
+    (matched by N1MM <ID>), append the corrected one, then recompute worked-state.
+    Like delete, does NOT re-push to remote logbooks."""
+    parsed = _n1mm_contactinfo_to_parsed(root)  # contactreplace carries the full contact fields
+    if not parsed:
+        return
+    n1mm_id = parsed.get("app_n1mm_id") or ""
+    if n1mm_id:
+        _remove_qso_from_adif(n1mm_id)  # drop the stale version (no-op if not present)
+
+    # Enrich + append the corrected record, mirroring the contactinfo ingest path
+    country = dxcc = ""
+    if _cty:
+        e = _cty.lookup(parsed.get("dx_call", ""))
+        if e:
+            country = e.entity or ""
+            dxcc_val = getattr(e, "dxcc", None) or getattr(e, "dxcc_id", None)
+            if dxcc_val:
+                dxcc = str(dxcc_val)
+    fh = parsed.get("freq_hz", 0) or 0
+    band = dxcluster.freq_to_band(fh / 1000.0) if fh else ""
+    _append_to_qso_log_adif(_build_adif_record(parsed, country=country, dxcc=dxcc, band=band))
+    _n1mm_apply_mutation_reload()
+    log.info("N1MM contactreplace: updated %s (ID=%s), worked-state recomputed",
+             parsed.get("dx_call", "?"), n1mm_id or "?")
+
+
+def _n1mm_handle_datagram(data: bytes, addr: tuple):
+    """Parse one N1MM UDP datagram and dispatch by root tag. N1MM/SDC multiplex
+    several message types on this port; we act on the three QSO-lifecycle ones
+    (contactinfo / contactreplace / contactdelete) and ignore RadioInfo,
+    dynamicresults (score), spot, lookupinfo, etc."""
+    try:
+        root = ET.fromstring(data.decode("utf-8", errors="replace"))
+    except ET.ParseError:
+        return
+    tag = root.tag
+    if tag == "contactinfo":
+        parsed = _n1mm_contactinfo_to_parsed(root)
+        if parsed:
+            log.info("N1MM contactinfo from %s: %s — ingesting",
+                     addr[0] if addr else "?", parsed["dx_call"])
+            _ingest_wsjtx_qso_logged(parsed)
+    elif tag == "contactreplace":
+        _n1mm_replace(root)
+    elif tag == "contactdelete":
+        _n1mm_delete(root)
+    # else: RadioInfo / dynamicresults / spot / lookupinfo — silently ignored
+
+
+class _N1mmProtocol(asyncio.DatagramProtocol):
+    def connection_made(self, transport):
+        sock = transport.get_extra_info("sockname")
+        log.info("N1MM UDP listener up on %s:%d", sock[0], sock[1])
+
+    def datagram_received(self, data, addr):
+        try:
+            _n1mm_handle_datagram(data, addr)
+        except Exception as e:
+            log.warning("N1MM handler error: %s (data=%d bytes)", e, len(data))
+
+    def error_received(self, exc):
+        log.warning("N1MM UDP error: %s", exc)
+
+
+async def n1mm_listener_task():
+    """Bind UDP N1MM_LISTEN_HOST:N1MM_LISTEN_PORT and ingest <contactinfo> QSO
+    broadcasts from N1MM Logger+ / SDC-Connectors. Runs for process lifetime."""
+    loop = asyncio.get_running_loop()
+    transport, _protocol = await loop.create_datagram_endpoint(
+        _N1mmProtocol,
+        local_addr=(N1MM_LISTEN_HOST, N1MM_LISTEN_PORT))
     try:
         while True:
             await asyncio.sleep(3600)  # task body — protocol handles datagrams
@@ -1045,6 +1286,11 @@ def add_spot(spot, cluster_name):
     # convention-standard "I forgot to set my callsign" string. Anything containing
     # it is unverifiable — no real grid, no real location, no way to filter on distance.
     if "N0CALL" in (spot.spotter or "").upper():
+        return
+    # Suppress our own home skimmer's cluster spots (contest junk). Scoped to
+    # non-WSJTX-LOCAL sources so genuine local WSJT-X decodes are never dropped.
+    if (EXCLUDE_LOCAL_SKIMMER and cluster_name != "WSJTX-LOCAL"
+            and (spot.spotter or "").upper() in LOCAL_SKIMMER_SPOTTERS):
         return
     mode = spot.mode or dxcluster.infer_mode(spot.freq_khz, REGION) or "UNK"
     key = _spot_dedup_key(band, mode, spot.freq_khz, spot.dx_call)
@@ -2950,10 +3196,17 @@ async def main():
     if WSJTX_ENABLED:
         wsjtx_task = asyncio.create_task(wsjtx_listener_task())
 
+    # N1MM / SDC-Connectors QSO-logged listener: marks stations worked in real
+    # time when you log a contest QSO in N1MM or SDC (reuses the WSJT-X ingest
+    # pipeline). Lets award pills flip live during a contest run.
+    n1mm_task = None
+    if N1MM_ENABLED:
+        n1mm_task = asyncio.create_task(n1mm_listener_task())
+
     try:
         await client.connect()
     finally:
-        for t in (flex_task, flex_inject_task, wsjtx_task):
+        for t in (flex_task, flex_inject_task, wsjtx_task, n1mm_task):
             if t and not t.done():
                 t.cancel()
 

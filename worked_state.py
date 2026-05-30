@@ -359,6 +359,14 @@ class WorkedState:
 
         self.reload()
 
+    def force_reload(self) -> bool:
+        """Reload unconditionally, bypassing the mtime gate. Used after an
+        in-process ADIF edit (N1MM contactdelete/contactreplace) where the file
+        can change within the same mtime tick as the previous reload, which the
+        gate would otherwise skip."""
+        self._mtime = None
+        return self.reload()
+
     def reload(self) -> bool:
         """(Re)load worked-state from BOTH the QRZ logbook JSON (long-tail
         archive, lags by hours-to-days) AND the local Grayline ADIF (written
