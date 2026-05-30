@@ -1,9 +1,15 @@
 __pycache__/
 *.pyc
+# Credentials / API keys — never commit
 secrets.json
+# Runtime data, caches, and logs — regenerated/re-fetched by the app, not source
 qrz_cache.json
 qrz_logbook.json
 qrz_logbook.adi
+# LoTW fetch state + confirmation data and the live WSJT-X QSO log (all runtime data)
+lotw_state.json
+lotw_qsl.adi
+qso_logged.adi
 *.log
 *.bak
 # Vendor reference PDFs (DXLab manuals etc.) — re-downloadable, not our work

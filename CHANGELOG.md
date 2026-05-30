@@ -154,6 +154,13 @@ everything lives under `[Unreleased]` until the first tagged release.
 - **`NOTICE`** — third-party attributions. Currently covers GT2's
   BSD 3-Clause license for the mode tables and algorithm ports.
 
+### Planned (deferred — Fred 2026-05-04, "do this when I'm home")
+
+- **WSJT-X UDP integration.** Receive WSJT-X UDP broadcasts (heartbeat, status, decode messages, QSO Logged) so Grayline sees real-time WSJT-X activity. Encode/decode logic already exists in the gtbridge codebase at `wsjtx_udp.py` — port across, don't rewrite.
+- **Click-to-tune from Grayline → WSJT-X.** Send WSJT-X "Reply" message UDP back to the running instance so clicking a spot in Grayline causes WSJT-X to tune to that audio offset. Reply parser is already in gtbridge's `wsjtx_udp.py`.
+- **Click-to-tune from Grayline → Flex slice.** `flexradio.py` already has slice-tuning logic for the SmartSDR TCP API on port 4992 (used by Phase 2 panadapter inject). What's missing is wiring a click-handler in the Grayline spot table to call into it. *Not* a from-scratch effort; just hooking up the existing client.
+- **Sequence when revisited:** Flex click-to-tune is the smaller change (existing client, just add UI handler). WSJT-X integration is bigger (new UDP listener, message parsing, real-time decode display). Recommended order: Flex first to validate the click-handler pattern, then WSJT-X UDP RX, then WSJT-X click-to-tune Reply.
+
 ### Notes
 
 This file establishes the changelog scaffold mid-project. Earlier

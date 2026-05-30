@@ -8,9 +8,11 @@ workstation, no Flex panadapter inject, no audio-critical interference.
 """
 
 import asyncio
+import gzip
 import json
 import logging
 import math
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -20,6 +22,9 @@ from socketserver import ThreadingMixIn
 
 import dxcluster
 import flexradio
+import logbook_uploads
+import lotw_fetch
+import telnet_server
 from ctydat import CtyDat
 from worked_state import WorkedState, mode_class
 
@@ -67,12 +72,82 @@ FLEX_INJECT_LIFETIME_SEC = 600     # how long Flex keeps each spot before auto-e
 FLEX_INJECT_DEDUP_SEC = 300        # don't re-inject the same (band, freq, call) within this window
 FLEX_INJECT_SKIP_MODES = {"FT8", "FT4"}  # WSJT-X handles digital modes natively via DAX
 
+# ---------------- SDC / DX-cluster telnet feed ----------------
+# Re-broadcast GrayLine's filtered, annotated spots as a standard DX Spider
+# telnet node so SDC-Connectors (or any DX cluster client) can consume them.
+# Feed policy: LOCAL-spotter spots only — the same tiered radius as the web
+# UI's "Local spotters only" toggle (HF <=300 mi, VHF+ <=150 mi of HOME_GRID).
+# The per-band radius overrides in the browser are localStorage-only; the feed
+# applies the fixed tiered default server-side.
+TELNET_FEED_ENABLED = True
+TELNET_FEED_PORT = 7374              # NOT 7301 (dxfilter) / 7373 (SDC's own server)
+TELNET_FEED_NODE = "WF8Z-2"         # DX Spider node call advertised to clients
+TELNET_FEED_RADIUS_HF_MI = 300
+TELNET_FEED_RADIUS_VHF_MI = 150
+# 6m and up are "local-signal" bands — nearer spotters are the meaningful ones.
+# Mirrors the browser's VHF_PLUS_BANDS set so the feed and the UI agree.
+TELNET_FEED_VHF_PLUS_BANDS = frozenset(
+    {"6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm"})
+
+# WSJT-X UDP integration
+# Listen for WSJT-X broadcasts (heartbeat, status, decode) so Grayline
+# (a) ingests our own real-time decodes as local-source spots, and
+# (b) knows the current dial frequency for click-to-tune audio-offset math.
+WSJTX_ENABLED = True
+WSJTX_LISTEN_HOST = "0.0.0.0"
+WSJTX_LISTEN_PORT = 2237             # WSJT-X default UDP server port
+WSJTX_AUDIO_MIN_HZ = 200             # WSJT-X passband minimum (below this, decoder doesn't see signal)
+WSJTX_AUDIO_MAX_HZ = 3000            # WSJT-X passband maximum
+WSJTX_STATE_TTL_SEC = 60             # forget WSJT-X state if no heartbeat/status for this long
+
+# Modes operated through WSJT-X (or a JTDX/MSHV equivalent that speaks the same
+# UDP protocol). When clicking a spot in any of these modes, click-to-tune
+# routes EXCLUSIVELY to WSJT-X — never to the Flex slice — and only fires if
+# a WSJT-X instance is currently tuned to that spot's band. Otherwise no
+# action is taken (don't surprise the operator with an unexpected Flex retune
+# during a digital-mode QSO).
+WSJTX_MODES = {"FT8", "FT4", "JT65", "JT9", "MSK144", "Q65",
+               "FST4", "FST4W", "WSPR", "JT4"}
+
+# Local ADIF file written on every WSJT-X QSO Logged broadcast. This is the
+# canonical real-time log fed by Grayline directly from WSJT-X UDP — separate
+# from QRZ logbook (which lags by minutes-to-hours via cron-pulled fetch).
+# Future steps: parallel uploads to QRZ / ClubLog / eQSL / LoTW from this file.
+QSO_LOG_PATH = Path("/home/fred/grayline/qso_logged.adi")
+
+# LoTW incremental download. Pulls confirmations from ARRL LoTW directly
+# rather than waiting for them to surface via QRZ logbook (which lags by
+# operator manual processing). Closes the Aruba/EU-Russia confirmation gap
+# observed when QRZ hadn't yet reflected LoTW state. See lotw_fetch.py for
+# the cursor + auth model (lifted from GT2 adif.js).
+LOTW_FETCH_ENABLED = True
+LOTW_FETCH_INTERVAL_SEC = 900   # 15 min — gentle on ARRL infra, fresh enough
+
+# Source priority for spot dedup. Higher numbers win when the same
+# (band, mode, freq, call) tuple arrives from multiple sources within
+# the spot TTL. Local sources (our own WSJT-X, our skimmer) always
+# beat external cluster aggregators because we trust our own RX path
+# more than third-party propagation.
+SOURCE_PRIORITY = {
+    "WSJTX-LOCAL": 100,    # our running WSJT-X — highest fidelity
+    "SPARKGAP-LOCAL": 90,  # WF8Z-1 SparkGap skimmer at the home Pitaya
+    "GOCLUSTER": 50,       # local validated aggregator (default external feed)
+    # everything else (RBN, DXSummit, PSKR ingest via GoCluster) defaults to 10
+}
+SOURCE_PRIORITY_DEFAULT = 10
+
 # Loaded at startup
 _cty: CtyDat | None = None
 _worked: WorkedState | None = None
 _flex: flexradio.FlexRadioClient | None = None
 _flex_inject_queue: asyncio.Queue | None = None
 _flex_recent_injects: dict[tuple, float] = {}
+# Main asyncio event loop reference, captured at start of main(). Threads
+# (HTTP handler) use this with asyncio.run_coroutine_threadsafe to call into
+# async-only APIs like FlexRadioClient.tune().
+_main_loop: asyncio.AbstractEventLoop | None = None
+# DX-cluster telnet feed server (SDC-Connectors et al.), started in main().
+_telnet_feed: "telnet_server.TelnetServer | None" = None
 
 # Highest-freq band first, descending. Matches SmartSDR / HRD convention.
 # Includes microwave bands so they have tab slots if spots ever arrive (rare via
@@ -283,6 +358,563 @@ async def flex_inject_worker():
         await asyncio.sleep(FLEX_INJECT_RATE_SEC)
 
 
+# ---------------- WSJT-X UDP integration ----------------
+# Per-client WSJT-X state. Keyed by client_id so multiple WSJT-X instances
+# can be tracked independently (typical in SO2R: one WSJT-X per radio).
+# Each entry carries the latest dial freq + mode + the source addr so
+# Reply UDP packets can be sent back to the right WSJT-X.
+_wsjtx_state: dict[str, dict] = {}
+_wsjtx_state_lock = threading.Lock()
+_wsjtx_transport = None  # set by the listener task on startup; reused for sends
+
+# FT8 message text → spotted callsign + grid extractor.
+# Standard message forms:
+#   "CQ <call> <grid>"              — call is the transmitter
+#   "CQ DX <call> <grid>"           — same, with directional prefix
+#   "CQ TEST <call> <grid>"         — contest CQ (Field Day, etc.)
+#   "<callee> <transmitter> <msg>"  — directed message; transmitter is the SECOND call
+#                                     per the FT8 protocol convention. <msg> may be a
+#                                     grid (AB12), a signal report (-15), an ack (R-15 / RR73),
+#                                     or a 73.
+_GRID_RE = re.compile(r'^[A-R]{2}[0-9]{2}([a-x]{2})?$')
+_CALL_RE = re.compile(r'^[A-Z0-9]{1,3}[0-9][A-Z0-9]*[A-Z](?:/[A-Z0-9]+)?$')
+_CQ_PREFIX_WORDS = {"DX", "NA", "EU", "AS", "AF", "OC", "SA", "JA", "TEST", "FD", "WW"}
+# FT8 reserved tokens that can collide with the grid regex (RR73 in particular —
+# RR is in A-R range and 73 looks like grid digits, but the token is the
+# final-confirmation marker, never an actual grid).
+_FT8_RESERVED_TOKENS = {"RR73", "RRR", "73"}
+
+
+def _is_grid(s: str) -> bool:
+    if not s or s in _FT8_RESERVED_TOKENS:
+        return False
+    return bool(_GRID_RE.match(s))
+
+
+def _looks_like_call(s: str) -> bool:
+    """Heuristic: starts with letter or digit, contains a digit, looks like a callsign.
+    Tolerates portable/modifier suffixes (/P, /M, /<region>).
+    """
+    return bool(s and _CALL_RE.match(s.upper()))
+
+
+def parse_ft8_message(message: str) -> tuple[str | None, str | None]:
+    """Extract (transmitting_call, grid) from a WSJT-X-decoded FT8/FT4 message text.
+
+    Returns (call, grid) where either may be None if the form isn't recognized.
+    The *call* returned is the station that TRANSMITTED the signal — the one
+    we'd want to spot on the cluster. Per FT8 protocol, in directed messages
+    that's the SECOND call ("<being_called> <transmitter> <message>").
+    """
+    if not message:
+        return None, None
+    parts = message.strip().split()
+    if not parts:
+        return None, None
+
+    if parts[0] == "CQ":
+        # "CQ <call> [<grid>]" or "CQ <prefix> <call> [<grid>]"
+        if len(parts) >= 2 and parts[1] in _CQ_PREFIX_WORDS:
+            call_idx = 2
+        else:
+            call_idx = 1
+        if len(parts) > call_idx and _looks_like_call(parts[call_idx]):
+            call = parts[call_idx]
+            grid = parts[call_idx + 1] if len(parts) > call_idx + 1 and _is_grid(parts[call_idx + 1]) else None
+            return call, grid
+        return None, None
+
+    # Directed exchange: "<callee> <transmitter> <message>"
+    # Skip if first token isn't a call (might be a non-standard format).
+    if len(parts) >= 2 and _looks_like_call(parts[0]) and _looks_like_call(parts[1]):
+        transmitter = parts[1]
+        grid = None
+        if len(parts) >= 3 and _is_grid(parts[2]):
+            grid = parts[2]
+        return transmitter, grid
+
+    return None, None
+
+
+def _wsjtx_spotter_label(client_id: str) -> str:
+    """Extract a short instance label from a WSJT-X client_id.
+
+    WSJT-X title format is typically 'WSJT-X - <InstanceName>' (e.g.
+    'WSJT-X - SliceA' for the SO2R instance Fred runs on his Flex SliceA).
+    This returns the part after the last ' - ' separator, which becomes
+    the displayed spotter on WSJTX-LOCAL spots — visual confirmation
+    that the spot came from the operator's running WSJT-X right now.
+
+    Falls back to the whole client_id if no separator, or 'WSJTX' if empty.
+    """
+    cid = (client_id or "").strip()
+    if not cid:
+        return "WSJTX"
+    if " - " in cid:
+        label = cid.rsplit(" - ", 1)[-1].strip()
+        return label or "WSJTX"
+    return cid
+
+
+def _wsjtx_state_update(client_id: str, parsed: dict, source_addr: tuple):
+    """Refresh per-client WSJT-X state from a parsed Status message."""
+    with _wsjtx_state_lock:
+        _wsjtx_state[client_id] = {
+            "ts": time.time(),
+            "client_id": client_id,
+            "dial_freq_hz": parsed.get("dial_freq_hz", 0),
+            "mode": parsed.get("mode", "") or "",
+            "sub_mode": parsed.get("sub_mode", "") or "",
+            "rx_df": parsed.get("rx_df", 0) or 0,
+            "tx_df": parsed.get("tx_df", 0) or 0,
+            "de_call": parsed.get("de_call", "") or "",
+            "de_grid": parsed.get("de_grid", "") or "",
+            "tx_enabled": parsed.get("tx_enabled", False),
+            "transmitting": parsed.get("transmitting", False),
+            "decoding": parsed.get("decoding", False),
+            "source_addr": source_addr,  # (host, port) — where to send Reply UDP back to
+        }
+
+
+def _wsjtx_state_get_latest() -> dict | None:
+    """Return the most recently-updated WSJT-X state entry, or None if empty/stale."""
+    cutoff = time.time() - WSJTX_STATE_TTL_SEC
+    with _wsjtx_state_lock:
+        live = [s for s in _wsjtx_state.values() if s["ts"] >= cutoff]
+        if not live:
+            return None
+        return max(live, key=lambda s: s["ts"])
+
+
+def _wsjtx_state_for_band(band: str) -> dict | None:
+    """Return the most-recent live WSJT-X state whose dial frequency falls
+    on the given band, or None if no WSJT-X instance is currently tuned to
+    that band. Used by click-to-tune to gate WSJT-X-mode routing on actual
+    band match — clicking an FT8 spot when no WSJT-X is on that band does
+    nothing (intentionally, per operator-respect rule)."""
+    if not band:
+        return None
+    cutoff = time.time() - WSJTX_STATE_TTL_SEC
+    matches = []
+    with _wsjtx_state_lock:
+        for state in _wsjtx_state.values():
+            if state["ts"] < cutoff:
+                continue
+            state_band = dxcluster.freq_to_band(state["dial_freq_hz"] / 1000.0)
+            if state_band == band:
+                matches.append(state)
+    if not matches:
+        return None
+    return max(matches, key=lambda s: s["ts"])
+
+
+def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
+    """Convert a WSJT-X Decode message into a DXSpot and feed it into add_spot()
+    with cluster_name='WSJTX-LOCAL' so source-precedence dedup gives our local
+    decodes priority over external cluster duplicates of the same signal.
+    """
+    client_id = parsed.get("client_id") or "WSJTX"
+    state = None
+    with _wsjtx_state_lock:
+        state = _wsjtx_state.get(client_id)
+    if state is None:
+        # No Status received yet for this client_id — we don't know the dial freq,
+        # so we can't compute the RF frequency. Skip until first Status arrives.
+        return
+    dial_hz = state.get("dial_freq_hz", 0)
+    if not dial_hz:
+        return
+
+    delta_freq = parsed.get("delta_freq", 0) or 0
+    rf_hz = dial_hz + delta_freq
+    freq_khz = rf_hz / 1000.0
+
+    message = parsed.get("message", "") or ""
+    call, grid = parse_ft8_message(message)
+    if not call:
+        return  # message format we don't recognize as a spottable signal
+
+    # Filter our own transmissions if WSJT-X loops them back as decodes.
+    de_call = (state.get("de_call") or "").upper()
+    if de_call and call.upper() == de_call:
+        return
+
+    # WSJT-X mode glyph maps to a printable mode string. ~ = FT8, + = FT4.
+    glyph = parsed.get("mode", "") or ""
+    mode_str = {"~": "FT8", "+": "FT4"}.get(glyph, "FT8")
+
+    spot = dxcluster.DXSpot(
+        spotter=_wsjtx_spotter_label(client_id),  # 'SliceA' from 'WSJT-X - SliceA'
+        freq_khz=freq_khz,
+        dx_call=call,
+        comment=message[:60],
+        time_utc=time.strftime("%H%M", time.gmtime()),
+        mode=mode_str,
+        snr=parsed.get("snr"),
+        grid=grid,
+        audio_offset=delta_freq,
+    )
+    add_spot(spot, "WSJTX-LOCAL")
+
+    # Stash WSJT-X-specific fields needed to construct a Reply that matches
+    # the original decode in WSJT-X's recent-decode list. Reply matching
+    # uses time_ms and delta_time as lookup keys (not just tolerance), so
+    # current_time_ms() at click time wouldn't match — we need to replay
+    # the same time the decode reported.
+    cache_key = _spot_dedup_key(dxcluster.freq_to_band(freq_khz), mode_str, freq_khz, call)
+    with _lock:
+        cached = _cache.get(cache_key)
+        if cached and cached.get("source") == "WSJTX-LOCAL":
+            cached["wsjtx_time_ms"] = parsed.get("time_ms", 0) or 0
+            cached["wsjtx_delta_time"] = parsed.get("delta_time", 0.0) or 0.0
+            cached["wsjtx_glyph"] = parsed.get("mode", "~") or "~"
+
+
+DXCC_CHALLENGE_BANDS = ("160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m")
+DXCC_VHF_BANDS = ("2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm")
+VUCC_BANDS = ("6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm")
+WAS_TARGET = 50
+WAZ_TARGET = 40
+
+
+def _build_scores_payload() -> dict:
+    """ARRL-default award rollup. Per the per-band-scope memory rule, this
+    surfaces only ARRL-tracked awards by default (DXCC variants, Challenge,
+    WAS, WAZ, VUCC). Personal goals via user extension is a future feature."""
+    if not _worked:
+        return {"error": "worked_state not loaded"}
+
+    # DXCC by mode class — confirmed entities (set of DXCC IDs). DXCC-ID
+    # keyed (not country-name) so QRZ/cty.dat label drift can't double-count.
+    # Mixed = any mode class. Includes a small "Other" bucket (digital voice,
+    # etc. classified as Other) but ARRL only awards the four named variants.
+    dxcc_w = {"Mixed": set(_worked.worked_dxcc), "CW": set(), "Phone": set(), "Digital": set()}
+    dxcc_c = {"Mixed": set(_worked.confirmed_dxcc), "CW": set(), "Phone": set(), "Digital": set()}
+    for (d, cls) in _worked.worked_dxcc_modeclass:
+        if cls in dxcc_w:
+            dxcc_w[cls].add(d)
+    for (d, cls) in _worked.confirmed_dxcc_modeclass:
+        if cls in dxcc_c:
+            dxcc_c[cls].add(d)
+    dxcc = {
+        cls: {"worked": len(dxcc_w[cls]), "confirmed": len(dxcc_c[cls])}
+        for cls in ("Mixed", "CW", "Phone", "Digital")
+    }
+    # Satellite is a fifth DXCC variant ARRL recognizes (PROP_MODE=SAT).
+    dxcc["Satellite"] = {
+        "worked": len(_worked.worked_dxcc_satellite),
+        "confirmed": len(_worked.confirmed_dxcc_satellite),
+    }
+
+    # DXCC Challenge — sum of confirmed (dxcc_id, band) slots on the 10
+    # Challenge bands (160-6m). Anything above 6m (VHF/UHF, satellite) does
+    # NOT count. We compute it AFTER dxcc_by_band below so it pulls from
+    # the same terrestrial-filtered counts (band_w / band_c).
+
+    # Per-band DXCC entity counts — terrestrial only (ARRL excludes satellite
+    # from per-band DXCC). Computed from the deduped qsos list so the merged
+    # prop_mode field (backfilled from LoTW onto matching QRZ records) is
+    # honored — QRZ alone doesn't carry PROP_MODE.
+    band_w: dict[str, set[str]] = {}
+    band_c: dict[str, set[str]] = {}
+    for q in _worked.qsos:
+        pm = (q.get("prop_mode") or "").strip().upper()
+        if pm == "SAT":
+            continue
+        b = (q.get("band") or "").strip().lower()
+        d = (q.get("dxcc") or "").strip()
+        if not b or not d:
+            continue
+        confirmed = (
+            (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
+            or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
+            or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")
+        )
+        band_w.setdefault(b, set()).add(d)
+        if confirmed:
+            band_c.setdefault(b, set()).add(d)
+    dxcc_by_band: dict[str, dict] = {}
+    for b in DXCC_CHALLENGE_BANDS:
+        dxcc_by_band[b] = {"worked": len(band_w.get(b, set())),
+                           "confirmed": len(band_c.get(b, set()))}
+    for b in DXCC_VHF_BANDS:
+        w = len(band_w.get(b, set()))
+        c = len(band_c.get(b, set()))
+        if w or c:
+            dxcc_by_band[b] = {"worked": w, "confirmed": c}
+
+    # Now derive Challenge from the terrestrial-filtered per-band counts so
+    # it agrees with the per-band rows above and excludes satellite leakage.
+    challenge_worked = sum(dxcc_by_band[b]["worked"] for b in DXCC_CHALLENGE_BANDS)
+    challenge_confirmed = sum(dxcc_by_band[b]["confirmed"] for b in DXCC_CHALLENGE_BANDS)
+
+    # FFMA + per-band VUCC — terrestrial only (PROP_MODE != SAT). Same
+    # rationale as DXCC by band: satellite QSOs frequently carry an HF/VHF
+    # band tag (uplink), and ARRL counts them under Satellite VUCC, not the
+    # per-band award. Computed from the deduped qsos list so backfilled
+    # prop_mode is honored.
+    ffma_target = len(_FFMA_GRID_SET) or 488
+    vucc_band_w: dict[str, set[str]] = {}
+    vucc_band_c: dict[str, set[str]] = {}
+    ffma_worked_set: set[str] = set()
+    ffma_confirmed_set: set[str] = set()
+    for q in _worked.qsos:
+        pm = (q.get("prop_mode") or "").strip().upper()
+        if pm == "SAT":
+            continue
+        b = (q.get("band") or "").strip().lower()
+        g = (q.get("grid") or "").strip().upper()[:4]
+        if not b or not g:
+            continue
+        confirmed = (
+            (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
+            or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
+            or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")
+        )
+        if b in VUCC_BANDS:
+            vucc_band_w.setdefault(b, set()).add(g)
+            if confirmed:
+                vucc_band_c.setdefault(b, set()).add(g)
+        if b == "6m" and g in _FFMA_GRID_SET:
+            ffma_worked_set.add(g)
+            if confirmed:
+                ffma_confirmed_set.add(g)
+
+    # WAS-by-band (5BWAS uses the 5 contest bands; we report all bands present)
+    was_by_band: dict[str, int] = {}
+    for (_st, b) in _worked.confirmed_state_band:
+        was_by_band[b] = was_by_band.get(b, 0) + 1
+
+    # VUCC — confirmed grid count per VHF/UHF band, terrestrial only
+    # (computed above into vucc_band_c with the SAT filter applied).
+    vucc: dict[str, int] = {b: len(vucc_band_c.get(b, set())) for b in VUCC_BANDS
+                             if vucc_band_c.get(b)}
+
+    return {
+        "as_of": time.time(),
+        "totals": {
+            "qsos": _worked.qso_count,
+            "unique_calls": _worked.unique_calls_count,
+            "confirmed_qsos": _worked.confirmed_qso_count,
+        },
+        "dxcc": dxcc,
+        "challenge": {
+            "worked": challenge_worked,
+            "confirmed": challenge_confirmed,
+            "bands": list(DXCC_CHALLENGE_BANDS),
+        },
+        "was": {
+            "worked": len(_worked.worked_states),
+            "confirmed": len(_worked.confirmed_states),
+            "target": WAS_TARGET,
+            "by_band": was_by_band,
+        },
+        "waz": {
+            "worked": len(_worked.worked_cq_zones),
+            "confirmed": len(_worked.confirmed_cq_zones),
+            "target": WAZ_TARGET,
+        },
+        "vucc": vucc,
+        "vucc_satellite": {
+            "worked": len(_worked.worked_satellite_grids),
+            "confirmed": len(_worked.confirmed_satellite_grids),
+            "target": 100,
+        },
+        "ffma": {
+            "worked": len(ffma_worked_set),
+            "confirmed": len(ffma_confirmed_set),
+            "target": ffma_target,
+        },
+        "dxcc_by_band": dxcc_by_band,
+    }
+
+
+def _refresh_cache_worked_status():
+    """Re-evaluate worked-state-derived fields on every cached spot. Called
+    after a fresh QSO is logged so the spot panel reflects the new worked /
+    confirmed status immediately, not after the QRZ → ADIF → reload roundtrip.
+    Cheap: at most MAX_SPOTS=5000 entries, each lookup is O(1)."""
+    if not _worked:
+        return
+    with _lock:
+        for s in _cache.values():
+            s["call_status"] = _worked.call_status(s["dx_call"])
+            country = s.get("country", "")
+            band = s["band"]
+            mode = s.get("mode") or ""
+            modeclass = s.get("modeclass") or (mode_class(mode) if mode else "")
+            if country:
+                s["dxcc_band_status"] = _worked.country_band_status(country, band)
+                if mode:
+                    s["dxcc_band_mode_status"] = _worked.country_band_mode_status(country, band, mode)
+                if modeclass:
+                    s["dxcc_band_modeclass_status"] = _worked.country_band_modeclass_status(country, band, modeclass)
+            grid = s.get("grid", "")
+            if grid:
+                s["grid_band_status"] = _worked.grid_band_status(grid, band)
+
+
+def _build_adif_record(parsed: dict, country: str = "", dxcc: str = "", band: str = "") -> str:
+    """Build a single ADIF record string from a parsed QSO Logged message.
+    Returns the record text (one line, ending with `<EOR>`). No newline.
+    Used both for appending to the local log file AND for uploading to QRZ /
+    ClubLog / eQSL — keeps a single source of truth for the field set."""
+    fields = []
+    def add(tag: str, val):
+        if val is None:
+            return
+        s = str(val).strip()
+        if not s:
+            return
+        fields.append(f"<{tag}:{len(s)}>{s}")
+
+    add("CALL", parsed.get("dx_call"))
+    add("BAND", band)
+    add("MODE", parsed.get("mode"))
+    freq_hz = parsed.get("freq_hz", 0) or 0
+    if freq_hz:
+        add("FREQ", f"{freq_hz/1e6:.6f}")
+    add("QSO_DATE", parsed.get("date_on"))
+    add("TIME_ON", parsed.get("time_on"))
+    add("QSO_DATE_OFF", parsed.get("date_off"))
+    add("TIME_OFF", parsed.get("time_off"))
+    add("RST_SENT", parsed.get("report_sent"))
+    add("RST_RCVD", parsed.get("report_rcvd"))
+    add("TX_PWR", parsed.get("tx_power"))
+    add("STATION_CALLSIGN", parsed.get("my_call"))
+    add("OPERATOR", parsed.get("operator_call"))
+    add("MY_GRIDSQUARE", parsed.get("my_grid"))
+    add("GRIDSQUARE", parsed.get("dx_grid"))
+    add("NAME", parsed.get("name"))
+    add("COMMENT", parsed.get("comments"))
+    if country:
+        add("COUNTRY", country)
+    if dxcc:
+        add("DXCC", dxcc)
+    add("PROP_MODE", parsed.get("adif_prop_mode"))
+
+    return " ".join(fields) + " <EOR>"
+
+
+def _append_to_qso_log_adif(adif_record: str):
+    """Append the given ADIF record to the local log file. Creates the file
+    with an ADIF header on first write."""
+    try:
+        if not QSO_LOG_PATH.exists():
+            with open(QSO_LOG_PATH, "w") as f:
+                f.write("Grayline real-time WSJT-X QSO log\n")
+                f.write("<ADIF_VER:5>3.1.4 <PROGRAMID:8>Grayline <EOH>\n")
+        with open(QSO_LOG_PATH, "a") as f:
+            f.write(adif_record + "\n")
+    except Exception as e:
+        log.warning("Failed to append to QSO log %s: %s", QSO_LOG_PATH, e)
+
+
+def _ingest_wsjtx_qso_logged(parsed: dict):
+    """Handle WSJT-X QSO Logged (type 5): push QSO into worked-state in-memory,
+    append to local ADIF, refresh cache statuses so the UI flips pills from
+    'new' to 'worked' immediately on next refresh."""
+    dx_call = (parsed.get("dx_call") or "").strip()
+    dx_grid = (parsed.get("dx_grid") or "").strip()
+    mode = (parsed.get("mode") or "").strip().upper()
+    freq_hz = parsed.get("freq_hz", 0) or 0
+    freq_khz = freq_hz / 1000.0 if freq_hz else 0
+    band = dxcluster.freq_to_band(freq_khz) if freq_khz else ""
+
+    if not dx_call:
+        log.warning("QSO Logged with empty dx_call — ignoring")
+        return
+
+    # cty.dat enrichment for country / DXCC entity
+    country = ""
+    dxcc = ""
+    if _cty:
+        e = _cty.lookup(dx_call)
+        if e:
+            country = e.entity or ""
+            dxcc_val = getattr(e, "dxcc", None) or getattr(e, "dxcc_id", None)
+            if dxcc_val:
+                dxcc = str(dxcc_val)
+
+    # Push to in-memory worked-state
+    if _worked:
+        _worked.record_qso(call=dx_call, country=country, dxcc=dxcc,
+                           band=band, mode=mode, grid=dx_grid)
+
+    # Build the ADIF record once, use for both local-log append and uploads
+    adif_record = _build_adif_record(parsed, country=country, dxcc=dxcc, band=band)
+    _append_to_qso_log_adif(adif_record)
+
+    # Refresh worked-state-derived fields on every cached spot so award pills
+    # update immediately on the next /spots.json poll (5s default)
+    _refresh_cache_worked_status()
+
+    # Fire parallel uploads to QRZ / ClubLog / eQSL. Background thread,
+    # fire-and-forget, never blocks the WSJT-X UDP handler. Results land
+    # in /home/fred/grayline/qso_uploads.log per service per QSO.
+    logbook_uploads.upload_qso_to_all(adif_record, dx_call=dx_call)
+
+    log.info("QSO Logged: %s on %s %s (country=%r grid=%r) — ADIF appended, "
+             "worked-state updated, uploads dispatched",
+             dx_call, band or '?', mode, country, dx_grid)
+
+
+def _wsjtx_handle_datagram(data: bytes, addr: tuple):
+    """Top-level WSJT-X UDP message dispatcher. Called from the asyncio
+    DatagramProtocol on each received packet. Errors are caught here so
+    one malformed packet can't kill the listener task."""
+    try:
+        from wsjtx_udp import (parse_message, MSG_HEARTBEAT, MSG_STATUS,
+                               MSG_DECODE, MSG_QSO_LOGGED)
+        msg_type, parsed = parse_message(data)
+        if msg_type is None or parsed is None:
+            return
+        if msg_type == MSG_STATUS:
+            _wsjtx_state_update(parsed["client_id"], parsed, addr)
+        elif msg_type == MSG_DECODE:
+            _ingest_wsjtx_decode(parsed, addr)
+        elif msg_type == MSG_QSO_LOGGED:
+            _ingest_wsjtx_qso_logged(parsed)
+        # Heartbeat: no-op (the source addr is already captured via Status).
+    except Exception as e:
+        log.warning("WSJT-X handler error: %s (data=%d bytes)", e, len(data))
+
+
+class _WsjtxProtocol(asyncio.DatagramProtocol):
+    def connection_made(self, transport):
+        global _wsjtx_transport
+        _wsjtx_transport = transport
+        sock = transport.get_extra_info("sockname")
+        log.info("WSJT-X UDP listener up on %s:%d", sock[0], sock[1])
+
+    def datagram_received(self, data, addr):
+        _wsjtx_handle_datagram(data, addr)
+
+    def error_received(self, exc):
+        log.warning("WSJT-X UDP error: %s", exc)
+
+    def connection_lost(self, exc):
+        global _wsjtx_transport
+        _wsjtx_transport = None
+        log.info("WSJT-X UDP listener closed (%s)", exc)
+
+
+async def wsjtx_listener_task():
+    """Bind UDP socket on WSJTX_LISTEN_HOST:WSJTX_LISTEN_PORT and process
+    incoming Heartbeat/Status/Decode messages from any WSJT-X instance
+    configured to send broadcasts here. Runs for the process lifetime."""
+    loop = asyncio.get_running_loop()
+    transport, _protocol = await loop.create_datagram_endpoint(
+        _WsjtxProtocol,
+        local_addr=(WSJTX_LISTEN_HOST, WSJTX_LISTEN_PORT))
+    try:
+        while True:
+            await asyncio.sleep(3600)  # task body — protocol handles datagrams
+    except asyncio.CancelledError:
+        transport.close()
+        raise
+
+
 def active_bands_snapshot() -> dict:
     """Return current Flex slice state as {bands: [list], slices: {n: {freq_mhz, mode, band}}}.
     Empty if Flex is disconnected or disabled."""
@@ -386,7 +1018,26 @@ _lock = threading.Lock()
 _cache: "OrderedDict[tuple, dict]" = OrderedDict()
 
 
-def add_spot(spot, _cluster_name):
+def _spot_dedup_key(band: str, mode: str, freq_khz: float, dx_call: str) -> tuple:
+    """Cache dedup key. WSJT-X modes use a coarser key without frequency
+    because FT8/FT4 audio offsets jitter cycle-to-cycle and across reporting
+    sources but represent the same station — same call + band + mode is
+    enough to identify the QSO opportunity. Other modes keep freq precision
+    so a station moving frequency creates a new spot entry (operator wants
+    to know where to listen)."""
+    if mode and mode.upper() in WSJTX_MODES:
+        return (band, mode, dx_call)
+    return (band, mode, round(freq_khz, 1), dx_call)
+
+
+def _telnet_feed_radius_mi(band: str) -> int:
+    """Tiered local-spotter radius for the telnet feed, mirroring the browser's
+    radiusForBand(): VHF+ bands use the tighter 150 mi gate, HF uses 300 mi."""
+    return (TELNET_FEED_RADIUS_VHF_MI if band in TELNET_FEED_VHF_PLUS_BANDS
+            else TELNET_FEED_RADIUS_HF_MI)
+
+
+def add_spot(spot, cluster_name):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
         return
@@ -396,7 +1047,22 @@ def add_spot(spot, _cluster_name):
     if "N0CALL" in (spot.spotter or "").upper():
         return
     mode = spot.mode or dxcluster.infer_mode(spot.freq_khz, REGION) or "UNK"
-    key = (band, mode, round(spot.freq_khz, 1), spot.dx_call)
+    key = _spot_dedup_key(band, mode, spot.freq_khz, spot.dx_call)
+
+    # Source-precedence dedup. If we already have this spot from a higher-priority
+    # source (our own WSJT-X or SparkGap), don't overwrite it with a lower-priority
+    # external one. Local-source spots are higher fidelity (no propagation hop, no
+    # third-party decoding) and the operator should always see those instead of
+    # cluster duplicates. SOURCE_PRIORITY is defined at the top of this module.
+    new_priority = SOURCE_PRIORITY.get(cluster_name, SOURCE_PRIORITY_DEFAULT)
+    with _lock:
+        existing = _cache.get(key)
+        if existing is not None:
+            existing_priority = SOURCE_PRIORITY.get(
+                existing.get("source", ""), SOURCE_PRIORITY_DEFAULT)
+            if new_priority < existing_priority:
+                # Higher-priority spot already cached. Skip the write entirely.
+                return
 
     # Distance is computed against the SPOTTER's QTH (where the listener is),
     # not the DX's QTH (where the rare station is). If a spotter near you
@@ -409,9 +1075,16 @@ def add_spot(spot, _cluster_name):
     # (FG1G/4/30 spotting EU on 2m, etc.). spotter_distance_mi() queues the
     # callsign for active QRZ lookup as a side effect, so subsequent spots
     # from a real-but-unresolved spotter will pass once the lookup completes.
-    distance_mi = spotter_distance_mi(spot.spotter)
-    if distance_mi is None:
-        return
+    #
+    # *-LOCAL sources bypass this check — those are us by definition, the
+    # "spotter" field is a slice label or skimmer ID rather than a QRZ-resolvable
+    # callsign, and distance is always 0 (we're at our own QTH).
+    if cluster_name.endswith("-LOCAL"):
+        distance_mi = 0
+    else:
+        distance_mi = spotter_distance_mi(spot.spotter)
+        if distance_mi is None:
+            return
 
     # cty.dat enrichment for the DX call (entity name doubles as the
     # bridge to your logbook's `country` field)
@@ -464,6 +1137,8 @@ def add_spot(spot, _cluster_name):
             "grid_band_status": grid_band_status,           # scoped to grid×band (FFMA on 6m, VUCC on 2m+)
             "comment": spot.comment[:60] if spot.comment else "",
             "time_utc": spot.time_utc,
+            "source": cluster_name,                         # WSJTX-LOCAL / SPARKGAP-LOCAL / GOCLUSTER / external — drives precedence dedup
+            "audio_offset_hz": getattr(spot, "audio_offset", 0) or 0,  # baseband audio offset (set for WSJT-X-sourced FT8 spots)
         }
         # keep newest, drop oldest if over cap
         _cache.move_to_end(key)
@@ -476,6 +1151,16 @@ def add_spot(spot, _cluster_name):
     # well clear of the saturation point that caused the original audio
     # dropouts in GTBridge.
     _maybe_queue_flex_inject(_cache[key])
+
+    # Re-broadcast to the SDC / DX-cluster telnet feed, applying the same tiered
+    # local-spotter radius as the browser's "Local spotters only" toggle. By
+    # this point distance_mi is always numeric — 0 for *-LOCAL sources, verified
+    # miles otherwise (unverifiable/too-far spotters were dropped at ingest
+    # above) — so a single <= comparison reproduces the UI filter exactly.
+    # Runs on the event-loop thread (add_spot is driven by the async on_spot /
+    # WSJT-X paths), so the non-blocking writer.write() calls are loop-safe.
+    if _telnet_feed is not None and distance_mi <= _telnet_feed_radius_mi(band):
+        _telnet_feed.broadcast_spot(spot)
 
 
 def purge_loop():
@@ -505,6 +1190,7 @@ def _load_ffma_grids() -> list[str]:
 
 
 _FFMA_GRIDS = _load_ffma_grids()
+_FFMA_GRID_SET = frozenset(g.upper() for g in _FFMA_GRIDS)
 log.info("FFMA grid list loaded: %d grids", len(_FFMA_GRIDS))
 
 
@@ -534,6 +1220,9 @@ th { color: #ff0; font-weight: normal; font-size: 0.75em; background: #1a1a00; }
 .spotter { color: #999; font-size: 0.85em; }
 .spotter.us { color: #5f5; font-weight: 600; }       /* spotter is us — we definitely heard it */
 tr.us-spotted { box-shadow: inset 3px 0 0 #5f5; }     /* subtle green left edge on the row */
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #1a2a3a; }
+tr.tuning { background: #2a4a6a !important; transition: background 0.6s; }
 .snr { text-align: right; }
 .snr.neg { color: #f99; }
 .snr.pos { color: #9f9; }
@@ -672,6 +1361,83 @@ details[open] .gear-icon { color: #fff; }
   padding: 0.2em 0.6em; cursor: pointer; margin-right: 0.4em; font-size: 1em;
 }
 .gear-panel .actions button:hover { background: #333; color: #fff; }
+
+/* Top-level view tabs (Live / Scores / Log search) */
+.view-tabs { display: flex; gap: 0.2em; margin-bottom: 0.6em; border-bottom: 1px solid #333; padding-bottom: 0.1em; }
+.view-tabs button {
+  background: #0a0a0a; color: #aaa; border: 1px solid #222; border-bottom: none;
+  padding: 0.4em 1.2em; cursor: pointer; font-size: 0.95em; font-family: inherit;
+  outline: none;
+}
+.view-tabs button:hover { background: #1a1a1a; color: #eee; }
+.view-tabs button.active {
+  background: #ff0; color: #000; font-weight: 700; border-color: #ff0;
+}
+.view-section { display: none; }
+.view-section.active { display: block; }
+
+/* Scores — multi-column GT-style W/C/Goal table */
+.scores-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22em, 1fr));
+  gap: 0.4em 1.2em;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.score-card {
+  background: #0a0a0a; border: 1px solid #1a1a1a; padding: 0.4em 0.6em;
+}
+.score-card h3 {
+  margin: 0 0 0.3em; font-size: 0.85em; color: #ff0;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid #222; padding-bottom: 0.2em;
+}
+.score-card table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+.score-card th {
+  font-weight: normal; color: #888; font-size: 0.75em; text-align: right;
+  padding: 0 0.4em 0.1em; border-bottom: 1px solid #1a1a1a; background: transparent;
+}
+.score-card th:first-child { text-align: left; }
+.score-card td { padding: 0.05em 0.4em; border-bottom: 1px dotted #111; }
+.score-card td.s-name  { color: #ccc; }
+.score-card td.s-w, .score-card td.s-c, .score-card td.s-g { text-align: right; }
+.score-card td.s-w     { color: #fb6; }       /* worked = orange (matches scope-needed accent) */
+.score-card td.s-c.complete { color: #5c5; font-weight: 600; }
+.score-card td.s-c.partial  { color: #ff5; font-weight: 600; }
+.score-card td.s-c.empty    { color: #555; }
+.score-card td.s-g     { color: #666; }
+.scores-totals { color: #888; font-size: 0.85em; margin-top: 1em; }
+
+.log-search-input, .log-search-select {
+  background: #1a1a1a; color: #eee; border: 1px solid #333;
+  padding: 0.3em 0.5em; font-family: inherit; font-size: 0.9em;
+}
+.log-search-input { width: 9em; }
+.log-search-input.wide { width: 13em; }
+.log-search-input:focus, .log-search-select:focus { outline: none; border-color: #ff0; }
+.log-search-filters {
+  display: flex; gap: 0.4em; flex-wrap: wrap; align-items: center; margin-bottom: 0.4em;
+}
+.log-search-filters label { color: #888; font-size: 0.8em; }
+.log-search-meta { color: #888; font-size: 0.85em; margin-left: 0.6em; flex: 1; }
+.log-search-pager { display: flex; gap: 0.4em; align-items: center; font-size: 0.85em; color: #aaa; }
+.log-search-pager button {
+  background: #1a1a1a; color: #ccc; border: 1px solid #333;
+  padding: 0.2em 0.7em; cursor: pointer; font-family: inherit; font-size: 0.9em;
+}
+.log-search-pager button:hover:not(:disabled) { background: #2a2a2a; color: #fff; }
+.log-search-pager button:disabled { opacity: 0.3; cursor: default; }
+.log-search-results { margin-top: 0.4em; border-top: 1px solid #1a1a1a; }
+.log-search-results table { font-size: 0.82em; }
+.log-search-results td.q-call { color: #5cf; font-weight: 600; }
+.log-search-results td.q-conf.lotw { color: #5c5; }
+.log-search-results td.q-conf.unconf { color: #777; }
+.log-search-results .empty { color: #666; padding: 0.5em; }
+.log-search-clear {
+  color: #888; font-size: 0.8em; cursor: pointer; user-select: none;
+  padding: 0.2em 0.5em;
+}
+.log-search-clear:hover { color: #ff0; }
 </style>
 </head><body>
 <div class="header-row">
@@ -696,36 +1462,130 @@ details[open] .gear-icon { color: #fff; }
           section.
         </div>
       </div>
+      <div class="group">
+        <h3>Spotter radius per band (mi)</h3>
+        <div class="checkbox-grid" id="settings_radius"></div>
+        <div class="scope-help">
+          Applies when "Local spotters only" is checked. Blank = tiered
+          default (HF 300, 6m+ 150); enter a value to override a band.
+        </div>
+      </div>
       <div class="actions">
         <button id="settings_all_bands">All bands</button>
         <button id="settings_no_bands">No bands</button>
         <button id="settings_all_modes">All modes</button>
         <button id="settings_no_modes">No modes</button>
         <button id="settings_reset_scopes">Reset scopes to defaults</button>
+        <button id="settings_reset_radii">Reset radii to defaults</button>
       </div>
     </div>
   </details>
 </div>
 <div class="status" id="status">Loading…</div>
-<div class="controls">
-  <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
-  <label style="margin-left:1em"><input type="checkbox" id="filter300"> Spotters within 300 mi of EM79sm only</label>
-  <span class="legend">
-    <span style="color:#f0f">callsign new</span> ·
-    <span style="color:#ff5">worked</span> ·
-    <span style="color:#5c5">confirmed</span> ·
-    <span style="color:#000;background:#ffa500;padding:0 4px;border-radius:2px">scope needed</span>
-  </span>
+<div class="view-tabs">
+  <button data-view="live" class="active">Live</button>
+  <button data-view="scores">Scores</button>
+  <button data-view="log">Log search</button>
 </div>
-<div class="tab-strip" id="tab_strip"></div>
-<div class="band-mode-toggles" id="band_mode_toggles"></div>
-<div class="band-content" id="band_content"></div>
+<div class="view-section active" id="view_live">
+  <div class="controls">
+    <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
+    <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of EM79sm)</label>
+    <span class="legend">
+      <span style="color:#f0f">callsign new</span> ·
+      <span style="color:#ff5">worked</span> ·
+      <span style="color:#5c5">confirmed</span> ·
+      <span style="color:#000;background:#ffa500;padding:0 4px;border-radius:2px">scope needed</span>
+    </span>
+  </div>
+  <div class="tab-strip" id="tab_strip"></div>
+  <div class="band-mode-toggles" id="band_mode_toggles"></div>
+  <div class="band-content" id="band_content"></div>
+</div>
+<div class="view-section" id="view_scores">
+  <div class="scores-grid" id="scores_grid">Loading…</div>
+  <div class="scores-totals" id="scores_totals"></div>
+</div>
+<div class="view-section" id="view_log">
+  <div class="log-search-filters">
+    <input type="text" id="lf_call" class="log-search-input" placeholder="callsign…" autocomplete="off">
+    <select id="lf_band" class="log-search-select">
+      <option value="">any band</option>
+      <option value="160m">160m</option><option value="80m">80m</option>
+      <option value="60m">60m</option><option value="40m">40m</option>
+      <option value="30m">30m</option><option value="20m">20m</option>
+      <option value="17m">17m</option><option value="15m">15m</option>
+      <option value="12m">12m</option><option value="10m">10m</option>
+      <option value="6m">6m</option><option value="2m">2m</option>
+      <option value="1.25m">1.25m</option><option value="70cm">70cm</option>
+      <option value="33cm">33cm</option><option value="23cm">23cm</option>
+      <option value="13cm">13cm</option><option value="9cm">9cm</option>
+      <option value="6cm">6cm</option><option value="3cm">3cm</option>
+    </select>
+    <select id="lf_mode" class="log-search-select">
+      <option value="">any mode</option>
+      <option value="CW">CW</option>
+      <option value="FT8">FT8</option><option value="FT4">FT4</option>
+      <option value="SSB">SSB</option><option value="USB">USB</option>
+      <option value="LSB">LSB</option><option value="AM">AM</option>
+      <option value="FM">FM</option>
+      <option value="RTTY">RTTY</option><option value="PSK31">PSK31</option>
+      <option value="MFSK">MFSK</option><option value="JT65">JT65</option>
+      <option value="JT9">JT9</option><option value="MSK144">MSK144</option>
+      <option value="Q65">Q65</option><option value="JS8">JS8</option>
+    </select>
+    <input type="text" id="lf_dxcc" class="log-search-input wide" placeholder="entity (e.g. Russia)" autocomplete="off">
+    <input type="text" id="lf_grid" class="log-search-input" placeholder="grid (e.g. EM79)" autocomplete="off">
+    <span class="log-search-clear" id="lf_clear">clear</span>
+    <span class="log-search-meta" id="log_search_meta"></span>
+  </div>
+  <div class="log-search-pager">
+    <label>per page</label>
+    <select id="lf_pagesize" class="log-search-select">
+      <option value="25">25</option>
+      <option value="50">50</option>
+      <option value="100" selected>100</option>
+      <option value="200">200</option>
+      <option value="500">500</option>
+    </select>
+    <button id="lf_first">«</button>
+    <button id="lf_prev">‹ Prev</button>
+    <span id="lf_pageinfo">page 1 / 1</span>
+    <button id="lf_next">Next ›</button>
+    <button id="lf_last">»</button>
+  </div>
+  <div class="log-search-results" id="log_search_results"></div>
+</div>
 <script>
 const BAND_ORDER = ["3cm","6cm","9cm","13cm","23cm","33cm","70cm","1.25m","2m","6m","10m","12m","15m","17m","20m","30m","40m","60m","80m","160m"];
 // Per-band award scopes — drives which cells get the orange highlight treatment.
 const DXCC_BANDS = new Set(["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"]);
 const GRID_BANDS = new Set(["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]);
-const RADIUS_MI = 300;
+// Per-band spotter radius. Tiered defaults: HF = 300 mi; 6m and up
+// (VHF/UHF) = 150 mi (localized — nearer spotters are the signal).
+// Unlisted bands fall back to 300. Any band can be overridden in the
+// settings panel; overrides persist in localStorage and win over the
+// tiered default.
+const RADIUS_HF_MI = 300;
+const RADIUS_VHF_MI = 150;
+const VHF_PLUS_BANDS = new Set(
+  ["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm","1.25cm"]);
+function defaultRadiusForBand(band){
+  return VHF_PLUS_BANDS.has(band) ? RADIUS_VHF_MI : RADIUS_HF_MI;
+}
+let bandRadiusOverride = {};
+try {
+  bandRadiusOverride =
+    JSON.parse(localStorage.getItem("grayline_band_radius") || "{}") || {};
+} catch (e) { bandRadiusOverride = {}; }
+function saveBandRadius(){
+  localStorage.setItem("grayline_band_radius",
+    JSON.stringify(bandRadiusOverride));
+}
+function radiusForBand(band){
+  const o = bandRadiusOverride[band];
+  return (typeof o === "number" && o > 0) ? o : defaultRadiusForBand(band);
+}
 // Common ADIF modes — pre-seed the gear-panel "Modes" list so users can
 // disable rare modes (WSPR, SSTV, etc.) BEFORE the first spot of that mode
 // arrives, instead of having to wait for traffic to reveal the checkbox.
@@ -903,10 +1763,14 @@ function scopeTags(s) {
   return out;
 }
 
-// True if any enabled scope for this spot is currently "new" (unworked).
-// Drives the Show-wanted filter and the per-band wanted/total counter.
+// True if any enabled scope for this spot is unconfirmed (still needed for
+// the award). Both 'new' (never worked) and 'worked' (worked but not yet
+// confirmed via LoTW/QRZ/QSL) count as needed — DXCC/FFMA/VUCC require
+// confirmation, not just contact, so a worked-not-confirmed entity isn't
+// earned yet. Drives the Show-wanted filter and the per-band wanted/total
+// counter.
 function anyScopeNeeded(s) {
-  return scopeTags(s).some(t => t.status === "new");
+  return scopeTags(s).some(t => t.status === "new" || t.status === "worked");
 }
 
 // Status enum order — used for picking the "weakest" (most-needed) status.
@@ -1022,6 +1886,7 @@ function renderSettingsPanel(spots) {
   // Cells are checkboxes for scopes that apply to that band; cells are blank
   // (not just disabled) when the scope doesn't apply (e.g. DXCC-CW on 2m).
   renderScopeGrid();
+  renderRadiusGrid();
 }
 
 function renderScopeGrid() {
@@ -1058,6 +1923,40 @@ function renderScopeGrid() {
   });
 }
 
+function renderRadiusGrid() {
+  const box = document.getElementById("settings_radius");
+  // Build once: a 5s refresh re-runs renderSettingsPanel; rebuilding the
+  // inputs each tick would wipe a value mid-typing. Overrides only change
+  // via this grid / the reset button, so a one-time build stays correct.
+  if (!box || box.children.length) return;
+  box.innerHTML = BAND_ORDER.map(b => {
+    const def = defaultRadiusForBand(b);
+    const ov = bandRadiusOverride[b];
+    const val = (typeof ov === "number" && ov > 0) ? ov : "";
+    return `<label><input type="number" min="1" max="9999" step="10" `
+      + `data-rband="${b}" value="${val}" placeholder="${def}" `
+      + `style="width:4.5em">${b}</label>`;
+  }).join("");
+  box.querySelectorAll("input[data-rband]").forEach(el => {
+    el.addEventListener("change", () => {
+      const b = el.dataset.rband;
+      const n = parseInt(el.value, 10);
+      if (Number.isFinite(n) && n > 0) bandRadiusOverride[b] = n;
+      else { delete bandRadiusOverride[b]; el.value = ""; }
+      saveBandRadius();
+      refresh();
+    });
+  });
+}
+
+document.getElementById("settings_reset_radii").addEventListener("click", () => {
+  bandRadiusOverride = {};
+  saveBandRadius();
+  const box = document.getElementById("settings_radius");
+  if (box) box.innerHTML = "";
+  renderRadiusGrid();
+  refresh();
+});
 document.getElementById("settings_all_bands").addEventListener("click", () => {
   disabledBands.clear();
   saveDisabledSet("grayline_disabled_bands", disabledBands);
@@ -1109,7 +2008,7 @@ async function refresh() {
     if (disabledModes.has(s.mode)) { filteredOut++; return false; }
     if (showWanted && !anyScopeNeeded(s)) { filteredOut++; return false; }
     if (filterOn) {
-      if (s.distance_mi !== null && s.distance_mi !== undefined && s.distance_mi > RADIUS_MI) {
+      if (s.distance_mi !== null && s.distance_mi !== undefined && s.distance_mi > radiusForBand(s.band)) {
         filteredOut++;
         return false;
       }
@@ -1276,7 +2175,7 @@ async function refresh() {
         distCell = "—";
       } else {
         distCell = s.distance_mi.toLocaleString() + " mi";
-        if (s.distance_mi > RADIUS_MI) distClass += " far";
+        if (s.distance_mi > radiusForBand(s.band)) distClass += " far";
       }
       const callStatus = s.call_status || "new";
       // DXCC and Grid cell highlights driven by the *enabled* award scopes
@@ -1286,14 +2185,18 @@ async function refresh() {
       const dxccCellClass = "country" + (dxccEff ? " " + dxccEff : "");
       const gridEff = effectiveGridStatus(s);
       const gridCellClass = "grid" + (gridEff ? " g" + gridEff : "");
-      const isUs = (s.spotter || "").toUpperCase().startsWith("WF8Z");
+      // Local source = us. Recognizes SparkGap, our running WSJT-X (any slice),
+      // and the legacy WF8Z-prefixed cluster path so existing infrastructure
+      // spots still highlight correctly.
+      const isUs = (s.source || "").endsWith("-LOCAL")
+                || (s.spotter || "").toUpperCase().startsWith("WF8Z");
       const rowClass = isUs ? "us-spotted" : "";
       const spotterClass = isUs ? "spotter us" : "spotter";
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}">${escapeHTML(t.label)}</span>`
       ).join("");
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
-      table += `<tr class="${rowClass}">
+      table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
@@ -1331,6 +2234,289 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 5000);
+
+// Click-to-tune: delegate clicks on tr.clickable rows to /api/tune
+document.addEventListener("click", (ev) => {
+  const tr = ev.target.closest("tr.clickable");
+  if (!tr) return;
+  const call = tr.dataset.call;
+  const freq = parseFloat(tr.dataset.freq);
+  const mode = tr.dataset.mode || "";
+  if (!call || !freq) return;
+  // Visual feedback — flash the row briefly so the operator sees the click registered
+  tr.classList.add("tuning");
+  setTimeout(() => tr.classList.remove("tuning"), 600);
+  fetch("/api/tune", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({dx_call: call, freq_khz: freq, mode: mode})
+  }).then(r => r.json()).then(j => {
+    if (j.ok) {
+      console.log(`tuned ${call} on ${freq}: ${j.message || ''}`);
+    } else {
+      console.warn(`tune ${call} on ${freq} failed: ${j.error || 'unknown'}`);
+    }
+  }).catch(e => console.error("tune fetch failed:", e));
+});
+
+// ============== View tabs (Live / Scores / Log search) ==============
+function switchView(name) {
+  for (const btn of document.querySelectorAll(".view-tabs button")) {
+    btn.classList.toggle("active", btn.dataset.view === name);
+  }
+  for (const sec of document.querySelectorAll(".view-section")) {
+    sec.classList.toggle("active", sec.id === "view_" + name);
+  }
+}
+for (const btn of document.querySelectorAll(".view-tabs button")) {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+}
+
+// ============== Scores tab ==============
+function awardRow(name, worked, confirmed, target) {
+  const cls = (confirmed === 0) ? "empty" : (target && confirmed >= target ? "complete" : "partial");
+  return `<tr>
+    <td class="s-name">${name}</td>
+    <td class="s-w">${worked != null ? worked : ""}</td>
+    <td class="s-c ${cls}">${confirmed}</td>
+    <td class="s-g">${target || ""}</td>
+  </tr>`;
+}
+function awardCard(title, rows) {
+  return `<div class="score-card">
+    <h3>${title}</h3>
+    <table>
+      <tr><th>Award</th><th>W</th><th>C</th><th>Goal</th></tr>
+      ${rows.join("")}
+    </table>
+  </div>`;
+}
+function renderScores(j) {
+  const grid = document.getElementById("scores_grid");
+  if (!j || j.error) {
+    grid.innerHTML = `<span style="color:#f55">${(j && j.error) || "scores unavailable"}</span>`;
+    return;
+  }
+  const cards = [];
+
+  // DXCC by mode class (Mixed/CW/Phone/Digital/Satellite)
+  {
+    const rows = [];
+    for (const cls of ["Mixed", "CW", "Phone", "Digital", "Satellite"]) {
+      const d = j.dxcc[cls] || {worked: 0, confirmed: 0};
+      rows.push(awardRow("DXCC " + cls, d.worked, d.confirmed, 100));
+    }
+    cards.push(awardCard("DXCC", rows));
+  }
+
+  // DXCC by band — 160-6m always, plus any VHF/UHF where we have entries
+  {
+    const rows = [];
+    const ALL_BANDS = ["160m","80m","40m","30m","20m","17m","15m","12m","10m","6m",
+                      "2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm","1.25cm"];
+    for (const b of ALL_BANDS) {
+      const d = j.dxcc_by_band && j.dxcc_by_band[b];
+      if (!d) continue;
+      rows.push(awardRow("DXCC " + b, d.worked, d.confirmed, 100));
+    }
+    cards.push(awardCard("DXCC by Band", rows));
+  }
+
+  // Challenge + WAS + WAZ + FFMA
+  {
+    const rows = [];
+    rows.push(awardRow("DXCC Challenge", j.challenge.worked, j.challenge.confirmed, 1000));
+    rows.push(awardRow("WAS", j.was.worked, j.was.confirmed, j.was.target));
+    rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
+    if (j.ffma) {
+      rows.push(awardRow("FFMA (6m)", j.ffma.worked, j.ffma.confirmed, j.ffma.target));
+    }
+    cards.push(awardCard("Challenge / WAS / WAZ / FFMA", rows));
+  }
+
+  // VHF/UHF — VUCC by band + Satellite
+  {
+    const rows = [];
+    const VUCC_TGT = {"6m":100,"2m":100,"1.25m":50,"70cm":50,"33cm":25,"23cm":25,"13cm":10,"9cm":5,"6cm":5,"3cm":5};
+    if (j.vucc_satellite) {
+      rows.push(awardRow("VUCC Satellite", j.vucc_satellite.worked, j.vucc_satellite.confirmed, j.vucc_satellite.target));
+    }
+    for (const b of ["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]) {
+      if (j.vucc && j.vucc[b] != null) {
+        rows.push(awardRow("VUCC " + b, null, j.vucc[b], VUCC_TGT[b] || 25));
+      }
+    }
+    if (rows.length) cards.push(awardCard("VHF / UHF / Satellite VUCC", rows));
+  }
+
+  grid.innerHTML = cards.join("");
+  const t = j.totals || {};
+  document.getElementById("scores_totals").textContent =
+    `${(t.qsos||0).toLocaleString()} QSOs · ${(t.unique_calls||0).toLocaleString()} unique calls · ` +
+    `${(t.confirmed_qsos||0).toLocaleString()} confirmed records`;
+}
+function fetchScores() {
+  fetch("/api/scores").then(r => r.json()).then(renderScores)
+    .catch(e => console.error("scores fetch failed:", e));
+}
+fetchScores();
+setInterval(fetchScores, 5 * 60 * 1000);  // refresh every 5 min — matches worked_state reload cadence
+
+// ============== Log search tab ==============
+let _logSearchTimer = null;
+let _logOffset = 0;
+let _logTotal = 0;
+let _logLastFetched = false;
+
+function fmtQsoTime(date, time) {
+  // ADIF date YYYYMMDD, time HHMM[SS]. Render as YYYY-MM-DD HH:MM.
+  if (!date || date.length < 8) return date || "";
+  const d = `${date.substr(0,4)}-${date.substr(4,2)}-${date.substr(6,2)}`;
+  const t = (time && time.length >= 4) ? ` ${time.substr(0,2)}:${time.substr(2,2)}` : "";
+  return d + t;
+}
+function fmtQslMethod(q) {
+  const parts = [];
+  if (q.lotw) parts.push("L");
+  if (q.eqsl) parts.push("e");
+  if (q.paper && !q.lotw && !q.eqsl) parts.push("Q");
+  return parts.join("") || "—";
+}
+
+function buildLogQuery() {
+  const limit = parseInt(document.getElementById("lf_pagesize").value, 10) || 100;
+  const params = new URLSearchParams();
+  const call = document.getElementById("lf_call").value.trim();
+  const band = document.getElementById("lf_band").value;
+  const mode = document.getElementById("lf_mode").value;
+  const dxcc = document.getElementById("lf_dxcc").value.trim();
+  const grid = document.getElementById("lf_grid").value.trim();
+  if (call) params.set("call", call);
+  if (band) params.set("band", band);
+  if (mode) params.set("mode", mode);
+  if (dxcc) params.set("dxcc", dxcc);
+  if (grid) params.set("grid", grid);
+  params.set("offset", String(_logOffset));
+  params.set("limit", String(limit));
+  return { qs: params.toString(), limit };
+}
+
+function renderLogSearch(j) {
+  const meta = document.getElementById("log_search_meta");
+  const out = document.getElementById("log_search_results");
+  const pageinfo = document.getElementById("lf_pageinfo");
+  if (!j || j.error) {
+    meta.textContent = (j && j.error) || "search unavailable";
+    out.innerHTML = "";
+    pageinfo.textContent = "—";
+    return;
+  }
+  _logTotal = j.count;
+  const limit = j.limit || 100;
+  const totalPages = Math.max(1, Math.ceil(j.count / limit));
+  const curPage = Math.floor(j.offset / limit) + 1;
+  const start = j.count === 0 ? 0 : j.offset + 1;
+  const end = Math.min(j.offset + j.returned, j.count);
+  meta.textContent = j.count === 0 ? "no QSOs match" : `${start.toLocaleString()}–${end.toLocaleString()} of ${j.count.toLocaleString()}`;
+  pageinfo.textContent = `page ${curPage} / ${totalPages}`;
+  document.getElementById("lf_first").disabled = curPage === 1;
+  document.getElementById("lf_prev").disabled = curPage === 1;
+  document.getElementById("lf_next").disabled = curPage >= totalPages;
+  document.getElementById("lf_last").disabled = curPage >= totalPages;
+
+  if (!j.qsos.length) { out.innerHTML = `<div class="empty">no matches</div>`; return; }
+  const rows = [`<table><tr>
+    <th>Date UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>Freq</th>
+    <th>Country</th><th>Grid</th><th>State</th><th>Zone</th><th>QSL</th>
+  </tr>`];
+  for (const q of j.qsos) {
+    const qsl = fmtQslMethod(q);
+    const cls = q.lotw ? "lotw" : (q.confirmed ? "" : "unconf");
+    rows.push(`<tr>
+      <td>${fmtQsoTime(q.qso_date, q.time_on)}</td>
+      <td class="q-call">${q.call}</td>
+      <td class="band">${q.band}</td>
+      <td class="mode">${q.mode}</td>
+      <td class="freq">${q.freq || ""}</td>
+      <td>${q.country}</td>
+      <td class="grid">${q.grid || ""}</td>
+      <td>${q.state || ""}</td>
+      <td>${q.cqz || ""}</td>
+      <td class="q-conf ${cls}">${qsl}</td>
+    </tr>`);
+  }
+  rows.push(`</table>`);
+  out.innerHTML = rows.join("");
+}
+
+function fetchLog() {
+  const { qs } = buildLogQuery();
+  fetch("/api/log/search?" + qs)
+    .then(r => r.json())
+    .then(j => { _logLastFetched = true; renderLogSearch(j); })
+    .catch(e => console.error("log search failed:", e));
+}
+
+function debouncedFetchLog() {
+  clearTimeout(_logSearchTimer);
+  _logSearchTimer = setTimeout(() => { _logOffset = 0; fetchLog(); }, 200);
+}
+
+// Wire all filter inputs
+for (const id of ["lf_call","lf_dxcc","lf_grid"]) {
+  document.getElementById(id).addEventListener("input", debouncedFetchLog);
+}
+for (const id of ["lf_band","lf_mode","lf_pagesize"]) {
+  document.getElementById(id).addEventListener("change", () => { _logOffset = 0; fetchLog(); });
+}
+document.getElementById("lf_clear").addEventListener("click", () => {
+  for (const id of ["lf_call","lf_dxcc","lf_grid"]) document.getElementById(id).value = "";
+  for (const id of ["lf_band","lf_mode"]) document.getElementById(id).value = "";
+  _logOffset = 0; fetchLog();
+});
+
+// Pagination buttons
+document.getElementById("lf_first").addEventListener("click", () => { _logOffset = 0; fetchLog(); });
+document.getElementById("lf_prev").addEventListener("click", () => {
+  const limit = parseInt(document.getElementById("lf_pagesize").value, 10) || 100;
+  _logOffset = Math.max(0, _logOffset - limit);
+  fetchLog();
+});
+document.getElementById("lf_next").addEventListener("click", () => {
+  const limit = parseInt(document.getElementById("lf_pagesize").value, 10) || 100;
+  if (_logOffset + limit < _logTotal) { _logOffset += limit; fetchLog(); }
+});
+document.getElementById("lf_last").addEventListener("click", () => {
+  const limit = parseInt(document.getElementById("lf_pagesize").value, 10) || 100;
+  _logOffset = Math.max(0, Math.floor((_logTotal - 1) / limit) * limit);
+  fetchLog();
+});
+
+// Lazy-load: fetch the whole-log view the first time the Log tab opens.
+function maybeLoadLog() {
+  if (!_logLastFetched) fetchLog();
+}
+for (const btn of document.querySelectorAll(".view-tabs button")) {
+  if (btn.dataset.view === "log") btn.addEventListener("click", maybeLoadLog);
+}
+
+// Right-click any spot row → switch to Log tab and search that call
+document.addEventListener("contextmenu", (ev) => {
+  const row = ev.target.closest("tr.clickable");
+  if (!row) return;
+  const callCell = row.querySelector("td.dx");
+  if (!callCell) return;
+  ev.preventDefault();
+  const call = callCell.textContent.trim();
+  switchView("log");
+  // Clear other filters so the call jump is unambiguous
+  for (const id of ["lf_band","lf_mode","lf_dxcc","lf_grid"]) document.getElementById(id).value = "";
+  const inp = document.getElementById("lf_call");
+  inp.value = call;
+  _logOffset = 0;
+  fetchLog();
+  inp.focus();
+});
 </script>
 </body></html>
 """
@@ -1342,10 +2528,20 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _send(self, body, ctype, status=200):
+        # Transparent gzip: huge win for /spots.json (~1.2MB JSON → ~150KB)
+        # over mobile/Tailscale. Only when the client advertises gzip and the
+        # body is big enough that compression overhead pays for itself.
+        encoding = None
+        if len(body) >= 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = gzip.compress(body, compresslevel=6)
+            encoding = "gzip"
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
+            self.send_header("Vary", "Accept-Encoding")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1362,8 +2558,268 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/active_bands":
             payload = active_bands_snapshot()
             self._send(json.dumps(payload).encode(), "application/json")
+        elif self.path == "/wsjtx_state":
+            # Diagnostic: current per-client WSJT-X state (dial freq, mode, last seen)
+            with _wsjtx_state_lock:
+                payload = {"clients": list(_wsjtx_state.values()), "now": time.time()}
+            self._send(json.dumps(payload, default=str).encode(), "application/json")
+        elif self.path == "/api/scores":
+            self._send(json.dumps(_build_scores_payload()).encode(), "application/json")
+        elif self.path.startswith("/api/log/search"):
+            self._handle_log_search()
         else:
             self._send(b"not found", "text/plain", 404)
+
+    def do_POST(self):
+        if self.path == "/api/tune":
+            self._handle_tune()
+            return
+        self._send(b"not found", "text/plain", 404)
+
+    def _handle_log_search(self):
+        """GET /api/log/search[?call=...&band=...&mode=...&dxcc=...&grid=...&offset=N&limit=M]
+
+        All filters are optional and AND-combined. Filters:
+          call    — substring match on callsign (case-insensitive)
+          band    — exact match (lowercase, e.g. "20m")
+          mode    — exact match (uppercase, e.g. "FT8" or "CW")
+          dxcc    — substring match on country name (case-insensitive)
+                    or exact DXCC ID match if numeric
+          grid    — substring match on grid square (case-insensitive)
+
+        With no filters, returns the entire log. Sorted newest-first by
+        qso_date+time_on. Pagination via offset+limit; default 100/page.
+        """
+        if not _worked:
+            self._send(json.dumps({"qsos": [], "error": "worked_state not loaded"}).encode(),
+                       "application/json")
+            return
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        call = (qs.get("call", [""])[0] or "").strip().upper()
+        band = (qs.get("band", [""])[0] or "").strip().lower()
+        mode = (qs.get("mode", [""])[0] or "").strip().upper()
+        dxcc = (qs.get("dxcc", [""])[0] or "").strip()
+        grid = (qs.get("grid", [""])[0] or "").strip().upper()
+        try:
+            limit = max(1, min(int(qs.get("limit", ["100"])[0]), 1000))
+        except ValueError:
+            limit = 100
+        try:
+            offset = max(0, int(qs.get("offset", ["0"])[0]))
+        except ValueError:
+            offset = 0
+
+        dxcc_is_id = dxcc.isdigit()
+        dxcc_lower = dxcc.lower()
+
+        def matches(q: dict) -> bool:
+            if call and call not in (q.get("call") or "").upper():
+                return False
+            if band and (q.get("band") or "").lower() != band:
+                return False
+            if mode and (q.get("mode") or "").upper() != mode:
+                return False
+            if dxcc:
+                if dxcc_is_id:
+                    if (q.get("dxcc") or "").strip() != dxcc:
+                        return False
+                else:
+                    if dxcc_lower not in (q.get("country") or "").lower():
+                        return False
+            if grid and grid not in (q.get("grid") or "").upper():
+                return False
+            return True
+
+        all_matches = [q for q in _worked.qsos if matches(q)]
+        # Sort newest first (qso_date YYYYMMDD + time_on HHMM[SS] — string sort works)
+        all_matches.sort(
+            key=lambda q: ((q.get("qso_date") or "") + (q.get("time_on") or "")),
+            reverse=True)
+        page = all_matches[offset:offset + limit]
+
+        out = []
+        for q in page:
+            confirmed = (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V") or \
+                        (q.get("qsl_rcvd") or "").upper() in ("Y", "V") or \
+                        (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")
+            out.append({
+                "call": q.get("call", ""),
+                "qso_date": q.get("qso_date", ""),
+                "time_on": q.get("time_on", ""),
+                "band": q.get("band", ""),
+                "mode": q.get("mode", ""),
+                "freq": q.get("freq", ""),
+                "country": q.get("country", ""),
+                "grid": q.get("grid", ""),
+                "state": q.get("state", ""),
+                "cqz": q.get("cqz", ""),
+                "confirmed": confirmed,
+                "lotw": (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V"),
+                "eqsl": (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V"),
+                "paper": (q.get("qsl_rcvd") or "").upper() in ("Y", "V"),
+            })
+        self._send(json.dumps({
+            "filters": {"call": call, "band": band, "mode": mode,
+                        "dxcc": dxcc, "grid": grid},
+            "count": len(all_matches),
+            "offset": offset,
+            "limit": limit,
+            "returned": len(out),
+            "qsos": out,
+        }).encode(), "application/json")
+
+    def _handle_tune(self):
+        """Click-to-tune endpoint. Body: JSON {dx_call, freq_khz, mode?}.
+
+        Routing rule (operator-respect):
+        - If spot mode is a WSJT-X mode (FT8/FT4/JT65/JT9/MSK144/Q65/etc.):
+          route EXCLUSIVELY to WSJT-X. Send Reply UDP IFF a WSJT-X instance
+          is currently tuned to the spot's band AND the audio offset falls
+          within the passband (200..3000 Hz). Otherwise: do nothing.
+          Never touch the Flex slice for a WSJT-X-mode click — that would
+          disrupt whatever the operator has dialed in for the digital QSO.
+        - If spot mode is a non-WSJT-X mode (CW/SSB/RTTY/etc.):
+          retune the Flex slice on that band to the spot frequency.
+        """
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length == 0 or length > 4096:
+            self._send(json.dumps({"ok": False, "error": "bad length"}).encode(),
+                       "application/json", 400)
+            return
+        try:
+            body = json.loads(self.rfile.read(length))
+            dx_call = (body.get("dx_call") or "").strip()
+            freq_khz = float(body.get("freq_khz") or 0)
+            mode_in = (body.get("mode") or "").strip().upper()
+        except (ValueError, TypeError, KeyError) as e:
+            self._send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}).encode(),
+                       "application/json", 400)
+            return
+        if not dx_call or freq_khz <= 0:
+            self._send(json.dumps({"ok": False, "error": "missing dx_call/freq_khz"}).encode(),
+                       "application/json", 400)
+            return
+
+        spot_band = dxcluster.freq_to_band(freq_khz)
+        results = {"ok": False, "route": None, "message": ""}
+
+        # ---- WSJT-X-mode routing: exclusive, band-gated ----
+        if mode_in in WSJTX_MODES:
+            results["route"] = "wsjtx"
+            state = _wsjtx_state_for_band(spot_band)
+            if state is None:
+                results["message"] = (f"no WSJT-X on {spot_band}; no action "
+                                      f"(operator-respect rule for {mode_in})")
+                self._send(json.dumps(results).encode(), "application/json")
+                return
+            dial_khz = state["dial_freq_hz"] / 1000.0
+            audio_hz = round((freq_khz - dial_khz) * 1000)
+            if not (WSJTX_AUDIO_MIN_HZ <= audio_hz <= WSJTX_AUDIO_MAX_HZ):
+                results["message"] = (f"audio offset {audio_hz} Hz out of band "
+                                      f"[{WSJTX_AUDIO_MIN_HZ}..{WSJTX_AUDIO_MAX_HZ}]; "
+                                      f"WSJT-X dial would need adjusting first")
+                self._send(json.dumps(results).encode(), "application/json")
+                return
+
+            # WSJT-X matches Reply packets by the original FT8 message text
+            # (and approximate snr/time/delta_freq). Look up the cached spot
+            # to pull the exact message + snr that were originally broadcast.
+            # If the spot came from WSJT-X locally, comment IS the FT8 message
+            # text. For external spots we synthesize a plausible CQ string —
+            # WSJT-X's fuzzy match may or may not lock on, but we try.
+            cache_key = _spot_dedup_key(spot_band, mode_in, freq_khz, dx_call)
+            with _lock:
+                cached = _cache.get(cache_key)
+            if cached and cached.get("source") == "WSJTX-LOCAL":
+                msg_text = cached.get("comment") or f"CQ {dx_call}"
+                spot_snr = cached.get("snr")
+                if spot_snr is None:
+                    spot_snr = -15
+            else:
+                # External spot — best-effort synthetic CQ. Won't match if
+                # WSJT-X hasn't decoded this signal in its recent list.
+                msg_text = f"CQ {dx_call}"
+                spot_snr = cached.get("snr", -15) if cached else -15
+                if spot_snr is None:
+                    spot_snr = -15
+
+            # Use the original decode's time + delta_time + mode-glyph from cache
+            # (stored at ingest). WSJT-X uses these as keys to find the matching
+            # decode in its history. Falling back to current time would fail to match.
+            import wsjtx_udp
+            if cached and cached.get("source") == "WSJTX-LOCAL":
+                reply_time_ms = cached.get("wsjtx_time_ms", 0)
+                reply_delta_time = cached.get("wsjtx_delta_time", 0.0)
+                reply_glyph = cached.get("wsjtx_glyph", "~")
+            else:
+                # External spot fallback — WSJT-X likely won't match, but try anyway.
+                reply_time_ms = wsjtx_udp.current_time_ms()
+                reply_delta_time = 0.0
+                reply_glyph = "+" if mode_in == "FT4" else "~"
+
+            try:
+                pkt = wsjtx_udp.reply(
+                    client_id=state["client_id"],
+                    time_ms=reply_time_ms,
+                    snr=int(spot_snr),
+                    delta_time=reply_delta_time,
+                    delta_freq=audio_hz,
+                    mode=reply_glyph,
+                    message=msg_text,
+                    low_confidence=False,
+                    modifiers=0,
+                )
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.sendto(pkt, state["source_addr"])
+                sock.close()
+                results["ok"] = True
+                results["message"] = (f"WSJT-X reply sent: client={state['client_id']} "
+                                      f"audio={audio_hz} Hz dial={dial_khz:.1f} kHz "
+                                      f"snr={spot_snr} msg={msg_text!r} "
+                                      f"time_ms={reply_time_ms} dt={reply_delta_time:.2f} glyph={reply_glyph!r} "
+                                      f"src={cached.get('source','?') if cached else 'no-cache'}")
+            except Exception as e:
+                results["message"] = f"WSJT-X reply send failed: {e}"
+            self._send(json.dumps(results).encode(), "application/json")
+            return
+
+        # ---- Non-WSJT-X mode: Flex slice retune ----
+        results["route"] = "flex"
+        if not _flex or not _flex.connected:
+            results["message"] = "Flex not connected"
+            self._send(json.dumps(results).encode(), "application/json")
+            return
+        slice_id = None
+        for sn, info in _flex.slices.items():
+            if info.get("in_use") != "1":
+                continue
+            try:
+                slice_freq_mhz = float(info.get("RF_frequency", "0"))
+            except ValueError:
+                continue
+            slice_band = dxcluster.freq_to_band(slice_freq_mhz * 1000)
+            if slice_band == spot_band:
+                slice_id = sn
+                break
+        if slice_id is None:
+            results["message"] = f"no active Flex slice on {spot_band}; no action"
+            self._send(json.dumps(results).encode(), "application/json")
+            return
+        if _main_loop is None:
+            results["message"] = "main loop not available (server still starting)"
+            self._send(json.dumps(results).encode(), "application/json")
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                _flex.tune(slice_id, freq_khz / 1000.0),
+                _main_loop)
+            results["ok"] = True
+            results["message"] = f"Flex slice {slice_id} retuned to {freq_khz:.1f} kHz ({mode_in or 'mode unknown'})"
+        except Exception as e:
+            results["message"] = f"Flex tune failed: {e}"
+        self._send(json.dumps(results).encode(), "application/json")
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -1385,7 +2841,8 @@ async def main():
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
-    global _cty, _worked, _flex
+    global _cty, _worked, _flex, _main_loop, _telnet_feed
+    _main_loop = asyncio.get_running_loop()
     load_qrz_cache()  # initial load before any spots come in
     try:
         _cty = CtyDat(str(CTY_DAT_PATH))
@@ -1401,13 +2858,66 @@ async def main():
         while True:
             time.sleep(300)  # check every 5 min for fresher logbook
             if _worked:
-                _worked.reload()
+                if _worked.reload():
+                    # If anything actually reloaded (mtime changed on either
+                    # the QRZ JSON or the local Grayline ADIF), re-evaluate
+                    # worked-state-derived fields on every cached spot so
+                    # award pills reflect the freshest worked/confirmed data.
+                    # Otherwise stale dxcc_band_status etc. baked in at
+                    # ingest time would persist until each spot ages out.
+                    _refresh_cache_worked_status()
+                    log.info("worked_state reloaded — cache statuses refreshed")
+
+    def lotw_fetch_loop():
+        """Periodic incremental pull of LoTW confirmations. Each tick appends
+        new records to lotw_qsl.adi; the worked_state_reload_loop tick that
+        follows picks up the file mtime change and re-merges into worked-state."""
+        log.info("LoTW fetch loop armed (interval=%ds)", LOTW_FETCH_INTERVAL_SEC)
+        # First tick: short delay so we don't fire concurrently with other
+        # startup work (cty.dat load, worked-state initial merge).
+        time.sleep(60)
+        first = True
+        while True:
+            try:
+                user, pw = lotw_fetch.load_creds()
+                cursor_ms = lotw_fetch.load_cursor_ms()
+                qslsince = lotw_fetch.cursor_to_lotw_string(cursor_ms)
+                url = lotw_fetch.build_url(user, pw, qslsince, mode="fetch")
+                body = lotw_fetch.fetch(url)
+                if lotw_fetch.is_password_incorrect(body):
+                    log.warning("LoTW: auth rejected — disabling poll loop until restart")
+                    return
+                n = lotw_fetch.append_adif(body)
+                if n > 0:
+                    max_ms = lotw_fetch.find_max_rxqsl_ms(body)
+                    if max_ms > 0:
+                        lotw_fetch.save_cursor_ms(max_ms + 1000)
+                    log.info("LoTW: appended %d confirmation(s); cursor → %s",
+                             n, lotw_fetch.cursor_to_lotw_string(max_ms + 1000) if max_ms else "(unchanged)")
+                elif first:
+                    log.info("LoTW: first tick — no new confirmations since %s", qslsince)
+                else:
+                    log.debug("LoTW: no new confirmations since %s", qslsince)
+                first = False
+            except Exception as e:
+                log.warning("LoTW fetch failed: %s", e)
+            time.sleep(LOTW_FETCH_INTERVAL_SEC)
+
+    # SDC / DX-cluster telnet feed: standard DX Spider node that re-broadcasts
+    # GrayLine's filtered local spots (see add_spot). Started on the event loop
+    # so broadcast_spot() writes from the same thread add_spot runs on.
+    if TELNET_FEED_ENABLED:
+        _telnet_feed = telnet_server.TelnetServer(
+            host="0.0.0.0", port=TELNET_FEED_PORT, node_call=TELNET_FEED_NODE)
+        await _telnet_feed.start()
 
     threading.Thread(target=serve_http, daemon=True).start()
     threading.Thread(target=purge_loop, daemon=True).start()
     threading.Thread(target=qrz_cache_reload_loop, daemon=True).start()
     threading.Thread(target=qrz_lookup_worker, daemon=True).start()
     threading.Thread(target=worked_state_reload_loop, daemon=True).start()
+    if LOTW_FETCH_ENABLED:
+        threading.Thread(target=lotw_fetch_loop, daemon=True).start()
 
     client = dxcluster.DXClusterClient(
         host=GOCLUSTER_HOST,
@@ -1433,10 +2943,17 @@ async def main():
         flex_task = asyncio.create_task(_flex.run())
         flex_inject_task = asyncio.create_task(flex_inject_worker())
 
+    # WSJT-X UDP listener: ingests local FT8/FT4 decodes as WSJTX-LOCAL
+    # spots (priority-ranked above external sources) and tracks per-client
+    # dial state for click-to-tune audio-offset math.
+    wsjtx_task = None
+    if WSJTX_ENABLED:
+        wsjtx_task = asyncio.create_task(wsjtx_listener_task())
+
     try:
         await client.connect()
     finally:
-        for t in (flex_task, flex_inject_task):
+        for t in (flex_task, flex_inject_task, wsjtx_task):
             if t and not t.done():
                 t.cancel()
 

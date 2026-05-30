@@ -29,6 +29,95 @@ log = logging.getLogger("worked_state")
 
 _DATA_DIR = Path(__file__).parent / "data"
 
+# Path to the Grayline local ADIF (written on every WSJT-X QSO Logged event).
+# Merged into worked-state on reload() so freshly-logged QSOs survive the
+# 5-min reload cycle even before QRZ logbook sync catches up.
+_LOCAL_ADIF_PATH = Path(__file__).parent / "qso_logged.adi"
+
+# Path to the LoTW confirmation ADIF (appended to by lotw_fetch.py on each
+# incremental pull). LoTW returns confirmed-only records, and per GT2
+# (adifWorker.js:131-143) the presence of APP_LOTW_RXQSL alone marks a
+# record as LoTW-confirmed even if LOTW_QSL_RCVD isn't set.
+_LOTW_ADIF_PATH = Path(__file__).parent / "lotw_qsl.adi"
+
+# Country-name aliases: QRZ logbook uses legacy names (lumping European Russia
+# under "Russia", etc.) while cty.dat uses ARRL's canonical DXCC entity names.
+# When the two disagree on a label, the lookup at ingest time misses the
+# historical QSO and a long-worked entity shows as "needed."
+#
+# We normalize QRZ's name to cty.dat's name during reload() so worked-state
+# sets are keyed consistently with what cty.dat will hand us at spot ingest.
+# Add entries here as discovered. DXCC IDs in comments are the ARRL canonical
+# numbers (the `dxcc` field in QRZ records, also AD1C's country code).
+QRZ_TO_CTY_COUNTRY = {
+    "Russia": "European Russia",   # DXCC 54 — QRZ's legacy label
+    # "South Korea": "Republic of Korea",   # DXCC 137 — uncomment if needed
+    # "Czech Republic": "Czech Republic",   # DXCC 503 — both seem to agree, no alias
+    # "Slovak Republic": "Slovak Republic", # DXCC 504 — likewise
+    # Add more aliases as actual mismatches surface from operating.
+}
+
+# ADIF field-tag pattern: <FIELD:LEN[:type]>VALUE
+_ADIF_FIELD_RE = re.compile(r"<([A-Za-z_][A-Za-z0-9_]*):(\d+)(?::[^>]*)?>", re.I)
+
+
+def _parse_adif_qsos(path: Path) -> list[dict]:
+    """Parse an ADIF file (qso_logged.adi or lotw_qsl.adi) and return QSOs
+    in the same dict shape reload() expects from qrz_logbook.json.
+
+    Records are split on <EOR> (case-insensitive). Header (everything
+    before <EOH>) is skipped. Empty records are dropped.
+
+    Confirmation fields (lotw_qsl_rcvd, qsl_rcvd, eqsl_qsl_rcvd) are
+    populated when present so downstream _is_confirmed_record() resolves
+    correctly. APP_LOTW_RXQSL presence is treated as LoTW-confirmed
+    (GT2 adifWorker.js:131-143) even when LOTW_QSL_RCVD is omitted.
+    """
+    text = path.read_text()
+    eoh = re.search(r"<EOH>", text, re.I)
+    if eoh:
+        text = text[eoh.end():]
+    out = []
+    for raw in re.split(r"<EOR>", text, flags=re.I):
+        rec = {}
+        for m in _ADIF_FIELD_RE.finditer(raw):
+            field = m.group(1).upper()
+            length = int(m.group(2))
+            value_start = m.end()
+            value = raw[value_start:value_start + length].strip()
+            rec[field] = value
+        if not rec.get("CALL"):
+            continue
+        lotw_confirmed = (
+            rec.get("LOTW_QSL_RCVD", "").upper() in ("Y", "V")
+            or bool(rec.get("APP_LOTW_RXQSL"))
+        )
+        out.append({
+            "call": rec.get("CALL", ""),
+            "band": rec.get("BAND", ""),
+            "mode": rec.get("MODE", ""),
+            "submode": rec.get("SUBMODE", ""),
+            "qso_date": rec.get("QSO_DATE", ""),
+            "time_on": rec.get("TIME_ON", ""),
+            "freq": rec.get("FREQ", ""),
+            "grid": rec.get("GRIDSQUARE", ""),
+            "dxcc": rec.get("DXCC", ""),
+            "country": rec.get("COUNTRY", ""),
+            "state": rec.get("STATE", ""),
+            "cqz": rec.get("CQZ", ""),
+            "ituz": rec.get("ITUZ", ""),
+            "prop_mode": rec.get("PROP_MODE", ""),
+            "lotw_qsl_rcvd": "Y" if lotw_confirmed else "",
+            "qsl_rcvd": rec.get("QSL_RCVD", ""),
+            "eqsl_qsl_rcvd": rec.get("EQSL_QSL_RCVD", ""),
+        })
+    return out
+
+
+# Back-compat alias — previously _parse_local_adif_qsos; kept in case anything
+# external still references it.
+_parse_local_adif_qsos = _parse_adif_qsos
+
 
 def _load_mode_tables() -> tuple[dict, dict]:
     try:
@@ -226,6 +315,12 @@ class WorkedState:
         self.worked_country_band_modeclass: set[tuple[str, str, str]] = set()  # (country, band, class)
         self.confirmed_country_band_modeclass: set[tuple[str, str, str]] = set()
 
+        # DXCC-ID-keyed mode-class sets — authoritative for award counts.
+        # The country-name version above can over-count when QRZ and cty.dat
+        # disagree on labels (e.g. "Russia" vs "European Russia").
+        self.worked_dxcc_modeclass: set[tuple[str, str]] = set()  # (dxcc_id, class)
+        self.confirmed_dxcc_modeclass: set[tuple[str, str]] = set()
+
         self.worked_grid_band: set[tuple[str, str]] = set()  # (grid4, band)
         self.confirmed_grid_band: set[tuple[str, str]] = set()
 
@@ -234,6 +329,30 @@ class WorkedState:
         self.worked_countries: set[str] = set()
         self.confirmed_countries: set[str] = set()
 
+        # WAS — US states only. Two-letter postal codes ("OH", "CA").
+        self.worked_states: set[str] = set()
+        self.confirmed_states: set[str] = set()
+        # Per-band-per-state for WAS-by-band (Five-Band WAS / 5BWAS).
+        self.worked_state_band: set[tuple[str, str]] = set()
+        self.confirmed_state_band: set[tuple[str, str]] = set()
+
+        # WAZ — CQ zones 1-40.
+        self.worked_cq_zones: set[str] = set()
+        self.confirmed_cq_zones: set[str] = set()
+
+        # Satellite VUCC — distinct grid4s with PROP_MODE=SAT.
+        self.worked_satellite_grids: set[str] = set()
+        self.confirmed_satellite_grids: set[str] = set()
+        # Satellite DXCC — distinct DXCC IDs with PROP_MODE=SAT.
+        self.worked_dxcc_satellite: set[str] = set()
+        self.confirmed_dxcc_satellite: set[str] = set()
+
+        # Full deduplicated record list (merged QRZ + local + LoTW) — kept for
+        # the /api/log/search endpoint. Each record is the same dict-shape as
+        # _parse_adif_qsos output. Dedup key is GT2's hash:
+        # (call, band, mode, time_on rounded to nearest minute).
+        self.qsos: list[dict] = []
+
         self.qso_count = 0
         self.unique_calls_count = 0
         self.confirmed_qso_count = 0
@@ -241,18 +360,37 @@ class WorkedState:
         self.reload()
 
     def reload(self) -> bool:
-        """(Re)load the logbook JSON from disk if mtime changed. Returns True if reloaded."""
-        if not self.logbook_path.exists():
-            log.warning("logbook not found: %s — running with empty worked state", self.logbook_path)
+        """(Re)load worked-state from BOTH the QRZ logbook JSON (long-tail
+        archive, lags by hours-to-days) AND the local Grayline ADIF (written
+        on every WSJT-X QSO Logged event, real-time).
+
+        Merging both sources ensures freshly-logged QSOs survive this reload
+        cycle even before QRZ logbook sync has fetched them — otherwise the
+        in-memory record_qso() additions get clobbered every 5 min.
+
+        Returns True if anything was reloaded."""
+        # mtime check on all three sources. We always re-merge if any source
+        # changed, so consider all file mtimes.
+        qrz_exists = self.logbook_path.exists()
+        local_exists = _LOCAL_ADIF_PATH.exists()
+        lotw_exists = _LOTW_ADIF_PATH.exists()
+        if not qrz_exists and not local_exists and not lotw_exists:
+            log.warning("no logbook source available (QRZ %s, local %s, LoTW %s) — running with empty worked state",
+                        self.logbook_path, _LOCAL_ADIF_PATH, _LOTW_ADIF_PATH)
             return False
-        mtime = self.logbook_path.stat().st_mtime
-        if self._mtime is not None and mtime == self._mtime:
+        qrz_mtime = self.logbook_path.stat().st_mtime if qrz_exists else 0
+        local_mtime = _LOCAL_ADIF_PATH.stat().st_mtime if local_exists else 0
+        lotw_mtime = _LOTW_ADIF_PATH.stat().st_mtime if lotw_exists else 0
+        composite_mtime = max(qrz_mtime, local_mtime, lotw_mtime)
+        if self._mtime is not None and composite_mtime == self._mtime:
             return False
         try:
-            data = json.loads(self.logbook_path.read_text())
+            data = json.loads(self.logbook_path.read_text()) if qrz_exists else {"qsos": []}
         except Exception as e:
             log.warning("failed to parse logbook %s: %s", self.logbook_path, e)
             return False
+        # mtime tracked as the composite so future reload cycles only fire on real change
+        mtime = composite_mtime
 
         worked_calls: set[str] = set()
         confirmed_calls: set[str] = set()
@@ -264,15 +402,61 @@ class WorkedState:
         confirmed_country_band_mode: set[tuple[str, str, str]] = set()
         worked_country_band_modeclass: set[tuple[str, str, str]] = set()
         confirmed_country_band_modeclass: set[tuple[str, str, str]] = set()
+        worked_dxcc_modeclass: set[tuple[str, str]] = set()
+        confirmed_dxcc_modeclass: set[tuple[str, str]] = set()
         worked_grid_band: set[tuple[str, str]] = set()
         confirmed_grid_band: set[tuple[str, str]] = set()
         worked_dxcc: set[str] = set()
         confirmed_dxcc: set[str] = set()
         worked_countries: set[str] = set()
         confirmed_countries: set[str] = set()
+        worked_states: set[str] = set()
+        confirmed_states: set[str] = set()
+        worked_state_band: set[tuple[str, str]] = set()
+        confirmed_state_band: set[tuple[str, str]] = set()
+        worked_cq_zones: set[str] = set()
+        confirmed_cq_zones: set[str] = set()
+        worked_satellite_grids: set[str] = set()
+        confirmed_satellite_grids: set[str] = set()
+        worked_dxcc_satellite: set[str] = set()
+        confirmed_dxcc_satellite: set[str] = set()
         confirmed_qso_count = 0
+        # Dedup merged QSOs by GT2-style hash so the same QSO appearing in QRZ
+        # + LoTW (typical) collapses to one record. Confirmation flags are OR'd
+        # across duplicates so the surviving record has the strongest evidence.
+        qsos_dedup: dict[str, dict] = {}
 
-        qsos = data.get("qsos", [])
+        qsos = list(data.get("qsos", []))
+
+        # Merge in QSOs from the local Grayline ADIF (qso_logged.adi). These
+        # are real-time WSJT-X-logged QSOs that haven't necessarily synced
+        # to QRZ yet, so they wouldn't be in the JSON. set semantics in the
+        # worked-* fields handle dedup if QRZ later syncs the same QSO.
+        if local_exists:
+            try:
+                local_qsos = _parse_adif_qsos(_LOCAL_ADIF_PATH)
+                qsos.extend(local_qsos)
+                if local_qsos:
+                    log.info("merged %d QSO(s) from local ADIF %s into worked-state",
+                             len(local_qsos), _LOCAL_ADIF_PATH.name)
+            except Exception as e:
+                log.warning("failed to parse local ADIF %s: %s", _LOCAL_ADIF_PATH, e)
+
+        # Merge in confirmations from the LoTW ADIF (lotw_qsl.adi). lotw_fetch.py
+        # downloads incrementally; every record here is LoTW-confirmed by
+        # construction. Same dedup-by-set semantics — a QRZ record covering the
+        # same QSO will already be in the worked-* sets, but the confirmed-*
+        # sets gain LoTW's authoritative state.
+        if lotw_exists:
+            try:
+                lotw_qsos = _parse_adif_qsos(_LOTW_ADIF_PATH)
+                qsos.extend(lotw_qsos)
+                if lotw_qsos:
+                    log.info("merged %d LoTW confirmation(s) from %s into worked-state",
+                             len(lotw_qsos), _LOTW_ADIF_PATH.name)
+            except Exception as e:
+                log.warning("failed to parse LoTW ADIF %s: %s", _LOTW_ADIF_PATH, e)
+
         for q in qsos:
             call = _norm_call(q.get("call", ""))
             band = _norm_band(q.get("band", ""))
@@ -280,9 +464,44 @@ class WorkedState:
             grid4 = _norm_grid4(q.get("grid", ""))
             dxcc = (q.get("dxcc") or "").strip()
             country = (q.get("country") or "").strip()
+            # Normalize QRZ's legacy country labels to match cty.dat's canonical
+            # entity names — otherwise the lookup at spot ingest (which uses
+            # cty.dat) misses historical QSOs labeled with the older string.
+            country = QRZ_TO_CTY_COUNTRY.get(country, country)
+            state = (q.get("state") or "").strip().upper()
+            cqz = (q.get("cqz") or "").strip()
+            # Normalize CQ zone: drop leading zeros, keep "0" if all-zero.
+            if cqz:
+                try:
+                    cqz_n = int(cqz)
+                    cqz = str(cqz_n) if 1 <= cqz_n <= 40 else ""
+                except ValueError:
+                    cqz = ""
             confirmed = _is_confirmed_record(q)
             if confirmed:
                 confirmed_qso_count += 1
+
+            # GT2-style dedup hash: same QSO from multiple sources collapses.
+            # Time bucket is the minute-grain of time_on; matches GT2 unique().
+            time_min = (q.get("time_on", "") or "")[:4]
+            dedup_key = f"{call}|{band}|{mode}|{q.get('qso_date','')}{time_min}"
+            existing = qsos_dedup.get(dedup_key)
+            if existing is None:
+                qsos_dedup[dedup_key] = dict(q)
+                qsos_dedup[dedup_key]["country"] = country
+            else:
+                # OR confirmation flags — keep the strongest evidence.
+                for flag in ("lotw_qsl_rcvd", "qsl_rcvd", "eqsl_qsl_rcvd"):
+                    cur = (existing.get(flag) or "").upper()
+                    new = (q.get(flag) or "").upper()
+                    if new in ("Y", "V") and cur not in ("Y", "V"):
+                        existing[flag] = q[flag]
+                # Backfill missing fields. prop_mode is in the backfill set so
+                # a satellite QSO logged via QRZ first (no prop_mode) gets
+                # tagged correctly when the matching LoTW record arrives later.
+                for k in ("grid", "dxcc", "country", "state", "cqz", "ituz", "freq", "prop_mode"):
+                    if not existing.get(k) and q.get(k):
+                        existing[k] = q[k]
 
             if call:
                 worked_calls.add(call)
@@ -297,6 +516,11 @@ class WorkedState:
                     worked_dxcc_band.add((dxcc, band))
                     if confirmed:
                         confirmed_dxcc_band.add((dxcc, band))
+                if mode:
+                    cls = mode_class(mode)
+                    worked_dxcc_modeclass.add((dxcc, cls))
+                    if confirmed:
+                        confirmed_dxcc_modeclass.add((dxcc, cls))
 
             if country:
                 worked_countries.add(country)
@@ -321,6 +545,35 @@ class WorkedState:
                 if confirmed:
                     confirmed_grid_band.add((grid4, band))
 
+            # WAS — US states only (DXCC 291). Skip Canadian "states", Alaska/HI
+            # are valid for WAS so DXCC restriction is fine here.
+            if state and dxcc == "291":
+                worked_states.add(state)
+                if confirmed:
+                    confirmed_states.add(state)
+                if band:
+                    worked_state_band.add((state, band))
+                    if confirmed:
+                        confirmed_state_band.add((state, band))
+
+            # WAZ — any QSO contributes its CQ zone.
+            if cqz:
+                worked_cq_zones.add(cqz)
+                if confirmed:
+                    confirmed_cq_zones.add(cqz)
+
+            # Satellite VUCC + Satellite DXCC — PROP_MODE=SAT.
+            prop_mode = (q.get("prop_mode") or "").strip().upper()
+            if prop_mode == "SAT":
+                if grid4:
+                    worked_satellite_grids.add(grid4)
+                    if confirmed:
+                        confirmed_satellite_grids.add(grid4)
+                if dxcc:
+                    worked_dxcc_satellite.add(dxcc)
+                    if confirmed:
+                        confirmed_dxcc_satellite.add(dxcc)
+
         self.worked_calls = worked_calls
         self.confirmed_calls = confirmed_calls
         self.worked_dxcc_band = worked_dxcc_band
@@ -331,20 +584,93 @@ class WorkedState:
         self.confirmed_country_band_mode = confirmed_country_band_mode
         self.worked_country_band_modeclass = worked_country_band_modeclass
         self.confirmed_country_band_modeclass = confirmed_country_band_modeclass
+        self.worked_dxcc_modeclass = worked_dxcc_modeclass
+        self.confirmed_dxcc_modeclass = confirmed_dxcc_modeclass
         self.worked_grid_band = worked_grid_band
         self.confirmed_grid_band = confirmed_grid_band
         self.worked_dxcc = worked_dxcc
         self.confirmed_dxcc = confirmed_dxcc
         self.worked_countries = worked_countries
         self.confirmed_countries = confirmed_countries
-        self.qso_count = len(qsos)
+        self.worked_states = worked_states
+        self.confirmed_states = confirmed_states
+        self.worked_state_band = worked_state_band
+        self.confirmed_state_band = confirmed_state_band
+        self.worked_cq_zones = worked_cq_zones
+        self.confirmed_cq_zones = confirmed_cq_zones
+        self.worked_satellite_grids = worked_satellite_grids
+        self.confirmed_satellite_grids = confirmed_satellite_grids
+        self.worked_dxcc_satellite = worked_dxcc_satellite
+        self.confirmed_dxcc_satellite = confirmed_dxcc_satellite
+        self.qsos = list(qsos_dedup.values())
+        self.qso_count = len(self.qsos)
         self.unique_calls_count = len(worked_calls)
         self.confirmed_qso_count = confirmed_qso_count
         self._mtime = mtime
 
-        log.info("worked_state loaded: %d QSOs, %d unique calls, %d confirmed",
-                 self.qso_count, self.unique_calls_count, self.confirmed_qso_count)
+        log.info("worked_state loaded: %d QSOs, %d unique calls, %d confirmed, "
+                 "%d states, %d CQ zones",
+                 self.qso_count, self.unique_calls_count, self.confirmed_qso_count,
+                 len(self.confirmed_states), len(self.confirmed_cq_zones))
         return True
+
+    # -------- in-memory QSO injection (real-time, post-load) --------
+
+    def record_qso(self, call: str, country: str, band: str, mode: str,
+                   grid: str = "", dxcc: str = "", confirmed: bool = False) -> None:
+        """Push a freshly-logged QSO into the worked-state sets without an ADIF reload.
+
+        Used by the WSJT-X QSO Logged handler so the operator sees pills flip
+        from 'new' to 'worked' immediately, not after the QRZ → ADIF → reload
+        roundtrip (minutes-to-hours lag). All inputs are normalized internally;
+        empty fields are tolerated (the corresponding scope just isn't updated).
+
+        Idempotent — re-calling with the same QSO is a no-op.
+        """
+        c = _norm_call(call)
+        if c:
+            self.worked_calls.add(c)
+            if confirmed:
+                self.confirmed_calls.add(c)
+        b = _norm_band(band) if band else ""
+        m = (mode or "").upper().strip()
+        cls = mode_class(m) if m else ""
+        d = (dxcc or "").strip()
+        if d:
+            self.worked_dxcc.add(d)
+            if confirmed:
+                self.confirmed_dxcc.add(d)
+            if b:
+                self.worked_dxcc_band.add((d, b))
+                if confirmed:
+                    self.confirmed_dxcc_band.add((d, b))
+        co = (country or "").strip()
+        if co:
+            self.worked_countries.add(co)
+            if confirmed:
+                self.confirmed_countries.add(co)
+            if b:
+                self.worked_country_band.add((co, b))
+                if confirmed:
+                    self.confirmed_country_band.add((co, b))
+            if b and m:
+                self.worked_country_band_mode.add((co, b, m))
+                if confirmed:
+                    self.confirmed_country_band_mode.add((co, b, m))
+            if b and cls:
+                self.worked_country_band_modeclass.add((co, b, cls))
+                if confirmed:
+                    self.confirmed_country_band_modeclass.add((co, b, cls))
+        g4 = _norm_grid4(grid) if grid else ""
+        if g4 and b:
+            self.worked_grid_band.add((g4, b))
+            if confirmed:
+                self.confirmed_grid_band.add((g4, b))
+        # Maintain qso_count & unique_calls_count approximately — not exact unless
+        # we deduplicate on (call, band, mode), but useful for UI counters.
+        if c and c not in self.worked_calls:
+            self.unique_calls_count = len(self.worked_calls)
+        self.qso_count += 1
 
     # -------- per-spot lookups (each is O(1)) --------
 

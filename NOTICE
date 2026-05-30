@@ -5,13 +5,37 @@ This project incorporates material from third-party open-source software.
 Each source's license terms are reproduced below as required.
 
 
-GridTracker 2 (mode classification tables and WPX-prefix algorithm)
--------------------------------------------------------------------
+GridTracker 2 (mode tables, WPX-prefix algorithm, logbook-upload edge cases)
+---------------------------------------------------------------------------
 
 `data/modes.json`            — verbatim copy of resources/data/modes.json
 `data/modes-phone.json`      — verbatim copy of resources/data/modes-phone.json
 `worked_state.py::wpx_prefix` — algorithmic port of `getWpx()` from
                                 src/renderer/lib/gtCommon.js
+`logbook_uploads.py`          — QRZ response parsing edge cases (RESULT vs
+                                STATUS field, AUTH/FAIL distinction, EXTENDED
+                                preference, "outside date range" message),
+                                ClubLog HTTP-200-as-success heuristic, and the
+                                one-retry-on-timeout pattern, all lifted from
+                                src/renderer/lib/adif.js (qrzSendLogResult,
+                                clubLogQsoResult, postRetryErrorCallaback)
+`lotw_fetch.py`               — LoTW download URL parameter set, the
+                                qso_qslsince incremental cursor model, the
+                                APP_LOTW_RXQSL "+1 second past max" cursor-bump,
+                                and the "password incorrect" auth-failure check,
+                                all lifted from src/renderer/lib/adif.js
+                                (grabLoTWQSL, lotwCallback) and
+                                src/renderer/lib/adifWorker.js (APP_LOTW_RXQSL
+                                handling at lines 131-143).
+`worked_state.py`             — LoTW-confirmed-via-APP_LOTW_RXQSL rule and
+                                LOTW_QSL_RCVD == "Y"/"V" semantics lifted from
+                                src/renderer/lib/adifWorker.js:295-314.
+`logbook_uploads.py::upload_lotw`
+                              — TQSL invocation flag set (-a all -l <station>
+                                -q -x -d -u) and the "Final Status: Success"
+                                success-detection rule lifted from
+                                src/renderer/lib/adif.js:2074-2107 (the
+                                queueLogToTqsl handler).
 
 Source: https://gitlab.com/gridtracker.org/gridtracker2
 

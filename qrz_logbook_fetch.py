@@ -119,6 +119,7 @@ def normalize_qso(rec: dict) -> dict:
         "qsl_rcvd": rec.get("QSL_RCVD", ""),  # Y/N — paper QSL received
         "lotw_qsl_rcvd": rec.get("LOTW_QSL_RCVD", ""),  # LoTW confirmation
         "eqsl_qsl_rcvd": rec.get("EQSL_QSL_RCVD", ""),
+        "prop_mode": rec.get("PROP_MODE", ""),  # SAT, MS, AUR, etc. (often missing from QRZ)
         "app_qrzlog_logid": rec.get("APP_QRZLOG_LOGID", ""),
     }
     return out
