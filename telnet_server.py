@@ -17,6 +17,7 @@ CC11 spot format (VE7CC):
 
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from typing import Dict
 
@@ -33,6 +34,10 @@ class TelnetServer:
         self.node_call = node_call
         # writer -> {'ve7cc': bool}
         self._clients: Dict[asyncio.StreamWriter, dict] = {}
+        # Ring buffer of recently-broadcast (already-filtered) spots so query-
+        # style clients that poll `sh/dx [N]` (HamClock, HRD, ...) get a backlog
+        # instead of nothing. Filled regardless of whether anyone is connected.
+        self._recent = deque(maxlen=250)
         self._server = None
 
     async def start(self):
@@ -132,7 +137,28 @@ class TelnetServer:
                             )
                             log.info("Telnet [%s] VE7CC mode enabled", addr)
 
-                        # sh/ commands — no history, just prompt
+                        # sh/dx [N] — query-style clients (HamClock, HRD) poll
+                        # this for a backlog of recent spots. Reply with the last
+                        # N already-filtered spots in the client's format, newest
+                        # first (DXSpider convention), then the prompt. Handles
+                        # both "sh/dx 25" and "sh/dx/25".
+                        elif verb.startswith('sh/dx'):
+                            n = 25
+                            tail = parts[1] if len(parts) > 1 else verb[len('sh/dx'):]
+                            for tok in tail.replace('/', ' ').split():
+                                if tok.isdigit():
+                                    n = int(tok)
+                                    break
+                            n = max(0, min(n, len(self._recent)))
+                            recent = list(self._recent)[-n:][::-1] if n else []
+                            if recent:
+                                ve7cc = self._clients[writer].get('ve7cc')
+                                fmt = format_cc11_line if ve7cc else format_spot_line
+                                writer.write(
+                                    ("\r\n".join(fmt(sp) for sp in recent) + "\r\n").encode())
+                            writer.write(prompt.encode())
+
+                        # other sh/ commands — no history, just prompt
                         elif verb.startswith('sh/'):
                             writer.write(prompt.encode())
 
@@ -162,6 +188,8 @@ class TelnetServer:
         Sends CC11 format to VE7CC clients, standard format to others.
         Non-async — schedules writes without blocking the caller.
         """
+        # Keep history for sh/dx polling clients, even when no one is connected.
+        self._recent.append(spot)
         if not self._clients:
             return
 
