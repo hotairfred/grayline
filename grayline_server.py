@@ -151,7 +151,7 @@ QSO_LOG_PATH = Path("/home/fred/grayline/qso_logged.adi")
 # observed when QRZ hadn't yet reflected LoTW state. See lotw_fetch.py for
 # the cursor + auth model (lifted from GT2 adif.js).
 LOTW_FETCH_ENABLED = True
-LOTW_FETCH_INTERVAL_SEC = 900   # 15 min — gentle on ARRL infra, fresh enough
+LOTW_FETCH_INTERVAL_SEC = 3600   # 1 hr — LoTW pull is incremental; hourly is plenty
 
 # Source priority for spot dedup. Higher numbers win when the same
 # (band, mode, freq, call) tuple arrives from multiple sources within
@@ -1622,6 +1622,13 @@ details[open] .gear-icon { color: #fff; }
   padding: 0.2em 0.6em; cursor: pointer; margin-right: 0.4em; font-size: 1em;
 }
 .gear-panel .actions button:hover { background: #333; color: #fff; }
+.gear-panel .sync-row { display: flex; align-items: center; gap: 0.6em; margin: 0.3em 0; }
+.gear-panel .sync-row button { background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 0.2em 0.6em; cursor: pointer; font: inherit; }
+.gear-panel .sync-row button:hover:not(:disabled) { background: #333; color: #fff; }
+.gear-panel .sync-row button:disabled { opacity: 0.5; cursor: wait; }
+.gear-panel .sync-status { font-size: 0.78em; color: #888; }
+.gear-panel .sync-status.ok { color: #5c5; }
+.gear-panel .sync-status.err { color: #f88; }
 
 /* Top-level view tabs (Live / Scores / Log search) */
 .view-tabs { display: flex; gap: 0.2em; margin-bottom: 0.6em; border-bottom: 1px solid #333; padding-bottom: 0.1em; }
@@ -1730,6 +1737,18 @@ details[open] .gear-icon { color: #fff; }
           Applies when "Local spotters only" is checked. Blank = tiered
           default (HF 300, 6m+ 150); enter a value to override a band.
         </div>
+      </div>
+      <div class="group">
+        <h3>Log Sync</h3>
+        <div class="sync-row">
+          <button id="sync_qrz">Sync QRZ Logbook</button>
+          <span class="sync-status" id="sync_qrz_status">…</span>
+        </div>
+        <div class="sync-row">
+          <button id="sync_lotw">Sync LoTW</button>
+          <span class="sync-status" id="sync_lotw_status">…</span>
+        </div>
+        <div class="scope-help">QRZ is a full manual pull; LoTW also auto-syncs hourly. Pills refresh on sync.</div>
       </div>
       <div class="actions">
         <button id="settings_all_bands">All bands</button>
@@ -2623,6 +2642,46 @@ function fetchScores() {
 fetchScores();
 setInterval(fetchScores, 5 * 60 * 1000);  // refresh every 5 min — matches worked_state reload cadence
 
+// ============== Log Sync (manual QRZ + LoTW buttons) ==============
+function fmtAgo(epoch, now){
+  if(!epoch) return "never synced";
+  const s = Math.max(0, now - epoch);
+  if(s < 90) return "synced just now";
+  if(s < 5400) return "synced " + Math.round(s/60) + "m ago";
+  if(s < 172800) return "synced " + Math.round(s/3600) + "h ago";
+  return "synced " + Math.round(s/86400) + "d ago";
+}
+async function refreshSyncStatus(){
+  try{
+    const d = await (await fetch("/api/sync/status", {cache:"no-store"})).json();
+    const q=document.getElementById("sync_qrz_status"), l=document.getElementById("sync_lotw_status");
+    if(q && !q.dataset.busy) q.textContent = fmtAgo(d.qrz, d.now);
+    if(l && !l.dataset.busy) l.textContent = fmtAgo(d.lotw, d.now);
+  }catch(e){}
+}
+function wireSync(btnId, statusId, url){
+  const btn=document.getElementById(btnId), st=document.getElementById(statusId);
+  if(!btn) return;
+  btn.addEventListener("click", async ()=>{
+    btn.disabled=true; st.dataset.busy="1"; st.className="sync-status"; st.textContent="syncing…";
+    try{
+      const d = await (await fetch(url,{method:"POST"})).json();
+      st.className = "sync-status " + (d.ok ? "ok" : "err");
+      st.textContent = (d.ok ? "✓ " : "✗ ") + (d.message || "");
+      if(d.ok){ refresh(); fetchScores(); }
+    }catch(e){
+      st.className="sync-status err"; st.textContent="✗ " + e.message;
+    }finally{
+      btn.disabled=false; delete st.dataset.busy;
+      setTimeout(refreshSyncStatus, 4000);
+    }
+  });
+}
+wireSync("sync_qrz","sync_qrz_status","/api/sync/qrz");
+wireSync("sync_lotw","sync_lotw_status","/api/sync/lotw");
+refreshSyncStatus();
+setInterval(refreshSyncStatus, 60000);
+
 // ============== Log search tab ==============
 let _logSearchTimer = null;
 let _logOffset = 0;
@@ -2784,6 +2843,66 @@ document.addEventListener("contextmenu", (ev) => {
 
 
 # ---------------- HTTP ----------------
+# ---------------- Manual log-sync helpers (QRZ logbook + LoTW) ----------------
+def _do_lotw_fetch_once():
+    """Run one incremental LoTW pull. Returns (ok: bool, n_appended: int, msg).
+    Shared by the periodic loop and the manual /api/sync/lotw endpoint."""
+    try:
+        user, pw = lotw_fetch.load_creds()
+        cursor_ms = lotw_fetch.load_cursor_ms()
+        qslsince = lotw_fetch.cursor_to_lotw_string(cursor_ms)
+        url = lotw_fetch.build_url(user, pw, qslsince, mode="fetch")
+        body = lotw_fetch.fetch(url)
+        if lotw_fetch.is_password_incorrect(body):
+            return (False, 0, "LoTW auth rejected — check credentials")
+        n = lotw_fetch.append_adif(body)
+        if n > 0:
+            max_ms = lotw_fetch.find_max_rxqsl_ms(body)
+            if max_ms > 0:
+                lotw_fetch.save_cursor_ms(max_ms + 1000)
+        return (True, n, f"{n} new confirmation(s)")
+    except Exception as e:
+        return (False, 0, f"LoTW fetch failed: {e}")
+
+
+def _do_qrz_fetch_once():
+    """Pull the full QRZ logbook into qrz_logbook.json by running the standalone
+    fetcher as a subprocess (it owns the exact file format). Returns (ok, n, msg)."""
+    import subprocess
+    import sys as _sys
+    script = str(Path(__file__).parent / "qrz_logbook_fetch.py")
+    try:
+        r = subprocess.run([_sys.executable, script],
+                           capture_output=True, text=True, timeout=180)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip().splitlines()
+            return (False, 0, "QRZ fetch failed: " + (err[-1] if err else "unknown error"))
+        d = json.loads(LOGBOOK_PATH.read_text())
+        n = d.get("meta", {}).get("qso_count") or len(d.get("qsos", []))
+        return (True, n, f"{n:,} QSOs")
+    except Exception as e:
+        return (False, 0, f"QRZ fetch failed: {e}")
+
+
+def _sync_reload_after_fetch():
+    """After a manual fetch updates a source file, recompute worked-state and
+    refresh the cached spot pills so the UI reflects the new data immediately."""
+    if _worked:
+        _worked.force_reload()
+    _refresh_cache_worked_status()
+
+
+def _sync_status() -> dict:
+    """Last-synced mtimes (epoch secs) for the two log sources, for the UI."""
+    lotw_path = LOGBOOK_PATH.parent / "lotw_qsl.adi"
+    def mt(p):
+        try:
+            return p.stat().st_mtime
+        except Exception:
+            return None
+    return {"now": time.time(), "qrz": mt(LOGBOOK_PATH), "lotw": mt(lotw_path)}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quiet access log
         return
@@ -2826,6 +2945,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps(payload, default=str).encode(), "application/json")
         elif self.path == "/api/scores":
             self._send(json.dumps(_build_scores_payload()).encode(), "application/json")
+        elif self.path == "/api/sync/status":
+            self._send(json.dumps(_sync_status()).encode(), "application/json")
         elif self.path.startswith("/api/log/search"):
             self._handle_log_search()
         else:
@@ -2835,7 +2956,21 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/tune":
             self._handle_tune()
             return
+        if self.path in ("/api/sync/qrz", "/api/sync/lotw"):
+            self._handle_sync("qrz" if self.path.endswith("qrz") else "lotw")
+            return
         self._send(b"not found", "text/plain", 404)
+
+    def _handle_sync(self, source):
+        """POST /api/sync/{qrz,lotw} — run the fetch (blocking; the server is
+        threaded so other requests aren't held up), reload worked-state on
+        success, return the result + fresh status."""
+        ok, n, msg = _do_qrz_fetch_once() if source == "qrz" else _do_lotw_fetch_once()
+        if ok:
+            _sync_reload_after_fetch()
+        log.info("Manual %s sync: %s [%s]", source.upper(), msg, "ok" if ok else "FAILED")
+        resp = {"ok": ok, "count": n, "message": msg, "status": _sync_status()}
+        self._send(json.dumps(resp).encode(), "application/json", 200 if ok else 500)
 
     def _handle_log_search(self):
         """GET /api/log/search[?call=...&band=...&mode=...&dxcc=...&grid=...&offset=N&limit=M]
@@ -3139,29 +3274,17 @@ async def main():
         time.sleep(60)
         first = True
         while True:
-            try:
-                user, pw = lotw_fetch.load_creds()
-                cursor_ms = lotw_fetch.load_cursor_ms()
-                qslsince = lotw_fetch.cursor_to_lotw_string(cursor_ms)
-                url = lotw_fetch.build_url(user, pw, qslsince, mode="fetch")
-                body = lotw_fetch.fetch(url)
-                if lotw_fetch.is_password_incorrect(body):
-                    log.warning("LoTW: auth rejected — disabling poll loop until restart")
-                    return
-                n = lotw_fetch.append_adif(body)
-                if n > 0:
-                    max_ms = lotw_fetch.find_max_rxqsl_ms(body)
-                    if max_ms > 0:
-                        lotw_fetch.save_cursor_ms(max_ms + 1000)
-                    log.info("LoTW: appended %d confirmation(s); cursor → %s",
-                             n, lotw_fetch.cursor_to_lotw_string(max_ms + 1000) if max_ms else "(unchanged)")
-                elif first:
-                    log.info("LoTW: first tick — no new confirmations since %s", qslsince)
-                else:
-                    log.debug("LoTW: no new confirmations since %s", qslsince)
-                first = False
-            except Exception as e:
-                log.warning("LoTW fetch failed: %s", e)
+            ok, n, msg = _do_lotw_fetch_once()   # shared with /api/sync/lotw
+            if not ok:
+                log.warning("LoTW: %s", msg)
+                if "auth rejected" in msg:
+                    return  # bad creds — stop the loop until restart (original behavior)
+            elif n > 0:
+                _sync_reload_after_fetch()        # surface new confirmations immediately
+                log.info("LoTW: %s — worked-state refreshed", msg)
+            elif first:
+                log.info("LoTW: first tick — no new confirmations")
+            first = False
             time.sleep(LOTW_FETCH_INTERVAL_SEC)
 
     # SDC / DX-cluster telnet feed: standard DX Spider node that re-broadcasts
