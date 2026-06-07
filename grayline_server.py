@@ -643,32 +643,28 @@ def _build_scores_payload() -> dict:
     }
 
     # DXCC Challenge — sum of confirmed (dxcc_id, band) slots on the 10
-    # Challenge bands (160-6m). Anything above 6m (VHF/UHF, satellite) does
-    # NOT count. We compute it AFTER dxcc_by_band below so it pulls from
-    # the same terrestrial-filtered counts (band_w / band_c).
+    # Challenge bands (160-6m). Bands above 6m do NOT count toward Challenge.
+    # Computed AFTER dxcc_by_band below so it pulls from the same per-band
+    # counts (band_w / band_c).
 
-    # Per-band DXCC entity counts — terrestrial only (ARRL excludes satellite
-    # from per-band DXCC). Computed from the deduped qsos list so the merged
-    # prop_mode field (backfilled from LoTW onto matching QRZ records) is
-    # honored — QRZ alone doesn't carry PROP_MODE.
+    # Per-band DXCC entity counts. Count from the worked-state (dxcc_id, band)
+    # sets — the SAME mirror-merged sets that drive the spot panel's band-slot
+    # coloring — so the scores panel agrees with the spots AND with LoTW's
+    # authoritative per-band totals.
+    #
+    # The previous path recomputed from self.qsos with QRZ flags only (missing
+    # the LoTW-mirror merge → under-counted by every LoTW-confirmed-but-QRZ-
+    # unsynced QSO) and applied a satellite exclusion. But LoTW credits a
+    # satellite-band-tagged QSO ON that band — its per-band totals include them
+    # — so the exclusion made us disagree with the authoritative ledger. Using
+    # the sets matches LoTW exactly (verified against the live DXCC account) and
+    # keeps the scores panel consistent with the spot coloring.
     band_w: dict[str, set[str]] = {}
     band_c: dict[str, set[str]] = {}
-    for q in _worked.qsos:
-        pm = (q.get("prop_mode") or "").strip().upper()
-        if pm == "SAT":
-            continue
-        b = (q.get("band") or "").strip().lower()
-        d = (q.get("dxcc") or "").strip()
-        if not b or not d:
-            continue
-        confirmed = (
-            (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
-            or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
-            or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")
-        )
+    for (d, b) in _worked.worked_dxcc_band:
         band_w.setdefault(b, set()).add(d)
-        if confirmed:
-            band_c.setdefault(b, set()).add(d)
+    for (d, b) in _worked.confirmed_dxcc_band:
+        band_c.setdefault(b, set()).add(d)
     dxcc_by_band: dict[str, dict] = {}
     for b in DXCC_CHALLENGE_BANDS:
         dxcc_by_band[b] = {"worked": len(band_w.get(b, set())),
@@ -679,8 +675,8 @@ def _build_scores_payload() -> dict:
         if w or c:
             dxcc_by_band[b] = {"worked": w, "confirmed": c}
 
-    # Now derive Challenge from the terrestrial-filtered per-band counts so
-    # it agrees with the per-band rows above and excludes satellite leakage.
+    # Derive Challenge from the per-band counts so it agrees with the per-band
+    # rows above and with LoTW's Challenge total.
     challenge_worked = sum(dxcc_by_band[b]["worked"] for b in DXCC_CHALLENGE_BANDS)
     challenge_confirmed = sum(dxcc_by_band[b]["confirmed"] for b in DXCC_CHALLENGE_BANDS)
 
