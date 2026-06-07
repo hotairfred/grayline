@@ -131,6 +131,18 @@ def _load_mode_tables() -> tuple[dict, dict]:
 
 _MODES, _MODES_PHONE = _load_mode_tables()
 
+# WAS = the 50 US states. The three DXCC entities that carry US states:
+# 291 (contiguous 48), 6 (Alaska), 110 (Hawaii). DC, PR, territories, and
+# Canadian provinces are NOT WAS states.
+_US_STATE_ENTITIES = frozenset({"291", "6", "110"})
+_US_STATES_50 = frozenset({
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+})
+
 
 def mode_class(mode: str) -> str:
     """Classify an ADIF mode into one of: CW, Phone, Digital, Other.
@@ -338,6 +350,10 @@ class WorkedState:
         # tracked variants; this set powers the per-band scope highlighting.
         self.worked_country_band_modeclass: set[tuple[str, str, str]] = set()  # (country, band, class)
         self.confirmed_country_band_modeclass: set[tuple[str, str, str]] = set()
+        # Entity-level (any band) modeclass — the ACTUAL grain of the ARRL mode
+        # DXCCs (CW/Phone/Digital are entity-count, NOT band-split).
+        self.worked_country_modeclass: set[tuple[str, str]] = set()  # (country, class)
+        self.confirmed_country_modeclass: set[tuple[str, str]] = set()
 
         # DXCC-ID-keyed mode-class sets — authoritative for award counts.
         # The country-name version above can over-count when QRZ and cty.dat
@@ -586,9 +602,12 @@ class WorkedState:
                 if confirmed:
                     confirmed_grid_band.add((grid4, band))
 
-            # WAS — US states only (DXCC 291). Skip Canadian "states", Alaska/HI
-            # are valid for WAS so DXCC restriction is fine here.
-            if state and dxcc == "291":
+            # WAS — the 50 US states. Alaska (DXCC 6) and Hawaii (DXCC 110) are
+            # SEPARATE DXCC entities but valid WAS states, so the gate must allow
+            # all three US-state entities — NOT just 291 (which silently dropped
+            # HI entirely and AK except where mis-tagged). Require a real 50-state
+            # USPS code so DC / territories / Canadian "states" don't sneak in.
+            if state in _US_STATES_50 and dxcc in _US_STATE_ENTITIES:
                 worked_states.add(state)
                 if confirmed:
                     confirmed_states.add(state)
@@ -625,6 +644,9 @@ class WorkedState:
         self.confirmed_country_band_mode = confirmed_country_band_mode
         self.worked_country_band_modeclass = worked_country_band_modeclass
         self.confirmed_country_band_modeclass = confirmed_country_band_modeclass
+        # Collapse band out → entity-level modeclass (mode DXCC award grain).
+        self.worked_country_modeclass = {(co, cl) for (co, _b, cl) in worked_country_band_modeclass}
+        self.confirmed_country_modeclass = {(co, cl) for (co, _b, cl) in confirmed_country_band_modeclass}
         self.worked_dxcc_modeclass = worked_dxcc_modeclass
         self.confirmed_dxcc_modeclass = confirmed_dxcc_modeclass
         self.worked_grid_band = worked_grid_band
@@ -702,6 +724,10 @@ class WorkedState:
                 self.worked_country_band_modeclass.add((co, b, cls))
                 if confirmed:
                     self.confirmed_country_band_modeclass.add((co, b, cls))
+            if cls:   # entity-level (any band) — mode DXCC award grain
+                self.worked_country_modeclass.add((co, cls))
+                if confirmed:
+                    self.confirmed_country_modeclass.add((co, cls))
         g4 = _norm_grid4(grid) if grid else ""
         if g4 and b:
             self.worked_grid_band.add((g4, b))
@@ -790,6 +816,23 @@ class WorkedState:
             if key in self.confirmed_country_band_modeclass:
                 return "confirmed"
             if key in self.worked_country_band_modeclass:
+                return "worked"
+        return "new"
+
+    def country_modeclass_status(self, country: str, modeclass: str) -> str:
+        """Entity-level (any band) modeclass status — for the ARRL mode DXCCs
+        (DXCC-CW / Phone / Digital), which are entity-count awards, NOT band-
+        split. Answers "have I ever had this entity on this mode, on any band?"
+        Keyed by country name (matches how spots are identified), with the same
+        QRZ→cty.dat normalization as the other country lookups. Returns
+        "new" / "worked" / "confirmed"."""
+        if not country or not modeclass or modeclass == "Mixed":
+            return "new"
+        c = modeclass.strip()
+        for name in (country, _qrz_country(country)):
+            if (name, c) in self.confirmed_country_modeclass:
+                return "confirmed"
+            if (name, c) in self.worked_country_modeclass:
                 return "worked"
         return "new"
 

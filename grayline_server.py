@@ -8,6 +8,7 @@ workstation, no Flex panadapter inject, no audio-critical interference.
 """
 
 import asyncio
+import socket
 import gzip
 import json
 import logging
@@ -81,7 +82,7 @@ FLEX_INJECT_SKIP_MODES = {"FT8", "FT4"}  # WSJT-X handles digital modes natively
 # decodes (source WSJTX-LOCAL) are NOT skimmer spots and are always kept.
 # Turn this back False after the contest — our own skimmer's real decodes are
 # normally the highest-value spots.
-EXCLUDE_LOCAL_SKIMMER = False   # set True during contests to drop our skimmer's busted spots
+EXCLUDE_LOCAL_SKIMMER = False   # local skimmer (SparkGap) spots included (reverted from WPX contest-off 2026-06-03). Set True during contests to drop the skimmer's busted spots.
 LOCAL_SKIMMER_SPOTTERS = {"WF8Z", "WF8Z-1"}
 
 # ---------------- SDC / DX-cluster telnet feed ----------------
@@ -108,6 +109,11 @@ TELNET_FEED_VHF_PLUS_BANDS = frozenset(
 WSJTX_ENABLED = True
 WSJTX_LISTEN_HOST = "0.0.0.0"
 WSJTX_LISTEN_PORT = 2237             # WSJT-X default UDP server port
+# Mirror every received WSJT-X UDP datagram (verbatim) to these hosts, so other
+# consumers (e.g. GridTracker on the workstation) see the same live stream and
+# Fred can compare worked/needed status side-by-side. (host, port) tuples.
+WSJTX_FORWARD_TARGETS = [("192.168.1.205", 2237)]
+_wsjtx_fwd_sock = None                # lazily created in _forward_wsjtx
 WSJTX_AUDIO_MIN_HZ = 200             # WSJT-X passband minimum (below this, decoder doesn't see signal)
 WSJTX_AUDIO_MAX_HZ = 3000            # WSJT-X passband maximum
 WSJTX_STATE_TTL_SEC = 60             # forget WSJT-X state if no heartbeat/status for this long
@@ -128,7 +134,7 @@ N1MM_LISTEN_PORT = 12060             # N1MM "Contact" broadcast port (matches GT
 # channel (a station could verify a QSO via your QRZ page instead of off the
 # air), something most contest rules prohibit. Keep it FALSE while contesting
 # and batch-upload the clean local ADIF afterward; flip True for everyday ops.
-LOGBOOK_UPLOAD_ENABLED = True   # set False during contests (avoid live-log off-air QSO confirmation)
+LOGBOOK_UPLOAD_ENABLED = True   # uploads each logged QSO to QRZ + LoTW (reverted from WPX contest-off 2026-06-03). Set False during contests to avoid live-logging off-air QSO confirmations.
 
 # Modes operated through WSJT-X (or a JTDX/MSHV equivalent that speaks the same
 # UDP protocol). When clicking a spot in any of these modes, click-to-tune
@@ -779,6 +785,8 @@ def _refresh_cache_worked_status():
                     s["dxcc_band_mode_status"] = _worked.country_band_mode_status(country, band, mode)
                 if modeclass:
                     s["dxcc_band_modeclass_status"] = _worked.country_band_modeclass_status(country, band, modeclass)
+                    # entity-level (any band) — the ARRL mode DXCC grain
+                    s["dxcc_modeclass_status"] = _worked.country_modeclass_status(country, modeclass)
             grid = s.get("grid", "")
             if grid:
                 s["grid_band_status"] = _worked.grid_band_status(grid, band)
@@ -946,10 +954,27 @@ def _ingest_wsjtx_qso_logged(parsed: dict):
              dx_call, band or '?', mode, country, dx_grid)
 
 
+def _forward_wsjtx(data: bytes):
+    """Mirror a raw WSJT-X UDP datagram to WSJTX_FORWARD_TARGETS (e.g. GridTracker
+    on the workstation). Fire-and-forget; a forward failure never affects local
+    handling."""
+    global _wsjtx_fwd_sock
+    if not WSJTX_FORWARD_TARGETS:
+        return
+    try:
+        if _wsjtx_fwd_sock is None:
+            _wsjtx_fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for tgt in WSJTX_FORWARD_TARGETS:
+            _wsjtx_fwd_sock.sendto(data, tgt)
+    except Exception as e:
+        log.debug("WSJT-X forward failed: %s", e)
+
+
 def _wsjtx_handle_datagram(data: bytes, addr: tuple):
     """Top-level WSJT-X UDP message dispatcher. Called from the asyncio
     DatagramProtocol on each received packet. Errors are caught here so
     one malformed packet can't kill the listener task."""
+    _forward_wsjtx(data)   # mirror raw datagram to GridTracker / other consumers
     try:
         from wsjtx_udp import (parse_message, MSG_HEARTBEAT, MSG_STATUS,
                                MSG_DECODE, MSG_QSO_LOGGED)
@@ -1363,6 +1388,7 @@ def add_spot(spot, cluster_name):
     dxcc_band_status = "new"
     dxcc_band_mode_status = "new"
     dxcc_band_modeclass_status = "new"
+    dxcc_modeclass_status = "new"
     modeclass = mode_class(mode) if mode else ""
     grid_band_status = "new"
     if _worked:
@@ -1372,6 +1398,7 @@ def add_spot(spot, cluster_name):
             if mode:
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
                 dxcc_band_modeclass_status = _worked.country_band_modeclass_status(country, band, modeclass)
+                dxcc_modeclass_status = _worked.country_modeclass_status(country, modeclass)
         if spot.grid:
             grid_band_status = _worked.grid_band_status(spot.grid, band)
 
@@ -1393,7 +1420,8 @@ def add_spot(spot, cluster_name):
             "call_status": call_status,                     # 'new' | 'worked' | 'confirmed'
             "dxcc_band_status": dxcc_band_status,           # same enum, scoped to country+band (mixed-mode, ARRL Challenge / DXCC-Mixed)
             "dxcc_band_mode_status": dxcc_band_mode_status, # scoped to country+band+literal-mode (e.g. country+band+FT8)
-            "dxcc_band_modeclass_status": dxcc_band_modeclass_status,  # scoped to country+band+ARRL-class (CW/Phone/Digital/Other) for DXCC variants
+            "dxcc_band_modeclass_status": dxcc_band_modeclass_status,  # country+band+ARRL-class — personal goal (entity×band×mode), off by default
+            "dxcc_modeclass_status": dxcc_modeclass_status,  # country+ARRL-class, ANY band — the real ARRL mode DXCC (CW/Phone/Digital)
             "modeclass": modeclass,                         # CW | Phone | Digital | Other — derived from mode_class(mode)
             "grid_band_status": grid_band_status,           # scoped to grid×band (FFMA on 6m, VUCC on 2m+)
             "comment": spot.comment[:60] if spot.comment else "",
@@ -1573,6 +1601,17 @@ details[open] > summary::before { transform: rotate(90deg); }
 .band-mode-toggles label input { margin-right: 0.3em; vertical-align: middle; }
 .band-mode-toggles .empty { color: #666; }
 
+/* Mode DXCC toggle chips (scores panel) */
+.mode-chips { display: flex; gap: 0.4em; flex-wrap: wrap; margin: 0.2em 0; }
+.mode-chip {
+  font-size: 0.82em; padding: 0.15em 0.5em; border-radius: 0.4em;
+  cursor: pointer; user-select: none; border: 1px solid #444;
+}
+.mode-chip.on { background: #1e3320; color: #cfc; border-color: #4a7a4a; }
+.mode-chip.off { background: #1a1a1a; color: #888; }
+.mode-chip input { margin-right: 0.3em; vertical-align: middle; }
+.mode-hint { font-size: 0.72em; color: #777; margin-top: 0.3em; line-height: 1.3; }
+
 /* Single-band content area */
 .band-content { /* container for active band's tables */ }
 .band-content .empty { color: #666; padding: 1em; }
@@ -1604,7 +1643,7 @@ details[open] .gear-icon { color: #fff; }
 .gear-panel label input { margin-right: 0.3em; vertical-align: middle; }
 .gear-panel .scope-grid {
   display: grid;
-  grid-template-columns: 4em repeat(6, minmax(4.5em, auto));
+  grid-template-columns: 4em repeat(3, minmax(4.5em, auto));  /* overridden inline by renderScopeGrid (data-driven) */
   gap: 0.15em 0.6em;
   font-size: 0.78em;
   align-items: center;
@@ -1921,14 +1960,25 @@ showWantedCB.addEventListener("change", () => {
 // of the box. Personal goals (DXCC-FT8-only, etc.) live in a future Custom
 // Goals section — not in default settings.
 //
-// Available scopes per band:
-//   HF (160m–10m):     DXCC-Mixed, DXCC-CW, DXCC-Phone, DXCC-Digital
-//   6m:                DXCC-Mixed, DXCC-CW, DXCC-Phone, DXCC-Digital, VUCC
+// Per-band scopes are band-slot awards only (one QSO per band, any mode):
+//   HF (160m–10m):     DXCC-Mixed
+//   6m:                DXCC-Mixed, VUCC
 //   2m and above:      VUCC
+// The mode DXCCs (CW/Phone/Digital) are entity-level GLOBAL awards (one QSO per
+// mode, any band) — they live in the scores-panel Mode-DXCC toggles, not here.
 //
 // FFMA (6m CONUS-48 grids) is intentionally not yet exposed — needs the
 // strict-grid-list constraint wired up first.
-const ALL_DXCC_SCOPES = ["DXCC-Mixed", "DXCC-CW", "DXCC-Phone", "DXCC-Digital"];
+// Per-band grid = the band-slot award only (Challenge / 5BDXCC / DXCC-Mixed).
+// "band slot is band slot" — one QSO per band, any mode, fills it.
+const ALL_DXCC_SCOPES = ["DXCC-Mixed"];
+// Mode DXCCs (CW/Phone/Digital) are ENTITY-level (any band) GLOBAL awards — one
+// QSO per mode on any band earns the slot. They render as pills gated on the
+// award still being active (<100 confirmed), not as per-band toggles. The
+// entity×band×mode grain is a personal goal, off by default (the data lives in
+// dxcc_band_modeclass_status, intentionally unused here).
+const MODE_SCOPE_OF = {CW: "DXCC-CW", Phone: "DXCC-Phone", Digital: "DXCC-Digital"};
+const MODE_DXCC_TARGET = 100;
 // Grid-family scopes. FFMA is 6m only (CONUS-48 grids); VUCC is 6m+ (any grid).
 const ALL_GRID_SCOPES = ["FFMA", "VUCC"];
 
@@ -1978,6 +2028,26 @@ function saveAwardScopes(scopes) {
 }
 let awardScopes = loadAwardScopes();
 
+// Mode DXCC (CW/Phone/Digital) — global, entity-level. Confirmed counts arrive
+// from /api/scores (j.dxcc); a mode auto-retires (stops highlighting spots) at
+// 100 confirmed. modeOverrides holds explicit user choices — re-arm to chase
+// endorsements past 100, or mute a mode early; absent → automatic behavior.
+let modeAwardConfirmed = {};   // {CW: 132, Phone: 65, Digital: 209}
+function loadModeOverrides() {
+  try { return JSON.parse(localStorage.getItem("grayline_mode_overrides") || "{}"); }
+  catch (e) { return {}; }
+}
+let modeOverrides = loadModeOverrides();
+function saveModeOverrides() {
+  localStorage.setItem("grayline_mode_overrides", JSON.stringify(modeOverrides));
+}
+function modeAwardActive(key) {
+  if (key in modeOverrides) return !!modeOverrides[key];   // explicit user choice
+  const c = modeAwardConfirmed[key];
+  if (c == null) return true;                              // unknown until scores load → show
+  return c < MODE_DXCC_TARGET;                             // auto-retire at target
+}
+
 function isScopeEnabled(band, scope) {
   return !!(awardScopes[band] && awardScopes[band][scope] === true);
 }
@@ -2008,15 +2078,19 @@ function scopeStatus(s, scope) {
   switch (scope) {
     case "DXCC-Mixed":
       return DXCC_BANDS.has(s.band) && s.country ? (s.dxcc_band_status || "new") : null;
+    // Mode DXCCs are ENTITY-level (any band) and GLOBAL — they advance only on
+    // a spot of their own mode, only while the award is still active (<100
+    // confirmed), and use the entity-level status (have I had this entity on
+    // this mode on ANY band), NOT the per-band-mode personal-goal status.
     case "DXCC-CW":
-      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "CW"
-        ? (s.dxcc_band_modeclass_status || "new") : null;
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "CW" && modeAwardActive("CW")
+        ? (s.dxcc_modeclass_status || "new") : null;
     case "DXCC-Phone":
-      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Phone"
-        ? (s.dxcc_band_modeclass_status || "new") : null;
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Phone" && modeAwardActive("Phone")
+        ? (s.dxcc_modeclass_status || "new") : null;
     case "DXCC-Digital":
-      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Digital"
-        ? (s.dxcc_band_modeclass_status || "new") : null;
+      return DXCC_BANDS.has(s.band) && s.country && s.modeclass === "Digital" && modeAwardActive("Digital")
+        ? (s.dxcc_modeclass_status || "new") : null;
     case "VUCC":
       return GRID_BANDS.has(s.band) && s.grid ? (s.grid_band_status || "new") : null;
     case "FFMA":
@@ -2040,6 +2114,13 @@ function scopeTags(s) {
     if (status === null) continue;
     out.push({ label: scope, status });
   }
+  // Global mode DXCC (entity-level, any band) — gated on the award being active,
+  // not on a per-band toggle. A spot can only advance its own mode's award.
+  const ms = MODE_SCOPE_OF[s.modeclass];
+  if (ms) {
+    const status = scopeStatus(s, ms);
+    if (status !== null) out.push({ label: ms, status, mode: true });
+  }
   return out;
 }
 
@@ -2060,14 +2141,15 @@ const STATUS_ORDER = { new: 0, worked: 1, confirmed: 2 };
 // Drives the orange treatment of the Country and Grid cells. Returns null
 // if no scope from that family is enabled (cell stays plain).
 function effectiveDxccStatus(s) {
-  let weakest = null;
+  // The Country cell = the BAND SLOT only (DXCC-Mixed / Challenge). "Band slot
+  // is band slot": the cell reflects whether you need the entity on THIS band,
+  // any mode. The mode DXCCs are entity-level and show as pills — they must NOT
+  // color the band cell (an entity you still need on Phone shouldn't paint the
+  // 20m cell orange when the 20m slot is already confirmed).
   for (const t of scopeTags(s)) {
-    if (!t.label.startsWith("DXCC")) continue;
-    if (weakest === null || STATUS_ORDER[t.status] < STATUS_ORDER[weakest]) {
-      weakest = t.status;
-    }
+    if (t.label === "DXCC-Mixed") return t.status;
   }
-  return weakest;
+  return null;
 }
 function effectiveGridStatus(s) {
   let weakest = null;
@@ -2173,6 +2255,9 @@ function renderScopeGrid() {
   const grid = document.getElementById("settings_scopes");
   if (!grid) return;
   const allScopes = [...ALL_DXCC_SCOPES, ...ALL_GRID_SCOPES];
+  // Column count is data-driven (1 band-label col + one per scope) so changing
+  // the scope list can't desync the layout from a hardcoded CSS column count.
+  grid.style.gridTemplateColumns = `4em repeat(${allScopes.length}, minmax(4.5em, auto))`;
   // Header row: blank corner + scope labels
   let html = `<div class="scope-hdr"></div>`;
   for (const sc of allScopes) {
@@ -2577,6 +2662,12 @@ function renderScores(j) {
     grid.innerHTML = `<span style="color:#f55">${(j && j.error) || "scores unavailable"}</span>`;
     return;
   }
+  // Capture mode-DXCC confirmed counts so spot pills can auto-retire at target.
+  if (j.dxcc) {
+    for (const k of ["CW", "Phone", "Digital"]) {
+      if (j.dxcc[k]) modeAwardConfirmed[k] = j.dxcc[k].confirmed;
+    }
+  }
   const cards = [];
 
   // DXCC by mode class (Mixed/CW/Phone/Digital/Satellite)
@@ -2587,6 +2678,28 @@ function renderScores(j) {
       rows.push(awardRow("DXCC " + cls, d.worked, d.confirmed, 100));
     }
     cards.push(awardCard("DXCC", rows));
+  }
+
+  // Mode DXCC spot-highlighting toggles — entity-level (any band), auto-retire
+  // at 100 confirmed. "On" = highlight spots of entities you still need on that
+  // mode; auto-off once the award is earned (re-check to chase endorsements).
+  {
+    const chips = [];
+    for (const k of ["CW", "Phone", "Digital"]) {
+      const c = (j.dxcc[k] || {confirmed: 0}).confirmed;
+      const done = c >= MODE_DXCC_TARGET;
+      const active = modeAwardActive(k);
+      chips.push(
+        `<label class="mode-chip ${active ? "on" : "off"}" `
+        + `title="${active ? "highlighting spots needed for DXCC " + k : "muted — earned, not highlighting"}">`
+        + `<input type="checkbox" data-modechip="${k}" ${active ? "checked" : ""}>`
+        + `${k} ${c}/${MODE_DXCC_TARGET}${done ? " ✓" : ""}</label>`
+      );
+    }
+    cards.push(`<div class="score-card"><h3>Mode DXCC — spot highlights</h3>`
+      + `<div class="mode-chips">${chips.join("")}</div>`
+      + `<div class="mode-hint">On = highlight spots you still need on that mode, any band. `
+      + `Auto-off at ${MODE_DXCC_TARGET} confirmed; re-check to chase endorsements.</div></div>`);
   }
 
   // DXCC by band — 160-6m always, plus any VHF/UHF where we have entries
@@ -2630,6 +2743,19 @@ function renderScores(j) {
   }
 
   grid.innerHTML = cards.join("");
+  grid.querySelectorAll("input[data-modechip]").forEach(el => {
+    el.addEventListener("change", () => {
+      const k = el.dataset.modechip;
+      const c = modeAwardConfirmed[k];
+      const auto = (c == null) ? true : (c < MODE_DXCC_TARGET);   // automatic state
+      // Match automatic → clear override (back to auto); else store the choice.
+      if (el.checked === auto) delete modeOverrides[k];
+      else modeOverrides[k] = el.checked;
+      saveModeOverrides();
+      refresh();        // re-gate spot pills immediately
+      fetchScores();    // re-render this panel (chip styling)
+    });
+  });
   const t = j.totals || {};
   document.getElementById("scores_totals").textContent =
     `${(t.qsos||0).toLocaleString()} QSOs · ${(t.unique_calls||0).toLocaleString()} unique calls · ` +
