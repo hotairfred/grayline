@@ -104,6 +104,7 @@ def _parse_adif_qsos(path: Path) -> list[dict]:
             "dxcc": rec.get("DXCC", ""),
             "country": rec.get("COUNTRY", ""),
             "state": rec.get("STATE", ""),
+            "cnty": rec.get("CNTY", ""),
             "cqz": rec.get("CQZ", ""),
             "ituz": rec.get("ITUZ", ""),
             "prop_mode": rec.get("PROP_MODE", ""),
@@ -142,6 +143,16 @@ _US_STATES_50 = frozenset({
     "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
     "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 })
+
+# WAJA = JARL's Worked All Japan prefectures (47 prefectures of DXCC 339, Japan).
+# The prefecture is carried in the ADIF STATE field as a two-digit code that IS
+# the WAJA reference number (e.g. "01" Hokkaido, "10" Tokyo, "47" Okinawa). This
+# is the ADIF Primary-Administrative-Subdivision scheme — NOT ISO 3166-2:JP
+# (where Tokyo=13); the two disagree, so only ADIF codes belong here. When STATE
+# is absent, the first two digits of CNTY (the JCC/JCG number) carry the same
+# prefecture code. JARL award, opt-in — not part of the ARRL-default scope set.
+_JAPAN_DXCC = "339"
+_JA_PREFECTURES_47 = frozenset(f"{i:02d}" for i in range(1, 48))
 
 
 def mode_class(mode: str) -> str:
@@ -376,6 +387,14 @@ class WorkedState:
         self.worked_state_band: set[tuple[str, str]] = set()
         self.confirmed_state_band: set[tuple[str, str]] = set()
 
+        # WAJA — JARL Worked All Japan prefectures. Two-digit ADIF codes ("01"-"47").
+        self.worked_prefectures: set[str] = set()
+        self.confirmed_prefectures: set[str] = set()
+        # Per-band-per-prefecture (mirrors WAS-by-band; not an ARRL award, kept
+        # for parity / future per-band display).
+        self.worked_prefecture_band: set[tuple[str, str]] = set()
+        self.confirmed_prefecture_band: set[tuple[str, str]] = set()
+
         # WAZ — CQ zones 1-40.
         self.worked_cq_zones: set[str] = set()
         self.confirmed_cq_zones: set[str] = set()
@@ -462,6 +481,10 @@ class WorkedState:
         confirmed_states: set[str] = set()
         worked_state_band: set[tuple[str, str]] = set()
         confirmed_state_band: set[tuple[str, str]] = set()
+        worked_prefectures: set[str] = set()
+        confirmed_prefectures: set[str] = set()
+        worked_prefecture_band: set[tuple[str, str]] = set()
+        confirmed_prefecture_band: set[tuple[str, str]] = set()
         worked_cq_zones: set[str] = set()
         confirmed_cq_zones: set[str] = set()
         worked_satellite_grids: set[str] = set()
@@ -556,7 +579,7 @@ class WorkedState:
                 # Backfill missing fields. prop_mode is in the backfill set so
                 # a satellite QSO logged via QRZ first (no prop_mode) gets
                 # tagged correctly when the matching LoTW record arrives later.
-                for k in ("grid", "dxcc", "country", "state", "cqz", "ituz", "freq", "prop_mode"):
+                for k in ("grid", "dxcc", "country", "state", "cnty", "cqz", "ituz", "freq", "prop_mode"):
                     if not existing.get(k) and q.get(k):
                         existing[k] = q[k]
 
@@ -616,6 +639,25 @@ class WorkedState:
                     if confirmed:
                         confirmed_state_band.add((state, band))
 
+            # WAJA — JARL Worked All Japan prefectures. Japan (DXCC 339) only.
+            # Primary key is the ADIF STATE prefecture code (== WAJA reference
+            # number); fall back to the first two digits of CNTY (JCC/JCG) when
+            # STATE is blank — same 01-47 scheme. Validate against the 47-code
+            # set so stray values can't sneak in.
+            if dxcc == _JAPAN_DXCC:
+                pref = state.zfill(2) if state else ""
+                if pref not in _JA_PREFECTURES_47:
+                    cnty = (q.get("cnty") or "").strip()
+                    pref = cnty[:2] if len(cnty) >= 2 else ""
+                if pref in _JA_PREFECTURES_47:
+                    worked_prefectures.add(pref)
+                    if confirmed:
+                        confirmed_prefectures.add(pref)
+                    if band:
+                        worked_prefecture_band.add((pref, band))
+                        if confirmed:
+                            confirmed_prefecture_band.add((pref, band))
+
             # WAZ — any QSO contributes its CQ zone.
             if cqz:
                 worked_cq_zones.add(cqz)
@@ -659,6 +701,10 @@ class WorkedState:
         self.confirmed_states = confirmed_states
         self.worked_state_band = worked_state_band
         self.confirmed_state_band = confirmed_state_band
+        self.worked_prefectures = worked_prefectures
+        self.confirmed_prefectures = confirmed_prefectures
+        self.worked_prefecture_band = worked_prefecture_band
+        self.confirmed_prefecture_band = confirmed_prefecture_band
         self.worked_cq_zones = worked_cq_zones
         self.confirmed_cq_zones = confirmed_cq_zones
         self.worked_satellite_grids = worked_satellite_grids

@@ -608,8 +608,14 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
 
 DXCC_CHALLENGE_BANDS = ("160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m")
 DXCC_VHF_BANDS = ("2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm")
+# Five-Band DXCC / Five-Band WAS use exactly the five classic HF bands —
+# NOT 160/30/17/12/6. Both awards require the per-band target confirmed on
+# each of these five (100 entities for 5BDXCC, 50 states for 5BWAS).
+FIVE_BAND_BANDS = ("80m", "40m", "20m", "15m", "10m")
+DXCC_HONOR_ROLL_TOTAL = 340   # current ARRL DXCC entity count (changes over time)
 VUCC_BANDS = ("6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm")
 WAS_TARGET = 50
+WAJA_TARGET = 47   # JARL Worked All Japan prefectures
 WAZ_TARGET = 40
 
 
@@ -722,6 +728,42 @@ def _build_scores_payload() -> dict:
     vucc: dict[str, int] = {b: len(vucc_band_c.get(b, set())) for b in VUCC_BANDS
                              if vucc_band_c.get(b)}
 
+    # Five-Band DXCC — 100 confirmed entities on EACH of the five classic bands.
+    # Reuses band_c (confirmed dxcc_id per band) so it agrees with DXCC-by-band.
+    five_dxcc_by_band = {b: len(band_c.get(b, set())) for b in FIVE_BAND_BANDS}
+    five_dxcc_complete = sum(1 for b in FIVE_BAND_BANDS if five_dxcc_by_band[b] >= 100)
+
+    # N-Band DXCC — 5BDXCC is the BASE award (the five classic bands); each
+    # additional band at 100 confirmed is an ENDORSEMENT on it, so the milestone
+    # shorthand is "NBDXCC" where N = total bands at 100. Classic + the 3 WARC
+    # bands = 8BDXCC; + 160m + 6m = 10BDXCC. The level is only meaningful once
+    # 5BDXCC itself is earned (all five classic bands), since the WARC/etc. bands
+    # are endorsements ON 5BDXCC, not standalone here.
+    _band_order = list(DXCC_CHALLENGE_BANDS) + list(DXCC_VHF_BANDS)
+    nb_dxcc_bands = sorted(
+        (b for b, d in dxcc_by_band.items() if d["confirmed"] >= 100),
+        key=lambda b: _band_order.index(b) if b in _band_order else 99,
+    )
+    nb_dxcc_has_base = five_dxcc_complete == 5
+    nb_dxcc_level = len(nb_dxcc_bands) if nb_dxcc_has_base else 0
+    # Bands still short of 100 on the Challenge bands — the path to the next level.
+    nb_dxcc_short = {b: dxcc_by_band[b]["confirmed"]
+                     for b in DXCC_CHALLENGE_BANDS
+                     if dxcc_by_band[b]["confirmed"] < 100}
+
+    # Five-Band WAS — 50 confirmed states on EACH of the five classic bands.
+    state_band_c: dict[str, set[str]] = {}
+    for (_st, _b) in _worked.confirmed_state_band:
+        state_band_c.setdefault(_b, set()).add(_st)
+    five_was_by_band = {b: len(state_band_c.get(b, set())) for b in FIVE_BAND_BANDS}
+    five_was_complete = sum(1 for b in FIVE_BAND_BANDS if five_was_by_band[b] >= 50)
+
+    # DXCC Honor Roll — standing off confirmed Mixed entities. Honor Roll =
+    # within 9 of the current total (>= TOTAL-9); #1 = all TOTAL. NOTE: this
+    # counts every confirmed entity incl. any deleted ones, so it can read a
+    # touch high vs ARRL's strict current-entity Honor Roll — informational.
+    honor_confirmed = len(dxcc_c["Mixed"])
+
     return {
         "as_of": time.time(),
         "totals": {
@@ -741,6 +783,11 @@ def _build_scores_payload() -> dict:
             "target": WAS_TARGET,
             "by_band": was_by_band,
         },
+        "waja": {
+            "worked": len(_worked.worked_prefectures),
+            "confirmed": len(_worked.confirmed_prefectures),
+            "target": WAJA_TARGET,
+        },
         "waz": {
             "worked": len(_worked.worked_cq_zones),
             "confirmed": len(_worked.confirmed_cq_zones),
@@ -756,6 +803,29 @@ def _build_scores_payload() -> dict:
             "worked": len(ffma_worked_set),
             "confirmed": len(ffma_confirmed_set),
             "target": ffma_target,
+        },
+        "five_band_dxcc": {
+            "by_band": five_dxcc_by_band,
+            "bands_complete": five_dxcc_complete,
+            "target_bands": len(FIVE_BAND_BANDS),
+            "per_band_target": 100,
+        },
+        "nb_dxcc": {
+            "level": nb_dxcc_level,          # 8 -> "8BDXCC"; 0 until 5BDXCC base earned
+            "has_base": nb_dxcc_has_base,
+            "bands": nb_dxcc_bands,
+            "short": nb_dxcc_short,          # {160m: 70, 6m: 28} — path to next level
+        },
+        "five_band_was": {
+            "by_band": five_was_by_band,
+            "bands_complete": five_was_complete,
+            "target_bands": len(FIVE_BAND_BANDS),
+            "per_band_target": 50,
+        },
+        "honor_roll": {
+            "confirmed": honor_confirmed,
+            "honor_roll_at": DXCC_HONOR_ROLL_TOTAL - 9,
+            "number_one_at": DXCC_HONOR_ROLL_TOTAL,
         },
         "dxcc_by_band": dxcc_by_band,
     }
@@ -1607,6 +1677,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 .mode-chip.off { background: #1a1a1a; color: #888; }
 .mode-chip input { margin-right: 0.3em; vertical-align: middle; }
 .mode-hint { font-size: 0.72em; color: #777; margin-top: 0.3em; line-height: 1.3; }
+.mode-hint .fb-done { color: #6c6; }
+.mode-hint .fb-need { color: #c96; }
 
 /* Single-band content area */
 .band-content { /* container for active band's tables */ }
@@ -2716,11 +2788,56 @@ function renderScores(j) {
     const rows = [];
     rows.push(awardRow("DXCC Challenge", j.challenge.worked, j.challenge.confirmed, 1000));
     rows.push(awardRow("WAS", j.was.worked, j.was.confirmed, j.was.target));
+    if (j.waja) {
+      rows.push(awardRow("WAJA (JARL)", j.waja.worked, j.waja.confirmed, j.waja.target));
+    }
     rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
     if (j.ffma) {
       rows.push(awardRow("FFMA (6m)", j.ffma.worked, j.ffma.confirmed, j.ffma.target));
     }
-    cards.push(awardCard("Challenge / WAS / WAZ / FFMA", rows));
+    cards.push(awardCard("Challenge / WAS / WAJA / WAZ / FFMA", rows));
+  }
+
+  // Five-Band awards + Honor Roll — completion-style awards. The C column is
+  // "bands complete" (out of 5); the hint line shows the per-band counts so the
+  // lagging band is obvious. Honor Roll is a standing off confirmed entities.
+  {
+    const rows = [];
+    const hints = [];
+    const fbFmt = (byBand, tgt) => Object.keys(byBand)
+      .map(b => `<span class="${byBand[b] >= tgt ? "fb-done" : "fb-need"}">${b} ${byBand[b]}</span>`)
+      .join(" · ");
+    if (j.nb_dxcc && j.nb_dxcc.has_base) {
+      // 5BDXCC base earned — show the N-Band milestone (8BDXCC, 10BDXCC, ...).
+      const d = j.nb_dxcc;
+      rows.push(awardRow(`${d.level}BDXCC`, null, d.level, 10));
+      const shortStr = Object.keys(d.short).length
+        ? Object.keys(d.short).map(b => `<span class="fb-need">${b} ${d.short[b]}</span>`).join(" · ")
+        : "all Challenge bands done";
+      hints.push(`<div class="mode-hint"><b>${d.level}BDXCC</b> = 5BDXCC (80-10m) + endorsements `
+        + `(${d.bands.join(", ")}). Toward 10BDXCC: ${shortStr}.</div>`);
+    } else if (j.five_band_dxcc) {
+      // Still building the 5BDXCC base — show per-band progress toward it.
+      const d = j.five_band_dxcc;
+      rows.push(awardRow("5BDXCC (80-10m)", null, d.bands_complete, d.target_bands));
+      hints.push(`<div class="mode-hint">5BDXCC (100/band): ${fbFmt(d.by_band, d.per_band_target)}</div>`);
+    }
+    if (j.five_band_was) {
+      const d = j.five_band_was;
+      rows.push(awardRow("5BWAS", null, d.bands_complete, d.target_bands));
+      hints.push(`<div class="mode-hint">5BWAS (50/band): ${fbFmt(d.by_band, d.per_band_target)}</div>`);
+    }
+    if (j.honor_roll) {
+      const d = j.honor_roll;
+      rows.push(awardRow("DXCC Honor Roll", null, d.confirmed, d.honor_roll_at));
+      hints.push(`<div class="mode-hint">Honor Roll at ${d.honor_roll_at}, #1 at ${d.number_one_at} `
+        + `(counts all confirmed entities; may read high vs current-only).</div>`);
+    }
+    if (rows.length) {
+      cards.push(`<div class="score-card"><h3>5-Band &amp; Honor Roll</h3>`
+        + `<table><tr><th>Award</th><th>W</th><th>C</th><th>Goal</th></tr>${rows.join("")}</table>`
+        + hints.join("") + `</div>`);
+    }
   }
 
   // VHF/UHF — VUCC by band + Satellite
