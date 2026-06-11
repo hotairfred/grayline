@@ -764,6 +764,38 @@ def _build_scores_payload() -> dict:
     # touch high vs ARRL's strict current-entity Honor Roll — informational.
     honor_confirmed = len(dxcc_c["Mixed"])
 
+    # WAS by mode (per-mode WAS endorsements) — ARRL-eligible confirmations
+    # (LoTW or card, no eQSL), keyed by (state, modeclass).
+    was_by_mode = {}
+    for _cls in ("CW", "Phone", "Digital"):
+        was_by_mode[_cls] = {
+            "worked": len({s for (s, c) in _worked.worked_state_modeclass if c == _cls}),
+            "confirmed": len({s for (s, c) in _worked.confirmed_state_modeclass if c == _cls}),
+        }
+
+    # Triple Play — all 50 states on CW AND Phone AND Digital, LoTW-confirmed
+    # ONLY (no paper, no eQSL). Count states present on all three modes.
+    def _states_all_three(src) -> int:
+        by: dict[str, set[str]] = {}
+        for (s, c) in src:
+            by.setdefault(s, set()).add(c)
+        need = {"CW", "Phone", "Digital"}
+        return sum(1 for cs in by.values() if need <= cs)
+    triple_play = {
+        "worked": _states_all_three(_worked.worked_state_modeclass),
+        "confirmed": _states_all_three(_worked.lotw_state_modeclass),
+        "target": 50,
+    }
+
+    # WAC — Worked All Continents (6). Continent derived from the canonical
+    # entity via cty.dat.
+    wac = {
+        "worked": len(_worked.worked_continents),
+        "confirmed": len(_worked.confirmed_continents),
+        "target": 6,
+        "continents": sorted(_worked.confirmed_continents),
+    }
+
     return {
         "as_of": time.time(),
         "totals": {
@@ -827,6 +859,9 @@ def _build_scores_payload() -> dict:
             "honor_roll_at": DXCC_HONOR_ROLL_TOTAL - 9,
             "number_one_at": DXCC_HONOR_ROLL_TOTAL,
         },
+        "was_by_mode": was_by_mode,
+        "triple_play": triple_play,
+        "wac": wac,
         "dxcc_by_band": dxcc_by_band,
     }
 
@@ -2835,6 +2870,34 @@ function renderScores(j) {
     }
     if (rows.length) {
       cards.push(`<div class="score-card"><h3>5-Band &amp; Honor Roll</h3>`
+        + `<table><tr><th>Award</th><th>W</th><th>C</th><th>Goal</th></tr>${rows.join("")}</table>`
+        + hints.join("") + `</div>`);
+    }
+  }
+
+  // WAS by mode + Triple Play + WAC
+  {
+    const rows = [];
+    if (j.was_by_mode) {
+      for (const k of ["CW", "Phone", "Digital"]) {
+        const d = j.was_by_mode[k];
+        if (d) rows.push(awardRow("WAS " + k, d.worked, d.confirmed, 50));
+      }
+    }
+    if (j.triple_play) {
+      rows.push(awardRow("Triple Play", j.triple_play.worked, j.triple_play.confirmed, j.triple_play.target));
+    }
+    if (j.wac) {
+      rows.push(awardRow("WAC", j.wac.worked, j.wac.confirmed, j.wac.target));
+    }
+    if (rows.length) {
+      const hints = [];
+      hints.push(`<div class="mode-hint">Per-mode WAS counts LoTW or card (no eQSL). `
+        + `<b>Triple Play</b> = all 50 states on CW + Phone + Digital, <b>LoTW only</b>.</div>`);
+      if (j.wac && j.wac.continents) {
+        hints.push(`<div class="mode-hint">WAC continents confirmed: ${j.wac.continents.join(", ") || "none"}.</div>`);
+      }
+      cards.push(`<div class="score-card"><h3>WAS by Mode / Triple Play / WAC</h3>`
         + `<table><tr><th>Award</th><th>W</th><th>C</th><th>Goal</th></tr>${rows.join("")}</table>`
         + hints.join("") + `</div>`);
     }

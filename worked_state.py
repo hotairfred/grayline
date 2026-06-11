@@ -328,10 +328,31 @@ def _norm_grid4(s: str) -> str:
 
 def _is_confirmed_record(rec: dict) -> bool:
     return (
-        rec.get("lotw_qsl_rcvd", "").upper() == "Y"
-        or rec.get("qsl_rcvd", "").upper() == "Y"
-        or rec.get("eqsl_qsl_rcvd", "").upper() == "Y"
+        rec.get("lotw_qsl_rcvd", "").upper() in ("Y", "V")
+        or rec.get("qsl_rcvd", "").upper() in ("Y", "V")
+        or rec.get("eqsl_qsl_rcvd", "").upper() in ("Y", "V")
     )
+
+
+# Per-source confirmation predicates. Award eligibility differs by source:
+#   - Triple Play  : LoTW ONLY (no paper, no eQSL).
+#   - WAS / DXCC   : LoTW OR paper card; eQSL NOT accepted by ARRL.
+# Tracking the source (not just a single "confirmed" bool) is what lets these
+# awards be counted correctly and fixes the eQSL over-count.
+def _confirmed_lotw(rec: dict) -> bool:
+    return rec.get("lotw_qsl_rcvd", "").upper() in ("Y", "V")
+
+def _confirmed_card(rec: dict) -> bool:
+    return rec.get("qsl_rcvd", "").upper() in ("Y", "V")
+
+def _confirmed_arrl(rec: dict) -> bool:
+    """ARRL-eligible confirmation: LoTW or paper card, but NOT eQSL."""
+    return _confirmed_lotw(rec) or _confirmed_card(rec)
+
+
+# WAC recognizes six continents (Antarctica is not one of them). cty.dat uses
+# these same two-letter codes.
+_WAC_CONTINENTS = frozenset({"NA", "SA", "EU", "AF", "AS", "OC"})
 
 
 class WorkedState:
@@ -394,6 +415,20 @@ class WorkedState:
         # for parity / future per-band display).
         self.worked_prefecture_band: set[tuple[str, str]] = set()
         self.confirmed_prefecture_band: set[tuple[str, str]] = set()
+
+        # WAS-by-mode + Triple Play. (state, modeclass) keyed.
+        #   confirmed_* here is ARRL-eligible (LoTW or card, NOT eQSL).
+        #   lotw_* is LoTW-only — the Triple Play requirement.
+        self.worked_state_modeclass: set[tuple[str, str]] = set()      # (state, class)
+        self.confirmed_state_modeclass: set[tuple[str, str]] = set()   # ARRL-eligible
+        self.lotw_state_modeclass: set[tuple[str, str]] = set()        # LoTW-only
+
+        # WAC — Worked All Continents. Six continent codes (NA/SA/EU/AF/AS/OC).
+        self.worked_continents: set[str] = set()
+        self.confirmed_continents: set[str] = set()
+        # Per-band-per-continent for the 5-Band WAC / band endorsements (future).
+        self.worked_continent_band: set[tuple[str, str]] = set()
+        self.confirmed_continent_band: set[tuple[str, str]] = set()
 
         # WAZ — CQ zones 1-40.
         self.worked_cq_zones: set[str] = set()
@@ -485,6 +520,13 @@ class WorkedState:
         confirmed_prefectures: set[str] = set()
         worked_prefecture_band: set[tuple[str, str]] = set()
         confirmed_prefecture_band: set[tuple[str, str]] = set()
+        worked_state_modeclass: set[tuple[str, str]] = set()
+        confirmed_state_modeclass: set[tuple[str, str]] = set()
+        lotw_state_modeclass: set[tuple[str, str]] = set()
+        worked_continents: set[str] = set()
+        confirmed_continents: set[str] = set()
+        worked_continent_band: set[tuple[str, str]] = set()
+        confirmed_continent_band: set[tuple[str, str]] = set()
         worked_cq_zones: set[str] = set()
         confirmed_cq_zones: set[str] = set()
         worked_satellite_grids: set[str] = set()
@@ -528,6 +570,8 @@ class WorkedState:
             except Exception as e:
                 log.warning("failed to parse LoTW ADIF %s: %s", _LOTW_ADIF_PATH, e)
 
+        country_to_continent = _load_country_to_continent()
+
         for q in qsos:
             call = _norm_call(q.get("call", ""))
             band = _norm_band(q.get("band", ""))
@@ -558,6 +602,10 @@ class WorkedState:
                 except ValueError:
                     cqz = ""
             confirmed = _is_confirmed_record(q)
+            # Per-source confirmation: LoTW-only (Triple Play) vs ARRL-eligible
+            # (LoTW or card, no eQSL — WAS / per-mode WAS).
+            conf_lotw = _confirmed_lotw(q)
+            conf_arrl = _confirmed_arrl(q)
             if confirmed:
                 confirmed_qso_count += 1
 
@@ -638,6 +686,28 @@ class WorkedState:
                     worked_state_band.add((state, band))
                     if confirmed:
                         confirmed_state_band.add((state, band))
+                # Per-mode WAS + Triple Play, keyed by (state, modeclass).
+                # confirmed_state_modeclass = ARRL-eligible (LoTW or card, no
+                # eQSL); lotw_state_modeclass = LoTW-only (Triple Play rule).
+                scls = mode_class(mode)
+                if scls in ("CW", "Phone", "Digital"):
+                    worked_state_modeclass.add((state, scls))
+                    if conf_arrl:
+                        confirmed_state_modeclass.add((state, scls))
+                    if conf_lotw:
+                        lotw_state_modeclass.add((state, scls))
+
+            # WAC — Worked All Continents. Map the canonical entity name to its
+            # continent code; only the six WAC continents count (no Antarctica).
+            cont = country_to_continent.get(country) if country else None
+            if cont in _WAC_CONTINENTS:
+                worked_continents.add(cont)
+                if confirmed:
+                    confirmed_continents.add(cont)
+                if band:
+                    worked_continent_band.add((cont, band))
+                    if confirmed:
+                        confirmed_continent_band.add((cont, band))
 
             # WAJA — JARL Worked All Japan prefectures. Japan (DXCC 339) only.
             # Primary key is the ADIF STATE prefecture code (== WAJA reference
@@ -705,6 +775,13 @@ class WorkedState:
         self.confirmed_prefectures = confirmed_prefectures
         self.worked_prefecture_band = worked_prefecture_band
         self.confirmed_prefecture_band = confirmed_prefecture_band
+        self.worked_state_modeclass = worked_state_modeclass
+        self.confirmed_state_modeclass = confirmed_state_modeclass
+        self.lotw_state_modeclass = lotw_state_modeclass
+        self.worked_continents = worked_continents
+        self.confirmed_continents = confirmed_continents
+        self.worked_continent_band = worked_continent_band
+        self.confirmed_continent_band = confirmed_continent_band
         self.worked_cq_zones = worked_cq_zones
         self.confirmed_cq_zones = confirmed_cq_zones
         self.worked_satellite_grids = worked_satellite_grids
