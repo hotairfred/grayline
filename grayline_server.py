@@ -1486,6 +1486,22 @@ def add_spot(spot, cluster_name):
             cq_zone = str(e.cq_zone) if e.cq_zone is not None else ""
             itu_zone = str(e.itu_zone) if e.itu_zone is not None else ""
 
+    # Effective grid — never REGRESS to blank. FT8 carries the grid only in a
+    # CQ / grid-reply; mid-QSO messages (reports, R-15, RR73, 73) have none, so a
+    # later decode of the same station (same cache key) would otherwise wipe the
+    # grid we already deduced from its CQ. Precedence: this decode's grid → the
+    # grid we already cached for this call (a prior grid-bearing decode) → the
+    # QRZ-cached grid (covers cluster spots that never carry one).
+    eff_grid = spot.grid or ""
+    if not eff_grid:
+        with _lock:
+            prev = _cache.get(key)
+            if prev:
+                eff_grid = prev.get("grid", "") or ""
+    if not eff_grid:
+        with _qrz_cache_lock:
+            eff_grid = _qrz_cache.get(spot.dx_call, "") or ""
+
     # Worked/needed status (against your QRZ logbook)
     call_status = "new"
     dxcc_band_status = "new"
@@ -1502,8 +1518,8 @@ def add_spot(spot, cluster_name):
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
                 dxcc_band_modeclass_status = _worked.country_band_modeclass_status(country, band, modeclass)
                 dxcc_modeclass_status = _worked.country_modeclass_status(country, modeclass)
-        if spot.grid:
-            grid_band_status = _worked.grid_band_status(spot.grid, band)
+        if eff_grid:
+            grid_band_status = _worked.grid_band_status(eff_grid, band)
 
     with _lock:
         _cache[key] = {
@@ -1514,7 +1530,7 @@ def add_spot(spot, cluster_name):
             "dx_call": spot.dx_call,
             "spotter": spot.spotter or "",
             "snr": spot.snr,
-            "grid": spot.grid or "",
+            "grid": eff_grid,
             "distance_mi": distance_mi,
             "country": country,
             "continent": continent,
