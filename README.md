@@ -13,8 +13,8 @@ worked-and-confirmed status, and renders a GridTracker-style call roster plus a
 full **award scoreboard** (DXCC and its variants, WAS, VUCC, FFMA, and more).
 
 > Built for one operator's shack first, then generalized. It pairs naturally
-> with [GoCluster](https://github.com/) as the upstream validator, but speaks
-> standard DX-cluster telnet and will point at any cluster.
+> with **GoCluster** as the upstream validator, but speaks standard DX-cluster
+> telnet and will point at any cluster.
 
 ## Features
 
