@@ -13,8 +13,8 @@ worked-and-confirmed status, and renders a GridTracker-style call roster plus a
 full **award scoreboard** (DXCC and its variants, WAS, VUCC, FFMA, and more).
 
 > Built for one operator's shack first, then generalized. It pairs naturally
-> with **GoCluster** as the upstream validator, but speaks standard DX-cluster
-> telnet and will point at any cluster.
+> with **[GoCluster](https://github.com/N2WQ/GoCluster)** as the upstream
+> validator, but speaks standard DX-cluster telnet and will point at any cluster.
 
 **New here?** Read **[docs/theory-of-operation.md](docs/theory-of-operation.md)**
 — it explains the design: why distance is measured from the *spotter* not the
@@ -140,8 +140,8 @@ full rationale.
 ```
 
 Grayline consumes any standard DX cluster, but it's designed to sit on top of a
-local aggregator (**GoCluster**) that merges RBN + PSKReporter + your own skimmer
-into one validated stream. That's optional — a public node works fine — but it's
+local aggregator ([**GoCluster**](https://github.com/N2WQ/GoCluster)) that merges
+RBN + PSKReporter + your own skimmer into one validated stream. That's optional — a public node works fine — but it's
 a real upgrade for digital ops (PSKReporter is only reachable through an
 aggregator). See *Running your own cluster* in
 [theory-of-operation.md](docs/theory-of-operation.md#7-running-your-own-cluster-and-why-gocluster-pairs-well).

@@ -226,7 +226,8 @@ Grayline works with any public DX cluster, and for many operators that's plenty
 — point it at a public node, filter in the UI, done. But Grayline is *designed*
 to sit on top of a **local aggregator**, and if you run digital modes or your
 own skimmer, putting one upstream is a genuine upgrade rather than a formality.
-The companion project Grayline is built around is **GoCluster**.
+The companion project Grayline is built around is
+**[GoCluster](https://github.com/N2WQ/GoCluster)** (by N2WQ).
 
 The division of labor is deliberate and Unix-like — each layer does one job:
 
