@@ -6,7 +6,7 @@ Pattern lifted from GridTracker 2's adif.js (BSD 3-Clause):
 single HTTPS GET to logbook.qrz.com/api?KEY=...&ACTION=FETCH returns
 your complete QSO history as ADIF text.
 
-Output: /home/fred/grayline/qrz_logbook.json
+Output: qrz_logbook.json (written alongside this script)
   - meta: { fetched_at, qso_count, callsign_count }
   - qsos: [ { call, band, mode, time, grid, qsl_received, ... }, ... ]
 
@@ -32,9 +32,10 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SECRETS_PATH = Path("/home/fred/grayline/secrets.json")
-OUTPUT_PATH = Path("/home/fred/grayline/qrz_logbook.json")
-RAW_ADIF_PATH = Path("/home/fred/grayline/qrz_logbook.adi")
+_BASE_DIR = Path(__file__).resolve().parent
+SECRETS_PATH = _BASE_DIR / "secrets.json"
+OUTPUT_PATH = _BASE_DIR / "qrz_logbook.json"
+RAW_ADIF_PATH = _BASE_DIR / "qrz_logbook.adi"
 QRZ_API_URL = "https://logbook.qrz.com/api"
 
 # ADIF field regex: <FIELD:LENGTH:TYPE>VALUE  (TYPE optional)

@@ -33,11 +33,33 @@ from worked_state import WorkedState, mode_class
 log = logging.getLogger("grayline")
 
 # ---------------- config ----------------
-GOCLUSTER_HOST = "192.168.1.103"
-GOCLUSTER_PORT = 8300
-CALLSIGN = "WF8Z"
-LOGIN_COMMANDS = [
-    "SET GRID EM79sm",
+# Operator-specific settings live in config.json (gitignored — copy
+# config.json.example and edit). Any key not present falls back to the
+# genericized default below, so a fresh clone still starts; hardware- and
+# credential-dependent features (Flex, telnet feed, uploads, LoTW fetch) default
+# OFF until enabled in config.json. API credentials live separately in
+# secrets.json (see secrets.json.example).
+_BASE_DIR = Path(__file__).parent
+_CONFIG_PATH = _BASE_DIR / "config.json"
+def _load_config() -> dict:
+    try:
+        cfg = json.loads(_CONFIG_PATH.read_text())
+        log.info("loaded config.json (%d keys)", len(cfg))
+        return cfg
+    except FileNotFoundError:
+        log.warning("no config.json found — using built-in defaults. Set callsign / "
+                    "home_grid / hosts in config.json (see config.json.example).")
+        return {}
+    except Exception as e:
+        log.warning("config.json unreadable (%s) — using built-in defaults", e)
+        return {}
+CONFIG = _load_config()
+
+GOCLUSTER_HOST = CONFIG.get("gocluster_host", "127.0.0.1")
+GOCLUSTER_PORT = CONFIG.get("gocluster_port", 8300)
+CALLSIGN = CONFIG.get("callsign", "N0CALL")
+HOME_GRID = CONFIG.get("home_grid", "")  # 6-char Maidenhead (e.g. "FN31pr"); needed for distance filtering
+LOGIN_COMMANDS = ([f"SET GRID {HOME_GRID}"] if HOME_GRID else []) + [
     "PASS BAND ALL",       # clear any stale BAND blocks left over from prior sessions
     "PASS NEARBY OFF",
     "PASS CONFIDENCE V P S C",
@@ -52,38 +74,37 @@ LOGIN_COMMANDS = [
 # specialized, and most operators just want to know "is this a new grid").
 DXCC_BANDS = {"160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"}
 GRID_BANDS = {"6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm"}
-HTTP_PORT = 8080
+HTTP_PORT = CONFIG.get("http_port", 8080)
 SPOT_TTL = 600        # seconds
 MAX_SPOTS = 5000      # hard cap
 PURGE_INTERVAL = 30   # seconds
 REGION = 2            # ARRL band plan
 
-HOME_GRID = "EM79sm"  # Cincinnati area (WF8Z QTH)
 DEFAULT_RADIUS_MI = 300
-QRZ_CACHE_PATH = Path("/home/fred/grayline/qrz_cache.json")
-CTY_DAT_PATH = Path("/home/fred/grayline/cty.dat")
-LOGBOOK_PATH = Path("/home/fred/grayline/qrz_logbook.json")
-FLEX_HOST = "192.168.1.238"
-FLEX_PORT = 4992
-FLEX_ENABLED = True
+QRZ_CACHE_PATH = _BASE_DIR / "qrz_cache.json"
+CTY_DAT_PATH = _BASE_DIR / "cty.dat"
+LOGBOOK_PATH = _BASE_DIR / "qrz_logbook.json"
+FLEX_HOST = CONFIG.get("flex_host", "")
+FLEX_PORT = CONFIG.get("flex_port", 4992)
+FLEX_ENABLED = CONFIG.get("flex_enabled", False)
 
 # Phase 2 panadapter injection tuning
-FLEX_INJECT_ENABLED = True
+FLEX_INJECT_ENABLED = CONFIG.get("flex_inject_enabled", False)
 FLEX_INJECT_RATE_SEC = 0.5         # max 2 spots/sec to the radio (gentle on the API)
 FLEX_INJECT_LIFETIME_SEC = 600     # how long Flex keeps each spot before auto-expiring it
 FLEX_INJECT_DEDUP_SEC = 300        # don't re-inject the same (band, freq, call) within this window
 FLEX_INJECT_SKIP_MODES = {"FT8", "FT4"}  # WSJT-X handles digital modes natively via DAX
 
 # ---------------- Local skimmer suppression ----------------
-# Our home CW skimmer spots under the bare callsign WF8Z (SparkGap historically
-# under WF8Z-1). During contests it busts a high volume of calls and floods the
-# feed with junk. Flip EXCLUDE_LOCAL_SKIMMER True to drop those at ingest — kills
-# them everywhere downstream (web UI, Flex inject, SDC telnet feed). WSJT-X local
-# decodes (source WSJTX-LOCAL) are NOT skimmer spots and are always kept.
-# Turn this back False after the contest — our own skimmer's real decodes are
-# normally the highest-value spots.
-EXCLUDE_LOCAL_SKIMMER = False   # local skimmer (SparkGap) spots included (reverted from WPX contest-off 2026-06-03). Set True during contests to drop the skimmer's busted spots.
-LOCAL_SKIMMER_SPOTTERS = {"WF8Z", "WF8Z-1"}
+# A home CW skimmer typically spots under your callsign (e.g. CALL and CALL-1).
+# During contests it busts a high volume of calls and can flood the feed with
+# junk. Flip EXCLUDE_LOCAL_SKIMMER True to drop those at ingest — kills them
+# everywhere downstream (web UI, Flex inject, telnet feed). WSJT-X local decodes
+# (source WSJTX-LOCAL) are NOT skimmer spots and are always kept. Override the
+# matched spotter callsigns with local_skimmer_spotters in config.json; the
+# default is [CALL, CALL-1].
+EXCLUDE_LOCAL_SKIMMER = CONFIG.get("exclude_local_skimmer", False)   # set True during contests to drop the home skimmer's busted spots
+LOCAL_SKIMMER_SPOTTERS = set(CONFIG.get("local_skimmer_spotters", [CALLSIGN, f"{CALLSIGN}-1"]))
 
 # ---------------- SDC / DX-cluster telnet feed ----------------
 # Re-broadcast GrayLine's filtered, annotated spots as a standard DX Spider
@@ -92,9 +113,9 @@ LOCAL_SKIMMER_SPOTTERS = {"WF8Z", "WF8Z-1"}
 # UI's "Local spotters only" toggle (HF <=300 mi, VHF+ <=150 mi of HOME_GRID).
 # The per-band radius overrides in the browser are localStorage-only; the feed
 # applies the fixed tiered default server-side.
-TELNET_FEED_ENABLED = True
-TELNET_FEED_PORT = 7374              # NOT 7301 (dxfilter) / 7373 (SDC's own server)
-TELNET_FEED_NODE = "WF8Z-2"         # DX Spider node call advertised to clients
+TELNET_FEED_ENABLED = CONFIG.get("telnet_feed_enabled", False)
+TELNET_FEED_PORT = CONFIG.get("telnet_feed_port", 7374)              # NOT 7301 (dxfilter) / 7373 (SDC's own server)
+TELNET_FEED_NODE = CONFIG.get("telnet_feed_node", f"{CALLSIGN}-2")   # DX Spider node call advertised to clients
 TELNET_FEED_RADIUS_HF_MI = 300
 TELNET_FEED_RADIUS_VHF_MI = 150
 # 6m and up are "local-signal" bands — nearer spotters are the meaningful ones.
@@ -106,13 +127,13 @@ TELNET_FEED_VHF_PLUS_BANDS = frozenset(
 # Listen for WSJT-X broadcasts (heartbeat, status, decode) so Grayline
 # (a) ingests our own real-time decodes as local-source spots, and
 # (b) knows the current dial frequency for click-to-tune audio-offset math.
-WSJTX_ENABLED = True
+WSJTX_ENABLED = CONFIG.get("wsjtx_enabled", True)
 WSJTX_LISTEN_HOST = "0.0.0.0"
-WSJTX_LISTEN_PORT = 2237             # WSJT-X default UDP server port
+WSJTX_LISTEN_PORT = CONFIG.get("wsjtx_listen_port", 2237)             # WSJT-X default UDP server port
 # Mirror every received WSJT-X UDP datagram (verbatim) to these hosts, so other
-# consumers (e.g. GridTracker on the workstation) see the same live stream and
-# Fred can compare worked/needed status side-by-side. (host, port) tuples.
-WSJTX_FORWARD_TARGETS = [("192.168.1.205", 2237)]
+# consumers (e.g. GridTracker on another machine) see the same live stream and
+# you can compare worked/needed status side-by-side. List of [host, port].
+WSJTX_FORWARD_TARGETS = [tuple(t) for t in CONFIG.get("wsjtx_forward_targets", [])]
 _wsjtx_fwd_sock = None                # lazily created in _forward_wsjtx
 WSJTX_AUDIO_MIN_HZ = 200             # WSJT-X passband minimum (below this, decoder doesn't see signal)
 WSJTX_AUDIO_MAX_HZ = 3000            # WSJT-X passband maximum
@@ -124,9 +145,9 @@ WSJTX_STATE_TTL_SEC = 60             # forget WSJT-X state if no heartbeat/statu
 # 'new'->'worked' on the next /spots.json poll, reusing the same ingest pipeline
 # as WSJT-X logging (ADIF append + worked-state + logbook upload). Useful when
 # running a contest in N1MM/SDC instead of WSJT-X.
-N1MM_ENABLED = True
+N1MM_ENABLED = CONFIG.get("n1mm_enabled", True)
 N1MM_LISTEN_HOST = "0.0.0.0"
-N1MM_LISTEN_PORT = 12060             # N1MM "Contact" broadcast port (matches GTBridge)
+N1MM_LISTEN_PORT = CONFIG.get("n1mm_listen_port", 12060)             # N1MM "Contact" broadcast port (matches GTBridge)
 
 # Master switch for real-time logbook uploads (QRZ/ClubLog/eQSL) fired on every
 # QSO logged via WSJT-X or N1MM. When True, every logged QSO appears on QRZ
@@ -134,7 +155,7 @@ N1MM_LISTEN_PORT = 12060             # N1MM "Contact" broadcast port (matches GT
 # channel (a station could verify a QSO via your QRZ page instead of off the
 # air), something most contest rules prohibit. Keep it FALSE while contesting
 # and batch-upload the clean local ADIF afterward; flip True for everyday ops.
-LOGBOOK_UPLOAD_ENABLED = True   # uploads each logged QSO to QRZ + LoTW (reverted from WPX contest-off 2026-06-03). Set False during contests to avoid live-logging off-air QSO confirmations.
+LOGBOOK_UPLOAD_ENABLED = CONFIG.get("logbook_upload_enabled", False)   # uploads each logged QSO to QRZ + LoTW. Keep False while contesting (avoids live off-air QSO confirmation).
 
 # Modes operated through WSJT-X (or a JTDX/MSHV equivalent that speaks the same
 # UDP protocol). When clicking a spot in any of these modes, click-to-tune
@@ -149,14 +170,14 @@ WSJTX_MODES = {"FT8", "FT4", "JT65", "JT9", "MSK144", "Q65",
 # canonical real-time log fed by Grayline directly from WSJT-X UDP — separate
 # from QRZ logbook (which lags by minutes-to-hours via cron-pulled fetch).
 # Future steps: parallel uploads to QRZ / ClubLog / eQSL / LoTW from this file.
-QSO_LOG_PATH = Path("/home/fred/grayline/qso_logged.adi")
+QSO_LOG_PATH = _BASE_DIR / "qso_logged.adi"
 
 # LoTW incremental download. Pulls confirmations from ARRL LoTW directly
 # rather than waiting for them to surface via QRZ logbook (which lags by
 # operator manual processing). Closes the Aruba/EU-Russia confirmation gap
 # observed when QRZ hadn't yet reflected LoTW state. See lotw_fetch.py for
 # the cursor + auth model (lifted from GT2 adif.js).
-LOTW_FETCH_ENABLED = True
+LOTW_FETCH_ENABLED = CONFIG.get("lotw_fetch_enabled", False)
 LOTW_FETCH_INTERVAL_SEC = 3600   # 1 hr — LoTW pull is incremental; hourly is plenty
 
 # Source priority for spot dedup. Higher numbers win when the same
@@ -166,7 +187,7 @@ LOTW_FETCH_INTERVAL_SEC = 3600   # 1 hr — LoTW pull is incremental; hourly is 
 # more than third-party propagation.
 SOURCE_PRIORITY = {
     "WSJTX-LOCAL": 100,    # our running WSJT-X — highest fidelity
-    "SPARKGAP-LOCAL": 90,  # WF8Z-1 SparkGap skimmer at the home Pitaya
+    "SPARKGAP-LOCAL": 90,  # a local CW skimmer at the home station
     "GOCLUSTER": 50,       # local validated aggregator (default external feed)
     # everything else (RBN, DXSummit, PSKR ingest via GoCluster) defaults to 10
 }
@@ -283,7 +304,7 @@ def qrz_lookup_worker():
     """Background worker: pops from queue, calls QRZ XML API, caches result."""
     import qrz as qrz_module  # use existing GTBridge QRZ client for auth + parse
     try:
-        secrets = json.loads(Path("/home/fred/grayline/secrets.json").read_text())
+        secrets = json.loads((_BASE_DIR / "secrets.json").read_text())
         client = qrz_module.QRZLookup(
             username=secrets["qrz_user"],
             password=secrets["qrz_password"],
@@ -1046,7 +1067,7 @@ def _ingest_wsjtx_qso_logged(parsed: dict):
 
     # Fire parallel uploads to QRZ / ClubLog / eQSL. Background thread,
     # fire-and-forget, never blocks the WSJT-X UDP handler. Results land
-    # in /home/fred/grayline/qso_uploads.log per service per QSO.
+    # in qso_uploads.log (alongside the app) per service per QSO.
     if LOGBOOK_UPLOAD_ENABLED:
         logbook_uploads.upload_qso_to_all(adif_record, dx_call=dx_call)
     else:
@@ -1950,7 +1971,7 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-section active" id="view_live">
   <div class="controls">
     <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
-    <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of EM79sm)</label>
+    <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
@@ -1995,7 +2016,7 @@ details[open] .gear-icon { color: #fff; }
       <option value="Q65">Q65</option><option value="JS8">JS8</option>
     </select>
     <input type="text" id="lf_dxcc" class="log-search-input wide" placeholder="entity (e.g. Russia)" autocomplete="off">
-    <input type="text" id="lf_grid" class="log-search-input" placeholder="grid (e.g. EM79)" autocomplete="off">
+    <input type="text" id="lf_grid" class="log-search-input" placeholder="grid (e.g. FN31)" autocomplete="off">
     <span class="log-search-clear" id="lf_clear">clear</span>
     <span class="log-search-meta" id="log_search_meta"></span>
   </div>
@@ -2017,6 +2038,8 @@ details[open] .gear-icon { color: #fff; }
   <div class="log-search-results" id="log_search_results"></div>
 </div>
 <script>
+// Operator identity, injected from config.json at serve time.
+const MY_CALLSIGN = "__MY_CALLSIGN__".toUpperCase();
 const BAND_ORDER = ["3cm","6cm","9cm","13cm","23cm","33cm","70cm","1.25m","2m","6m","10m","12m","15m","17m","20m","30m","40m","60m","80m","160m"];
 // Per-band award scopes — drives which cells get the orange highlight treatment.
 const DXCC_BANDS = new Set(["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"]);
@@ -2761,11 +2784,11 @@ async function refresh() {
       const dxccCellClass = "country" + (dxccEff ? " " + dxccEff : "");
       const gridEff = effectiveGridStatus(s);
       const gridCellClass = "grid" + (gridEff ? " g" + gridEff : "");
-      // Local source = us. Recognizes SparkGap, our running WSJT-X (any slice),
-      // and the legacy WF8Z-prefixed cluster path so existing infrastructure
-      // spots still highlight correctly.
+      // Local source = us. Recognizes our skimmer/WSJT-X local sources, and the
+      // operator's own callsign appearing as a cluster spotter (own-station
+      // infrastructure spots) so they still highlight as "us".
       const isUs = (s.source || "").endsWith("-LOCAL")
-                || (s.spotter || "").toUpperCase().startsWith("WF8Z");
+                || (s.spotter || "").toUpperCase().startsWith(MY_CALLSIGN);
       const rowClass = isUs ? "us-spotted" : "";
       const spotterClass = isUs ? "spotter us" : "spotter";
       const awardCell = scopeTags(s).map(t =>
@@ -2796,7 +2819,7 @@ async function refresh() {
     if (anyScopeNeeded(s)) wantedCount++;
     if (s.call_status === "new") newCallCount++;
     if (s.call_status === "confirmed") confirmedCount++;
-    if ((s.spotter || "").toUpperCase().startsWith("WF8Z")) usCount++;
+    if ((s.spotter || "").toUpperCase().startsWith(MY_CALLSIGN)) usCount++;
   }
   const anyFilter = filterOn || showWanted || disabledBands.size > 0 || disabledModes.size > 0;
   const filterTag = anyFilter ? ` (${filteredOut} hidden)` : "";
@@ -3395,7 +3418,9 @@ class Handler(BaseHTTPRequestHandler):
             # Inject the FFMA grid list as a JS array literal into the page so
             # the client doesn't need a second fetch + cache step. ~3KB.
             ffma_js = ",".join('"' + g + '"' for g in _FFMA_GRIDS)
-            page = HTML_PAGE.replace("__FFMA_GRIDS_INJECT__", ffma_js)
+            page = (HTML_PAGE.replace("__FFMA_GRIDS_INJECT__", ffma_js)
+                    .replace("__MY_CALLSIGN__", CALLSIGN)
+                    .replace("__MY_GRID__", HOME_GRID or "your QTH"))
             self._send(page.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/spots.json":
             payload = {"spots": snapshot(), "now": time.time()}

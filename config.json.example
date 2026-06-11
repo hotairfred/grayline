@@ -1,0 +1,26 @@
+{
+  "callsign": "N0CALL",
+  "home_grid": "FN31pr",
+
+  "gocluster_host": "127.0.0.1",
+  "gocluster_port": 8300,
+  "http_port": 8080,
+
+  "flex_enabled": false,
+  "flex_host": "192.168.1.100",
+  "flex_port": 4992,
+  "flex_inject_enabled": false,
+
+  "telnet_feed_enabled": false,
+  "telnet_feed_port": 7374,
+
+  "wsjtx_enabled": true,
+  "wsjtx_listen_port": 2237,
+  "wsjtx_forward_targets": [],
+
+  "n1mm_enabled": true,
+  "n1mm_listen_port": 12060,
+
+  "logbook_upload_enabled": false,
+  "lotw_fetch_enabled": false
+}

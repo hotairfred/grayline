@@ -5,7 +5,7 @@ Pattern lifted from GridTracker 2's GT.tracker.{worked,confirmed} dicts:
 key-presence checks against pre-computed sets. O(1) lookups, no database.
 
 Usage:
-    ws = WorkedState("/home/fred/gtbridge/qrz_logbook.json")
+    ws = WorkedState("qrz_logbook.json")
     ws.is_worked("W3LPL")                 # bool — ever worked this call?
     ws.is_confirmed("W3LPL")              # bool — confirmed via LoTW or paper?
     ws.is_dxcc_worked(dxcc_id, "20m")     # bool — worked this DXCC on this band?

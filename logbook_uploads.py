@@ -41,8 +41,9 @@ from pathlib import Path
 
 log = logging.getLogger("grayline.uploads")
 
-SECRETS_PATH = Path("/home/fred/grayline/secrets.json")
-UPLOAD_LOG_PATH = Path("/home/fred/grayline/qso_uploads.log")
+_BASE_DIR = Path(__file__).resolve().parent
+SECRETS_PATH = _BASE_DIR / "secrets.json"
+UPLOAD_LOG_PATH = _BASE_DIR / "qso_uploads.log"
 QRZ_LOGBOOK_URL = "https://logbook.qrz.com/api"
 CLUBLOG_URL = "https://clublog.org/realtime.php"
 EQSL_URL = "https://www.eqsl.cc/qslcard/ImportADIF.cfm"

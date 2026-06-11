@@ -1,7 +1,9 @@
 __pycache__/
 *.pyc
-# Credentials / API keys — never commit
+# Credentials / API keys — never commit (the *.example templates ARE committed)
 secrets.json
+# Operator-specific settings (callsign, grid, hosts) — copy from config.json.example
+config.json
 # Runtime data, caches, and logs — regenerated/re-fetched by the app, not source
 qrz_cache.json
 qrz_logbook.json

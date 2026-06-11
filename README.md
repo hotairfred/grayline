@@ -1,81 +1,127 @@
 # Grayline
 
-Web-based DX cluster consumer with worked/needed lookup for the WF8Z shack.
+A web-based DX cluster consumer with award-aware worked/needed lookup, built for
+the serious DXer who wants finer per-band/per-award granularity than a general
+spotting tool provides. It runs headless (a container, a Pi, any always-on Linux
+box), serves a self-contained dark-mode web page to any browser on your LAN or
+over Tailscale, and keeps the heavy lifting off your operating PC.
 
-Pulls validated spots from a local **GoCluster** instance, enriches them with
-DXCC / continent / CQ-zone data via cty.dat, cross-references against the
-operator's QRZ Logbook for worked-and-confirmed status, and serves a
-GridTracker-style call roster as a self-contained web page over the LAN.
+Grayline pulls validated spots from a DX cluster, enriches them with
+DXCC / continent / zone data via `cty.dat`, cross-references them against your
+own logbook (QRZ Logbook + LoTW + a local WSJT-X/N1MM feed) for
+worked-and-confirmed status, and renders a GridTracker-style call roster plus a
+full **award scoreboard** (DXCC and its variants, WAS, VUCC, FFMA, and more).
 
-## What it does
+> Built for one operator's shack first, then generalized. It pairs naturally
+> with [GoCluster](https://github.com/) as the upstream validator, but speaks
+> standard DX-cluster telnet and will point at any cluster.
 
-- Connects to GoCluster (`192.168.1.103:8300` by default) with operator-tuned
-  cluster filters (`PASS NEARBY OFF`, `PASS CONFIDENCE V P S C`, `PASS MODE
-  FT8 FT4`, `PASS SOURCE ALL`, `PASS DECONT NA`).
-- Maintains an in-memory spot cache with a 10-minute TTL.
-- Resolves spotter callsigns to grids via QRZ XML (active background lookup
-  worker that writes back to the shared `qrz_cache.json`).
-- Computes the **spotter-to-home** distance for each spot — the proper
-  *"propagation reachability"* metric (if a nearby skimmer hears it, you
-  probably can too) rather than DX-distance.
-- Tags each spot with **call-status** (new / worked / confirmed) and
-  **DXCC-band-status** (and optionally DXCC-band-mode-status for
-  award-specific filtering).
-- Serves an auto-refreshing dark-mode HTML roster with per-band tabs,
-  per-band-mode toggles, settings gear for global band/mode visibility,
-  needed-only filter, mode-aware filter, 300mi spotter-distance filter,
-  and persistent localStorage state.
+## Features
 
-## Phase 1 Flex integration
+- **Award scoreboard** — DXCC (Mixed/CW/Phone/Digital/Satellite), DXCC
+  Challenge, per-band DXCC + the N-band milestones (5BDXCC → 8BDXCC → 10BDXCC),
+  DXCC Honor Roll standing, WAS + 5BWAS + per-mode WAS, **Triple Play**, **WAC**,
+  **FFMA**, **VUCC** — plus CQ **WAZ** and JARL **WAJA** (with a kanji prefecture
+  grid). Each award toggles on/off in a "Scores setup" panel (ARRL on by
+  default; CQ/JARL opt-in).
+- **Confirmation-source aware** — distinguishes LoTW / card / eQSL per QSO, so
+  award counts respect each program's rules (e.g. Triple Play is LoTW-only;
+  ARRL awards don't accept eQSL).
+- **Per-band award scopes** — HF chases DXCC×band; 6m chases DXCC *and* grids
+  (FFMA); 2m+ chases grids (VUCC). Spots highlight against the awards that
+  actually matter on that band.
+- **Local-spotter filter** — distance is measured from each *spotter* to your
+  QTH, not to the DX. A nearby station hearing it means *you* probably can too
+  — the right propagation signal, especially on 6m (tiered radius: HF vs VHF+).
+- **Live logging integration** — listens to WSJT-X and N1MM/SDC UDP, flips
+  worked/needed in real time, writes a local ADIF, and (optionally) fan-out
+  uploads to QRZ / ClubLog / eQSL / LoTW.
+- **FlexRadio integration** (optional) — slice tracking, panadapter spot
+  inject, click-to-tune.
+- **Re-broadcast** (optional) — serves its filtered, annotated spots back out
+  as a standard DX-Spider telnet node for other logging tools.
 
-Connects to the FlexRadio 6000-series radio's TCP API (`192.168.1.238:4992`),
-subscribes to slice updates, and exposes the current radio state at
-`/active_bands`. Phase 2 (band-filtered panadapter spot inject) and Phase 3
-(click-to-tune the active slice to a spot's frequency) are planned but not
-yet wired.
+## Quick start
+
+```bash
+git clone <your-fork-url> grayline
+cd grayline
+
+# 1. Operator settings (callsign, grid, cluster host, which features are on)
+cp config.json.example config.json
+$EDITOR config.json          # set "callsign" and "home_grid" at minimum
+
+# 2. API credentials (only needed for the services you enable)
+cp secrets.json.example secrets.json
+$EDITOR secrets.json         # QRZ / LoTW / etc.
+
+# 3. Run
+python3 grayline_server.py
+```
+
+Then open `http://<host>:8080/` (the `http_port` from `config.json`) from any
+browser on your network. Stdlib-only — no `pip install` required for the core
+server.
+
+### Minimum to see something
+
+Set `callsign` and `home_grid` in `config.json` and point `gocluster_host` at a
+reachable cluster. Everything credential- or hardware-dependent (Flex, the
+telnet feed, logbook uploads, LoTW fetch) defaults **off** — turn each on in
+`config.json` once you've supplied what it needs.
+
+## Configuration
+
+`config.json` (gitignored; copy from `config.json.example`) holds your
+operator-specific settings:
+
+| key | meaning |
+|---|---|
+| `callsign` | your callsign — identifies your own spots/decodes as "local" |
+| `home_grid` | 6-char Maidenhead locator — anchors the spotter-distance filter |
+| `gocluster_host` / `gocluster_port` | the DX cluster to consume |
+| `http_port` | web UI port (default 8080) |
+| `flex_enabled` / `flex_host` / `flex_inject_enabled` | FlexRadio 6000-series TCP API |
+| `telnet_feed_enabled` / `telnet_feed_port` | re-broadcast as a DX-Spider node |
+| `wsjtx_enabled` / `wsjtx_forward_targets` | WSJT-X UDP listen + optional mirror to e.g. GridTracker |
+| `n1mm_enabled` | listen for N1MM/SDC `<contactinfo>` UDP |
+| `logbook_upload_enabled` | live QRZ/ClubLog/eQSL/LoTW upload on each logged QSO |
+| `lotw_fetch_enabled` | periodic incremental LoTW confirmation download |
+
+`secrets.json` (gitignored; copy from `secrets.json.example`) holds API
+credentials. Only the keys for the services you enable are required; missing
+credentials simply skip that service.
 
 ## Architecture
 
 ```
-[skimmer1] --raw spots--> [GoCluster] --validated--> [Grayline] --HTTP--> [browser]
-                                                          |
-                                                          +--> [QRZ XML lookup]
-                                                          +--> [cty.dat enrichment]
-                                                          +--> [worked-state lookup]
-                                                          +--> [Flex TCP 4992 (slice tracking)]
+[skimmer] --raw--> [DX cluster] --validated--> [Grayline] --HTTP--> [browser]
+                                                   |
+                  WSJT-X / N1MM UDP ----------->   +--> worked/needed + award engine
+                                                   +--> cty.dat enrichment
+                                                   +--> QRZ XML grid lookup
+                                                   +--> LoTW incremental fetch
+                                                   +--> Flex TCP 4992 (optional)
+                                                   +--> DX-Spider telnet feed (optional)
 ```
 
 ## Files
 
-- `grayline_server.py` — main HTTP + cluster client + Flex client
-- `worked_state.py` — in-memory worked/confirmed lookup against `qrz_logbook.json`
-- `qrz_logbook_fetch.py` — one-shot fetcher for the QRZ Logbook API
-- `dxcluster.py`, `flexradio.py`, `ctydat.py`, `qrz.py` — supporting libs
-  (copied from gtbridge; this project owns its versions from here)
-- `cty.dat` — AD1C DXCC country file
-- `secrets.json` (symlink) — shared with gtbridge; contains QRZ creds
-- `qrz_cache.json` (symlink) — shared callsign-to-grid cache; both projects feed it
-- `qrz_logbook.json`, `qrz_logbook.adi` — your QRZ Logbook in JSON + ADIF form
+- `grayline_server.py` — HTTP server, cluster client, award engine, UDP listeners
+- `worked_state.py` — in-memory worked/confirmed lookup over your merged log
+- `lotw_fetch.py` — incremental LoTW confirmation download
+- `qrz_logbook_fetch.py` — QRZ Logbook API fetcher
+- `logbook_uploads.py` — QRZ / ClubLog / eQSL / LoTW (TQSL) upload fan-out
+- `dxcluster.py`, `flexradio.py`, `telnet_server.py`, `ctydat.py`, `qrz.py` — supporting libs
+- `cty.dat` — AD1C DXCC country file (bundled; updates at <https://www.country-files.com/>)
+- `data/` — FFMA grid list, mode classification tables
+- `config.json.example`, `secrets.json.example` — copy these to get started
 
-## Running
+## Development
 
-```
-cd /home/fred/grayline
-python3 grayline_server.py
-```
+Grayline is developed primarily with [Claude Code](https://claude.com/claude-code)
+as the agentic coding tool. Contributions and forks welcome.
 
-Then open `http://192.168.1.101:8080/` from anywhere on the LAN.
+## License
 
-## Why a separate project from gtbridge
-
-Different consumer model, different architecture, different roadmap. gtbridge
-is the *cluster → UDP → GridTracker* path for non-Flex users on a remote
-machine. Grayline is the *cluster → web UI + worked-state + Flex integration*
-path for the Flex shack.
-
-The shared state (`secrets.json`, `qrz_cache.json`) is symlinked between the
-two projects to maintain a single source of truth.
-
-The shared libraries (`dxcluster.py`, `flexradio.py`, `ctydat.py`, `qrz.py`)
-are copied — each project owns its evolution from here. Backporting fixes
-across the two is a manual but cheap operation.
+GPL-3.0.

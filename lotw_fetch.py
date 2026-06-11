@@ -29,9 +29,10 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SECRETS_PATH = Path("/home/fred/grayline/secrets.json")
-STATE_PATH = Path("/home/fred/grayline/lotw_state.json")
-ADIF_PATH = Path("/home/fred/grayline/lotw_qsl.adi")
+_BASE_DIR = Path(__file__).resolve().parent
+SECRETS_PATH = _BASE_DIR / "secrets.json"
+STATE_PATH = _BASE_DIR / "lotw_state.json"
+ADIF_PATH = _BASE_DIR / "lotw_qsl.adi"
 LOTW_URL = "https://lotw.arrl.org/lotwuser/lotwreport.adi"
 TIMEOUT_SEC = 120
 
