@@ -2,8 +2,10 @@
   "callsign": "N0CALL",
   "home_grid": "FN31pr",
 
-  "gocluster_host": "127.0.0.1",
-  "gocluster_port": 8300,
+  "gocluster_host": "ve7cc.net",
+  "gocluster_port": 23,
+  "login_commands": [],
+  "require_spotter_grid": false,
   "http_port": 8080,
 
   "flex_enabled": false,

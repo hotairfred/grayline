@@ -13,6 +13,7 @@ import gzip
 import json
 import logging
 import math
+import os
 import re
 import threading
 import time
@@ -40,7 +41,9 @@ log = logging.getLogger("grayline")
 # OFF until enabled in config.json. API credentials live separately in
 # secrets.json (see secrets.json.example).
 _BASE_DIR = Path(__file__).parent
-_CONFIG_PATH = _BASE_DIR / "config.json"
+# Config path is overridable via $GRAYLINE_CONFIG (handy for testing / multiple
+# instances); defaults to config.json next to this script.
+_CONFIG_PATH = Path(os.environ.get("GRAYLINE_CONFIG") or (_BASE_DIR / "config.json"))
 def _load_config() -> dict:
     try:
         cfg = json.loads(_CONFIG_PATH.read_text())
@@ -55,18 +58,20 @@ def _load_config() -> dict:
         return {}
 CONFIG = _load_config()
 
-GOCLUSTER_HOST = CONFIG.get("gocluster_host", "127.0.0.1")
-GOCLUSTER_PORT = CONFIG.get("gocluster_port", 8300)
+GOCLUSTER_HOST = CONFIG.get("gocluster_host", "ve7cc.net")   # a public DX cluster by default
+GOCLUSTER_PORT = CONFIG.get("gocluster_port", 23)
 CALLSIGN = CONFIG.get("callsign", "N0CALL")
 HOME_GRID = CONFIG.get("home_grid", "")  # 6-char Maidenhead (e.g. "FN31pr"); needed for distance filtering
-LOGIN_COMMANDS = ([f"SET GRID {HOME_GRID}"] if HOME_GRID else []) + [
-    "PASS BAND ALL",       # clear any stale BAND blocks left over from prior sessions
-    "PASS NEARBY OFF",
-    "PASS CONFIDENCE V P S C",
-    "PASS MODE FT8 FT4",
-    "PASS SOURCE ALL",
-    "PASS DECONT NA",      # only North American spotters reach us — server-side first stage
-]
+# Commands sent after login. Empty by default — standard DX clusters (ve7cc.net
+# etc.) stream spots immediately with no setup. GoCluster / DXSpider filter
+# dialects (PASS ..., SET GRID ...) go here via config.json for those servers.
+LOGIN_COMMANDS = CONFIG.get("login_commands", [])
+# When True, drop any spot whose spotter we can't place (no grid in the QRZ
+# cache) — the strict "only verifiable spotters" policy. Requires QRZ creds +
+# a warm cache to show anything, so it defaults False: a fresh install with a
+# default public cluster shows spots immediately; distance is just blank until
+# the spotter resolves. Set True (with QRZ creds) to filter unverifiable feeds.
+REQUIRE_SPOTTER_GRID = CONFIG.get("require_spotter_grid", False)
 
 # Per-band award scopes. HF chases DXCC×band (ARRL Challenge / 5BDXCC). 6m chases
 # BOTH DXCC×band AND grids (FFMA + 6m DXCC are both meaningful awards). 2m and up
@@ -1493,7 +1498,11 @@ def add_spot(spot, cluster_name):
         distance_mi = 0
     else:
         distance_mi = spotter_distance_mi(spot.spotter)
-        if distance_mi is None:
+        # distance_mi is None when the spotter has no resolvable grid (cold QRZ
+        # cache, no creds, or no home grid set). Only drop on that in strict mode;
+        # otherwise keep the spot with unknown distance so a fresh install still
+        # shows a populated roster.
+        if distance_mi is None and REQUIRE_SPOTTER_GRID:
             return
 
     # cty.dat enrichment for the DX call (entity name doubles as the
