@@ -1,7 +1,13 @@
 # Grayline Award Tracking Specification
 
-**Status:** authoritative working spec
-**Last updated:** 2026-06-07
+**Status:** design spec — this is the research pass that *drove* the award-engine
+build, not a description of current state. The gaps called out in §6 (the
+LoTW / card / eQSL confirmation-source distinction, Triple Play, per-mode WAS,
+the WAS Alaska/Hawaii fix, 5BWAS, WAC, the N-band DXCC milestones) were
+**subsequently implemented**. Read this for the *per-award grain rationale*
+(why each award counts what it counts); for current behavior see the README and
+[theory-of-operation.md](theory-of-operation.md).
+**Last updated:** 2026-06-07 (spec); implemented 2026-06.
 **Author:** Grayline (research pass against official ARRL / CQ / IARU / RSGB rule sources)
 
 ---

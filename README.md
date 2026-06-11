@@ -16,6 +16,11 @@ full **award scoreboard** (DXCC and its variants, WAS, VUCC, FFMA, and more).
 > with **GoCluster** as the upstream validator, but speaks standard DX-cluster
 > telnet and will point at any cluster.
 
+**New here?** Read **[docs/theory-of-operation.md](docs/theory-of-operation.md)**
+— it explains the design: why distance is measured from the *spotter* not the
+DX, why QRZ lookups are what make that work, the strict/lenient spotter gate, and
+how confirmation-source tracking keeps each award counting by its own rules.
+
 ## Features
 
 - **Award scoreboard** — DXCC (Mixed/CW/Phone/Digital/Satellite), DXCC
@@ -63,12 +68,22 @@ Then open `http://<host>:8080/` (the `http_port` from `config.json`) from any
 browser on your network. Stdlib-only — no `pip install` required for the core
 server.
 
-### Minimum to see something
+### What you'll see on first run
 
-Set `callsign` and `home_grid` in `config.json` and point `gocluster_host` at a
-reachable cluster. Everything credential- or hardware-dependent (Flex, the
-telnet feed, logbook uploads, LoTW fetch) defaults **off** — turn each on in
-`config.json` once you've supplied what it needs.
+Out of the box the example config points at a public cluster (`ve7cc.net:23`)
+and uses the lenient spotter gate, so **just set your `callsign` and run** —
+you'll get a live, populated roster immediately (a worldwide all-band feed you
+filter by band/mode in the UI). Everything credential- or hardware-dependent
+(Flex, the telnet feed, logbook uploads, LoTW fetch) defaults **off**.
+
+To unlock the rest, in order of payoff:
+
+1. **`home_grid`** — anchors the spotter-distance ("local spotters") filter.
+2. **QRZ credentials** (`secrets.json`) — resolves spotter grids so that filter
+   actually works (see below), and pulls in your worked/needed status.
+3. **`lotw_fetch_enabled` + LoTW creds** — confirmations for the award scoreboard.
+4. **`require_spotter_grid: true`** — once the QRZ cache is warm, for the clean
+   verified-spotter feed.
 
 ## Configuration
 
@@ -79,7 +94,9 @@ operator-specific settings:
 |---|---|
 | `callsign` | your callsign — identifies your own spots/decodes as "local" |
 | `home_grid` | 6-char Maidenhead locator — anchors the spotter-distance filter |
-| `gocluster_host` / `gocluster_port` | the DX cluster to consume |
+| `gocluster_host` / `gocluster_port` | the DX cluster to consume (defaults to the public `ve7cc.net:23`) |
+| `login_commands` | commands sent after login (default none). Put GoCluster/DXSpider filter dialect here for those servers |
+| `require_spotter_grid` | strict spotter gate — drop spots whose spotter can't be placed. Default `false` (see below) |
 | `http_port` | web UI port (default 8080) |
 | `flex_enabled` / `flex_host` / `flex_inject_enabled` | FlexRadio 6000-series TCP API |
 | `telnet_feed_enabled` / `telnet_feed_port` | re-broadcast as a DX-Spider node |
@@ -91,6 +108,23 @@ operator-specific settings:
 `secrets.json` (gitignored; copy from `secrets.json.example`) holds API
 credentials. Only the keys for the services you enable are required; missing
 credentials simply skip that service.
+
+### Why QRZ credentials matter (the local-spotter filter)
+
+Grayline's signature feature measures distance from each **spotter** to *your*
+QTH — a nearby station hearing a signal means you probably can too. Computing
+that needs the spotter's grid, which Grayline resolves from its callsign via the
+**QRZ XML API** (cached on disk). **Without QRZ credentials that resolution
+can't happen, so the local-spotter distance filter is unavailable** — you'd
+filter by band and mode only, on the full firehose.
+
+That's also why `require_spotter_grid` defaults to **`false`**: on a fresh
+install (no QRZ creds yet, cold cache) the strict gate would drop *every* spot
+it can't place and you'd see an empty page. Lenient keeps spots with unknown
+distance so the roster populates immediately. Once you've added QRZ credentials
+and the cache has warmed, flip it to `true` for the cleaner, verified-spotter
+feed. See [docs/theory-of-operation.md](docs/theory-of-operation.md) for the
+full rationale.
 
 ## Architecture
 
