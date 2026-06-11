@@ -220,7 +220,60 @@ beats a cached value.
 
 ---
 
-## 7. Putting it together — the intended workflow
+## 7. Running your own cluster (and why GoCluster pairs well)
+
+Grayline works with any public DX cluster, and for many operators that's plenty
+— point it at a public node, filter in the UI, done. But Grayline is *designed*
+to sit on top of a **local aggregator**, and if you run digital modes or your
+own skimmer, putting one upstream is a genuine upgrade rather than a formality.
+The companion project Grayline is built around is **GoCluster**.
+
+The division of labor is deliberate and Unix-like — each layer does one job:
+
+```
+[decoder / skimmer]  →  [aggregator: GoCluster]  →  [Grayline]  →  [browser]
+   produces spots        merges + validates          displays + awards
+```
+
+What an upstream aggregator buys you:
+
+- **Many sources, one clean stream.** GoCluster ingests RBN (telnet),
+  **PSKReporter** (MQTT), DXSummit, cluster peers, and your own skimmer, then
+  de-duplicates them into a single feed. Grayline stays a thin display layer
+  instead of growing a separate ingest client for every network — the aggregator
+  aggregates, Grayline presents.
+
+- **PSKReporter coverage** — the big one for digital operators. PSKReporter is
+  the FT8/FT4 reception firehose, and it is delivered over MQTT, not cluster
+  telnet, so **a plain DX cluster cannot give it to you — only an aggregator
+  can.** If you live on the digital modes, this is the single biggest reason to
+  run one.
+
+- **Validation before it ever reaches you.** GoCluster scores spot confidence,
+  suppresses harmonics/busted calls, and de-dupes across sources. Grayline's
+  default GoCluster filter (`PASS CONFIDENCE V P S C`) is consuming exactly that
+  validation layer — you're looking at a cleaned feed, not the raw firehose.
+
+- **Your filters, your uptime, your latency.** A LAN-local aggregator isn't
+  subject to a public node's default filters, rate limits, policy changes, or
+  downtime. You tune the server-side filter chain to your own operating
+  (band / mode / region / confidence), and it answers at LAN speed.
+
+- **Your own RX becomes part of the picture.** Local decodes (your WSJT-X, your
+  CW skimmer) merge in at the **highest** source precedence and can be forwarded
+  upstream to the wider network — so you shift from pure spot *consumer* toward
+  *producer*, and your own receiver's spots outrank third-party reports in the
+  roster.
+
+**When you don't need it.** If you just want cluster spots and don't run digital
+heavily or operate your own skimmer, a public node is fine — that's why the
+default config ships pointing at one. GoCluster is the serious-DXer / digital /
+own-skimmer upgrade, not a prerequisite. Grayline never *requires* it; it simply
+gets better when one is there.
+
+---
+
+## 8. Putting it together — the intended workflow
 
 1. A nearby spotter (or your own decoder) hears a station.
 2. Grayline places the spotter relative to you, and the DX relative to your

@@ -139,6 +139,13 @@ full rationale.
                                                    +--> DX-Spider telnet feed (optional)
 ```
 
+Grayline consumes any standard DX cluster, but it's designed to sit on top of a
+local aggregator (**GoCluster**) that merges RBN + PSKReporter + your own skimmer
+into one validated stream. That's optional — a public node works fine — but it's
+a real upgrade for digital ops (PSKReporter is only reachable through an
+aggregator). See *Running your own cluster* in
+[theory-of-operation.md](docs/theory-of-operation.md#7-running-your-own-cluster-and-why-gocluster-pairs-well).
+
 ## Files
 
 - `grayline_server.py` — HTTP server, cluster client, award engine, UDP listeners
