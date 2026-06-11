@@ -165,4 +165,9 @@ as the agentic coding tool. Contributions and forks welcome.
 
 ## License
 
-GPL-3.0.
+Copyright (C) 2026 Fred Krause (WF8Z).
+
+Grayline is licensed under the **GNU General Public License v3.0** — see
+[LICENSE](LICENSE). It incorporates BSD-3-Clause material from GridTracker 2 and
+uses AD1C's `cty.dat`; those attributions and their license terms are in
+[NOTICE](NOTICE).
