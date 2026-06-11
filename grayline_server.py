@@ -1714,6 +1714,15 @@ details[open] > summary::before { transform: rotate(90deg); }
 .mode-hint { font-size: 0.72em; color: #777; margin-top: 0.3em; line-height: 1.3; }
 .mode-hint .fb-done { color: #6c6; }
 .mode-hint .fb-need { color: #c96; }
+.aw-setup { cursor: default; }
+.aw-setup summary { cursor: pointer; font-weight: 600; color: #cfcfcf; list-style: none; }
+.aw-setup summary::-webkit-details-marker { display: none; }
+.aw-setup[open] summary { margin-bottom: 0.5em; }
+.aw-group { margin: 0.4em 0; }
+.aw-cat { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 0.25em; }
+.aw-boxes { display: flex; flex-wrap: wrap; gap: 0.25em 0.9em; }
+.awtoggle { font-size: 0.8em; color: #bbb; white-space: nowrap; }
+.awtoggle input { margin-right: 0.3em; vertical-align: middle; }
 
 /* Single-band content area */
 .band-content { /* container for active band's tables */ }
@@ -2150,6 +2159,52 @@ function modeAwardActive(key) {
   if (c == null) return true;                              // unknown until scores load → show
   return c < MODE_DXCC_TARGET;                             // auto-retire at target
 }
+
+// ===== Scores-panel award visibility (the "Scores setup" toggles) =====
+// Which award rows appear in the Scores panel. ARRL-tracked awards are ON by
+// default; JARL / CQ / personal awards are OPT-IN (off) — the ARRL-default +
+// personal-extension rule. User choices persist in localStorage and win over
+// the default. Grouped by issuing org for the settings UI.
+const AWARD_DEFS = [
+  // key,            label,              cat,     default-on
+  ["dxcc_mixed",     "DXCC Mixed",       "ARRL",  true],
+  ["dxcc_cw",        "DXCC CW",          "ARRL",  true],
+  ["dxcc_phone",     "DXCC Phone",       "ARRL",  true],
+  ["dxcc_digital",   "DXCC Digital",     "ARRL",  true],
+  ["dxcc_satellite", "DXCC Satellite",   "ARRL",  true],
+  ["dxcc_by_band",   "DXCC by Band",     "ARRL",  true],
+  ["challenge",      "DXCC Challenge",   "ARRL",  true],
+  ["nbdxcc",         "5BDXCC / NBDXCC",  "ARRL",  true],
+  ["honor_roll",     "DXCC Honor Roll",  "ARRL",  true],
+  ["was",            "WAS",              "ARRL",  true],
+  ["5bwas",          "5BWAS",            "ARRL",  true],
+  ["was_cw",         "WAS CW",           "ARRL",  true],
+  ["was_phone",      "WAS Phone",        "ARRL",  true],
+  ["was_digital",    "WAS Digital",      "ARRL",  true],
+  ["triple_play",    "Triple Play",      "ARRL",  true],
+  ["wac",            "WAC",              "ARRL",  true],
+  ["ffma",           "FFMA (6m)",        "ARRL",  true],
+  ["vucc",           "VUCC by band",     "ARRL",  true],
+  ["vucc_satellite", "VUCC Satellite",   "ARRL",  true],
+  ["waz",            "WAZ",              "CQ",    false],
+  ["waja",           "WAJA (Japan)",     "JARL",  false],
+];
+const AWARD_DEFAULT = Object.fromEntries(AWARD_DEFS.map(d => [d[0], d[3]]));
+const AWARD_LABEL   = Object.fromEntries(AWARD_DEFS.map(d => [d[0], d[1]]));
+function loadAwardVis() {
+  try { return JSON.parse(localStorage.getItem("grayline_award_visibility") || "{}"); }
+  catch (e) { return {}; }
+}
+let awardVis = loadAwardVis();
+function saveAwardVis() {
+  localStorage.setItem("grayline_award_visibility", JSON.stringify(awardVis));
+}
+function awardOn(key) {
+  if (key in awardVis) return !!awardVis[key];             // explicit user choice
+  return AWARD_DEFAULT[key] !== false;                     // default (ARRL on, else off)
+}
+let lastScores = null;          // most recent /api/scores payload — for instant re-render on toggle
+let scoresSetupOpen = false;    // keep the "Scores setup" panel open across re-renders
 
 function isScopeEnabled(band, scope) {
   return !!(awardScopes[band] && awardScopes[band][scope] === true);
@@ -2765,6 +2820,7 @@ function renderScores(j) {
     grid.innerHTML = `<span style="color:#f55">${(j && j.error) || "scores unavailable"}</span>`;
     return;
   }
+  lastScores = j;   // remember for instant re-render when an award toggle changes
   // Capture mode-DXCC confirmed counts so spot pills can auto-retire at target.
   if (j.dxcc) {
     for (const k of ["CW", "Phone", "Digital"]) {
@@ -2776,11 +2832,14 @@ function renderScores(j) {
   // DXCC by mode class (Mixed/CW/Phone/Digital/Satellite)
   {
     const rows = [];
+    const DXCC_KEY = {Mixed:"dxcc_mixed", CW:"dxcc_cw", Phone:"dxcc_phone",
+                      Digital:"dxcc_digital", Satellite:"dxcc_satellite"};
     for (const cls of ["Mixed", "CW", "Phone", "Digital", "Satellite"]) {
+      if (!awardOn(DXCC_KEY[cls])) continue;
       const d = j.dxcc[cls] || {worked: 0, confirmed: 0};
       rows.push(awardRow("DXCC " + cls, d.worked, d.confirmed, 100));
     }
-    cards.push(awardCard("DXCC", rows));
+    if (rows.length) cards.push(awardCard("DXCC", rows));
   }
 
   // Mode DXCC spot-highlighting toggles — entity-level (any band), auto-retire
@@ -2806,7 +2865,7 @@ function renderScores(j) {
   }
 
   // DXCC by band — 160-6m always, plus any VHF/UHF where we have entries
-  {
+  if (awardOn("dxcc_by_band")) {
     const rows = [];
     const ALL_BANDS = ["160m","80m","40m","30m","20m","17m","15m","12m","10m","6m",
                       "2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm","1.25cm"];
@@ -2815,22 +2874,22 @@ function renderScores(j) {
       if (!d) continue;
       rows.push(awardRow("DXCC " + b, d.worked, d.confirmed, 100));
     }
-    cards.push(awardCard("DXCC by Band", rows));
+    if (rows.length) cards.push(awardCard("DXCC by Band", rows));
   }
 
-  // Challenge + WAS + WAZ + FFMA
+  // Worked-All & Challenge — Challenge, WAS, WAJA, WAZ, FFMA (each toggleable)
   {
     const rows = [];
-    rows.push(awardRow("DXCC Challenge", j.challenge.worked, j.challenge.confirmed, 1000));
-    rows.push(awardRow("WAS", j.was.worked, j.was.confirmed, j.was.target));
-    if (j.waja) {
+    if (awardOn("challenge")) rows.push(awardRow("DXCC Challenge", j.challenge.worked, j.challenge.confirmed, 1000));
+    if (awardOn("was")) rows.push(awardRow("WAS", j.was.worked, j.was.confirmed, j.was.target));
+    if (j.waja && awardOn("waja")) {
       rows.push(awardRow("WAJA (JARL)", j.waja.worked, j.waja.confirmed, j.waja.target));
     }
-    rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
-    if (j.ffma) {
+    if (awardOn("waz")) rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
+    if (j.ffma && awardOn("ffma")) {
       rows.push(awardRow("FFMA (6m)", j.ffma.worked, j.ffma.confirmed, j.ffma.target));
     }
-    cards.push(awardCard("Challenge / WAS / WAJA / WAZ / FFMA", rows));
+    if (rows.length) cards.push(awardCard("Worked-All &amp; Challenge", rows));
   }
 
   // Five-Band awards + Honor Roll — completion-style awards. The C column is
@@ -2842,7 +2901,7 @@ function renderScores(j) {
     const fbFmt = (byBand, tgt) => Object.keys(byBand)
       .map(b => `<span class="${byBand[b] >= tgt ? "fb-done" : "fb-need"}">${b} ${byBand[b]}</span>`)
       .join(" · ");
-    if (j.nb_dxcc && j.nb_dxcc.has_base) {
+    if (awardOn("nbdxcc") && j.nb_dxcc && j.nb_dxcc.has_base) {
       // 5BDXCC base earned — show the N-Band milestone (8BDXCC, 10BDXCC, ...).
       const d = j.nb_dxcc;
       rows.push(awardRow(`${d.level}BDXCC`, null, d.level, 10));
@@ -2851,18 +2910,18 @@ function renderScores(j) {
         : "all Challenge bands done";
       hints.push(`<div class="mode-hint"><b>${d.level}BDXCC</b> = 5BDXCC (80-10m) + endorsements `
         + `(${d.bands.join(", ")}). Toward 10BDXCC: ${shortStr}.</div>`);
-    } else if (j.five_band_dxcc) {
+    } else if (awardOn("nbdxcc") && j.five_band_dxcc) {
       // Still building the 5BDXCC base — show per-band progress toward it.
       const d = j.five_band_dxcc;
       rows.push(awardRow("5BDXCC (80-10m)", null, d.bands_complete, d.target_bands));
       hints.push(`<div class="mode-hint">5BDXCC (100/band): ${fbFmt(d.by_band, d.per_band_target)}</div>`);
     }
-    if (j.five_band_was) {
+    if (awardOn("5bwas") && j.five_band_was) {
       const d = j.five_band_was;
       rows.push(awardRow("5BWAS", null, d.bands_complete, d.target_bands));
       hints.push(`<div class="mode-hint">5BWAS (50/band): ${fbFmt(d.by_band, d.per_band_target)}</div>`);
     }
-    if (j.honor_roll) {
+    if (awardOn("honor_roll") && j.honor_roll) {
       const d = j.honor_roll;
       rows.push(awardRow("DXCC Honor Roll", null, d.confirmed, d.honor_roll_at));
       hints.push(`<div class="mode-hint">Honor Roll at ${d.honor_roll_at}, #1 at ${d.number_one_at} `
@@ -2878,23 +2937,25 @@ function renderScores(j) {
   // WAS by mode + Triple Play + WAC
   {
     const rows = [];
+    const WASM_KEY = {CW:"was_cw", Phone:"was_phone", Digital:"was_digital"};
     if (j.was_by_mode) {
       for (const k of ["CW", "Phone", "Digital"]) {
         const d = j.was_by_mode[k];
-        if (d) rows.push(awardRow("WAS " + k, d.worked, d.confirmed, 50));
+        if (d && awardOn(WASM_KEY[k])) rows.push(awardRow("WAS " + k, d.worked, d.confirmed, 50));
       }
     }
-    if (j.triple_play) {
+    if (j.triple_play && awardOn("triple_play")) {
       rows.push(awardRow("Triple Play", j.triple_play.worked, j.triple_play.confirmed, j.triple_play.target));
     }
-    if (j.wac) {
+    const wacOn = j.wac && awardOn("wac");
+    if (wacOn) {
       rows.push(awardRow("WAC", j.wac.worked, j.wac.confirmed, j.wac.target));
     }
     if (rows.length) {
       const hints = [];
       hints.push(`<div class="mode-hint">Per-mode WAS counts LoTW or card (no eQSL). `
         + `<b>Triple Play</b> = all 50 states on CW + Phone + Digital, <b>LoTW only</b>.</div>`);
-      if (j.wac && j.wac.continents) {
+      if (wacOn && j.wac.continents) {
         hints.push(`<div class="mode-hint">WAC continents confirmed: ${j.wac.continents.join(", ") || "none"}.</div>`);
       }
       cards.push(`<div class="score-card"><h3>WAS by Mode / Triple Play / WAC</h3>`
@@ -2907,18 +2968,50 @@ function renderScores(j) {
   {
     const rows = [];
     const VUCC_TGT = {"6m":100,"2m":100,"1.25m":50,"70cm":50,"33cm":25,"23cm":25,"13cm":10,"9cm":5,"6cm":5,"3cm":5};
-    if (j.vucc_satellite) {
+    if (j.vucc_satellite && awardOn("vucc_satellite")) {
       rows.push(awardRow("VUCC Satellite", j.vucc_satellite.worked, j.vucc_satellite.confirmed, j.vucc_satellite.target));
     }
-    for (const b of ["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]) {
-      if (j.vucc && j.vucc[b] != null) {
-        rows.push(awardRow("VUCC " + b, null, j.vucc[b], VUCC_TGT[b] || 25));
+    if (awardOn("vucc")) {
+      for (const b of ["6m","2m","1.25m","70cm","33cm","23cm","13cm","9cm","6cm","3cm"]) {
+        if (j.vucc && j.vucc[b] != null) {
+          rows.push(awardRow("VUCC " + b, null, j.vucc[b], VUCC_TGT[b] || 25));
+        }
       }
     }
     if (rows.length) cards.push(awardCard("VHF / UHF / Satellite VUCC", rows));
   }
 
+  // Scores setup — per-award visibility. ARRL on by default; CQ / JARL opt-in.
+  {
+    const CAT_LABEL = {ARRL:"ARRL", CQ:"CQ", JARL:"JARL (Japan)"};
+    const byCat = {};
+    for (const [key, label, cat] of AWARD_DEFS) (byCat[cat] = byCat[cat] || []).push([key, label]);
+    const sections = ["ARRL", "CQ", "JARL"].filter(c => byCat[c]).map(cat => {
+      const boxes = byCat[cat].map(([key, label]) =>
+        `<label class="awtoggle"><input type="checkbox" data-awardtoggle="${key}" ${awardOn(key) ? "checked" : ""}>${label}</label>`
+      ).join("");
+      return `<div class="aw-group"><div class="aw-cat">${CAT_LABEL[cat]}</div><div class="aw-boxes">${boxes}</div></div>`;
+    }).join("");
+    cards.push(`<details class="score-card aw-setup" ${scoresSetupOpen ? "open" : ""}>`
+      + `<summary>⚙ Scores setup — choose which awards to track</summary>`
+      + sections
+      + `<div class="mode-hint">ARRL awards are on by default; CQ and JARL awards are opt-in. `
+      + `Saved on this device.</div></details>`);
+  }
+
   grid.innerHTML = cards.join("");
+  const awSetup = grid.querySelector("details.aw-setup");
+  if (awSetup) awSetup.addEventListener("toggle", () => { scoresSetupOpen = awSetup.open; });
+  grid.querySelectorAll("input[data-awardtoggle]").forEach(el => {
+    el.addEventListener("change", () => {
+      const k = el.dataset.awardtoggle;
+      // Match the default → clear the override (back to auto); else store the choice.
+      if (el.checked === (AWARD_DEFAULT[k] !== false)) delete awardVis[k];
+      else awardVis[k] = el.checked;
+      saveAwardVis();
+      if (lastScores) renderScores(lastScores);   // instant re-render, no network
+    });
+  });
   grid.querySelectorAll("input[data-modechip]").forEach(el => {
     el.addEventListener("change", () => {
       const k = el.dataset.modechip;
