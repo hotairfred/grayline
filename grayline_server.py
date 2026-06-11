@@ -819,6 +819,8 @@ def _build_scores_payload() -> dict:
             "worked": len(_worked.worked_prefectures),
             "confirmed": len(_worked.confirmed_prefectures),
             "target": WAJA_TARGET,
+            "worked_codes": sorted(_worked.worked_prefectures),
+            "confirmed_codes": sorted(_worked.confirmed_prefectures),
         },
         "waz": {
             "worked": len(_worked.worked_cq_zones),
@@ -1723,6 +1725,17 @@ details[open] > summary::before { transform: rotate(90deg); }
 .aw-boxes { display: flex; flex-wrap: wrap; gap: 0.25em 0.9em; }
 .awtoggle { font-size: 0.8em; color: #bbb; white-space: nowrap; }
 .awtoggle input { margin-right: 0.3em; vertical-align: middle; }
+.waja-detail summary { cursor: pointer; font-weight: 600; color: #cfcfcf; list-style: none; }
+.waja-detail summary::-webkit-details-marker { display: none; }
+.waja-detail[open] summary { margin-bottom: 0.55em; }
+.pref-grid { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.pref {
+  font-size: 0.95em; padding: 0.16em 0.34em; border-radius: 3px;
+  border: 1px solid transparent; line-height: 1.5; white-space: nowrap; cursor: default;
+}
+.pref-conf { background: #1e3320; color: #8de08d; border-color: #3f6b3f; }       /* confirmed */
+.pref-work { background: #322a14; color: #e0c060; border-color: #6b5a2a; }       /* worked, unconfirmed */
+.pref-new  { background: #1a1a1a; color: #5a5a5a; }                              /* needed */
 
 /* Single-band content area */
 .band-content { /* container for active band's tables */ }
@@ -2205,6 +2218,30 @@ function awardOn(key) {
 }
 let lastScores = null;          // most recent /api/scores payload — for instant re-render on toggle
 let scoresSetupOpen = false;    // keep the "Scores setup" panel open across re-renders
+let wajaGridOpen = false;       // keep the WAJA prefecture grid open across re-renders
+
+// WAJA — the 47 Japanese prefectures by ADIF code → [kanji (with 都/道/府/県
+// suffix), romaji]. Codes are the ADIF Primary-Subdivision scheme (Tokyo=10),
+// joined to authoritative kanji by NAME (not ISO number). Used to render the
+// kanji prefecture grid under the WAJA award row.
+const JA_PREFECTURES = [
+  ["01","北海道","Hokkaido"],["02","青森県","Aomori"],["03","岩手県","Iwate"],
+  ["04","秋田県","Akita"],["05","山形県","Yamagata"],["06","宮城県","Miyagi"],
+  ["07","福島県","Fukushima"],["08","新潟県","Niigata"],["09","長野県","Nagano"],
+  ["10","東京都","Tokyo"],["11","神奈川県","Kanagawa"],["12","千葉県","Chiba"],
+  ["13","埼玉県","Saitama"],["14","茨城県","Ibaraki"],["15","栃木県","Tochigi"],
+  ["16","群馬県","Gunma"],["17","山梨県","Yamanashi"],["18","静岡県","Shizuoka"],
+  ["19","岐阜県","Gifu"],["20","愛知県","Aichi"],["21","三重県","Mie"],
+  ["22","京都府","Kyoto"],["23","滋賀県","Shiga"],["24","奈良県","Nara"],
+  ["25","大阪府","Osaka"],["26","和歌山県","Wakayama"],["27","兵庫県","Hyogo"],
+  ["28","富山県","Toyama"],["29","福井県","Fukui"],["30","石川県","Ishikawa"],
+  ["31","岡山県","Okayama"],["32","島根県","Shimane"],["33","山口県","Yamaguchi"],
+  ["34","鳥取県","Tottori"],["35","広島県","Hiroshima"],["36","香川県","Kagawa"],
+  ["37","徳島県","Tokushima"],["38","愛媛県","Ehime"],["39","高知県","Kochi"],
+  ["40","福岡県","Fukuoka"],["41","佐賀県","Saga"],["42","長崎県","Nagasaki"],
+  ["43","熊本県","Kumamoto"],["44","大分県","Oita"],["45","宮崎県","Miyazaki"],
+  ["46","鹿児島県","Kagoshima"],["47","沖縄県","Okinawa"],
+];
 
 function isScopeEnabled(band, scope) {
   return !!(awardScopes[band] && awardScopes[band][scope] === true);
@@ -2892,6 +2929,21 @@ function renderScores(j) {
     if (rows.length) cards.push(awardCard("Worked-All &amp; Challenge", rows));
   }
 
+  // WAJA prefecture grid (kanji drill-in) — only when WAJA is enabled.
+  if (awardOn("waja") && j.waja) {
+    const conf = new Set(j.waja.confirmed_codes || []);
+    const work = new Set(j.waja.worked_codes || []);
+    const cells = JA_PREFECTURES.map(([code, kanji, romaji]) => {
+      const st = conf.has(code) ? "conf" : (work.has(code) ? "work" : "new");
+      return `<span class="pref pref-${st}" title="${romaji} (${code})">${kanji}</span>`;
+    }).join("");
+    cards.push(`<details class="score-card waja-detail" ${wajaGridOpen ? "open" : ""}>`
+      + `<summary>日本 — WAJA prefectures (${j.waja.confirmed}/${j.waja.target})</summary>`
+      + `<div class="pref-grid">${cells}</div>`
+      + `<div class="mode-hint">Green = confirmed · amber = worked, unconfirmed · dim = needed. Hover for romaji.</div>`
+      + `</details>`);
+  }
+
   // Five-Band awards + Honor Roll — completion-style awards. The C column is
   // "bands complete" (out of 5); the hint line shows the per-band counts so the
   // lagging band is obvious. Honor Roll is a standing off confirmed entities.
@@ -3002,6 +3054,8 @@ function renderScores(j) {
   grid.innerHTML = cards.join("");
   const awSetup = grid.querySelector("details.aw-setup");
   if (awSetup) awSetup.addEventListener("toggle", () => { scoresSetupOpen = awSetup.open; });
+  const wajaDet = grid.querySelector("details.waja-detail");
+  if (wajaDet) wajaDet.addEventListener("toggle", () => { wajaGridOpen = wajaDet.open; });
   grid.querySelectorAll("input[data-awardtoggle]").forEach(el => {
     el.addEventListener("change", () => {
       const k = el.dataset.awardtoggle;
