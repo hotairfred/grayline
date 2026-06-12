@@ -799,18 +799,17 @@ def _build_scores_payload() -> dict:
             "confirmed": len({s for (s, c) in _worked.confirmed_state_modeclass if c == _cls}),
         }
 
-    # Triple Play — all 50 states on CW AND Phone AND Digital, LoTW-confirmed
-    # ONLY (no paper, no eQSL). Count states present on all three modes.
-    def _states_all_three(src) -> int:
-        by: dict[str, set[str]] = {}
-        for (s, c) in src:
-            by.setdefault(s, set()).add(c)
-        need = {"CW", "Phone", "Digital"}
-        return sum(1 for cs in by.values() if need <= cs)
+    # Triple Play — earn WAS three times: all 50 states on CW, on Phone, AND on
+    # Digital, LoTW-confirmed ONLY (no paper, no eQSL). It's three sub-awards
+    # (the three "legs"), so progress is naturally legs-complete out of 3, with
+    # each leg's LoTW state count for detail.
+    tp_legs = {cls: len({s for (s, c) in _worked.lotw_state_modeclass if c == cls})
+               for cls in ("CW", "Phone", "Digital")}
     triple_play = {
-        "worked": _states_all_three(_worked.worked_state_modeclass),
-        "confirmed": _states_all_three(_worked.lotw_state_modeclass),
-        "target": 50,
+        "legs": tp_legs,                                              # {"CW": 48, ...} LoTW state counts
+        "legs_complete": sum(1 for n in tp_legs.values() if n >= 50),  # X of 3
+        "target_legs": 3,
+        "per_leg_target": 50,
     }
 
     # WAC — Worked All Continents (6). Continent derived from the canonical
@@ -3044,8 +3043,10 @@ function renderScores(j) {
         if (d && awardOn(WASM_KEY[k])) rows.push(awardRow("WAS " + k, d.worked, d.confirmed, 50));
       }
     }
-    if (j.triple_play && awardOn("triple_play")) {
-      rows.push(awardRow("Triple Play", j.triple_play.worked, j.triple_play.confirmed, j.triple_play.target));
+    const tpOn = j.triple_play && awardOn("triple_play");
+    if (tpOn) {
+      const tp = j.triple_play;
+      rows.push(awardRow("Triple Play", null, tp.legs_complete, tp.target_legs));
     }
     const wacOn = j.wac && awardOn("wac");
     if (wacOn) {
@@ -3053,8 +3054,14 @@ function renderScores(j) {
     }
     if (rows.length) {
       const hints = [];
-      hints.push(`<div class="mode-hint">Per-mode WAS counts LoTW or card (no eQSL). `
-        + `<b>Triple Play</b> = all 50 states on CW + Phone + Digital, <b>LoTW only</b>.</div>`);
+      hints.push(`<div class="mode-hint">Per-mode WAS counts LoTW or card (no eQSL).</div>`);
+      if (tpOn && j.triple_play.legs) {
+        const lg = j.triple_play.legs, t = j.triple_play.per_leg_target;
+        const legStr = ["CW","Phone","Digital"].map(k =>
+          `<span class="${lg[k] >= t ? "fb-done" : "fb-need"}">${k} ${lg[k]}/${t}</span>`).join(" · ");
+        hints.push(`<div class="mode-hint"><b>Triple Play</b> = WAS earned on all three modes, `
+          + `<b>LoTW only</b> — ${j.triple_play.legs_complete}/3 legs done: ${legStr}.</div>`);
+      }
       if (wacOn && j.wac.continents) {
         hints.push(`<div class="mode-hint">WAC continents confirmed: ${j.wac.continents.join(", ") || "none"}.</div>`);
       }
