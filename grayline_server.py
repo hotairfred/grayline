@@ -1030,6 +1030,31 @@ def _remove_qso_from_adif(n1mm_id: str) -> bool:
     return True
 
 
+def _grid_from_spot_cache(dx_call: str) -> str:
+    """Most-recent decoded grid for a call from the live spot cache, preferring
+    our OWN local decode (a *-LOCAL source). Used to backfill a QSO Logged that
+    arrived without a grid: the decode is the only CORRECT grid for portables
+    (e.g. KH6XX/W0), where a QRZ lookup would wrongly return the home-call grid
+    (KH6XX's Hawaii BL11) instead of the grid actually transmitted (EN08)."""
+    if not dx_call:
+        return ""
+    target = dx_call.strip().upper()
+    best, best_local = "", False
+    with _lock:
+        for rec in _cache.values():
+            if (rec.get("dx_call", "") or "").upper() != target:
+                continue
+            g = (rec.get("grid", "") or "").strip()
+            if not g:
+                continue
+            is_local = (rec.get("source", "") or "").endswith("-LOCAL")
+            if is_local:
+                return g            # our own decode wins outright
+            if not best:
+                best = g
+    return best
+
+
 def _ingest_wsjtx_qso_logged(parsed: dict):
     """Handle WSJT-X QSO Logged (type 5): push QSO into worked-state in-memory,
     append to local ADIF, refresh cache statuses so the UI flips pills from
@@ -1044,6 +1069,19 @@ def _ingest_wsjtx_qso_logged(parsed: dict):
     if not dx_call:
         log.warning("QSO Logged with empty dx_call — ignoring")
         return
+
+    # Backfill a missing DX grid from our own live decode cache — NEVER from QRZ.
+    # WSJT-X sometimes logs without the grid (it wasn't captured during the
+    # exchange); for a portable (/W0 etc.) QRZ would return the WRONG grid (the
+    # home-call location), so the decode we copied is the only correct source.
+    # This protects grid-based awards (FFMA / VUCC) on portable contacts.
+    if not dx_grid:
+        cached = _grid_from_spot_cache(dx_call)
+        if cached:
+            dx_grid = cached
+            parsed["dx_grid"] = cached   # so the ADIF record carries it too
+            log.info("QSO Logged %s: no grid from WSJT-X — backfilled %r from local decode",
+                     dx_call, cached)
 
     # cty.dat enrichment for country / DXCC entity
     country = ""
