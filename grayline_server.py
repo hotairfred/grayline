@@ -3299,6 +3299,15 @@ document.getElementById("lf_clear").addEventListener("click", () => {
   _logOffset = 0; fetchLog();
 });
 
+// Auto-refresh the log so newly-logged QSOs surface — it otherwise fetched only
+// on load / filter change and never re-polled, so the view sat stale. Refresh
+// only when the log tab is actually visible and has been opened at least once;
+// re-running fetchLog() preserves the current filters and page.
+setInterval(() => {
+  const out = document.getElementById("log_search_results");
+  if (_logLastFetched && out && out.offsetParent !== null) fetchLog();
+}, 15000);
+
 // Pagination buttons
 document.getElementById("lf_first").addEventListener("click", () => { _logOffset = 0; fetchLog(); });
 document.getElementById("lf_prev").addEventListener("click", () => {
@@ -3758,7 +3767,12 @@ async def main():
 
     def worked_state_reload_loop():
         while True:
-            time.sleep(300)  # check every 5 min for fresher logbook
+            # Check every 30s. reload() is mtime-gated — when nothing changed it's
+            # just 3 stat() calls and an early return, so frequent checks are
+            # nearly free; the full re-merge only runs when a source file actually
+            # changes (a QSO logged, QRZ/LoTW pull). Keeps the searchable log /
+            # award sets within ~30s of a fresh QSO instead of up to 5 min.
+            time.sleep(30)
             if _worked:
                 if _worked.reload():
                     # If anything actually reloaded (mtime changed on either
