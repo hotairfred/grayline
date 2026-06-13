@@ -87,6 +87,12 @@ HTTP_PORT = CONFIG.get("http_port", 8080)
 # shorter default for digital. Both configurable.
 SPOT_TTL = CONFIG.get("spot_ttl_sec", 600)                  # CW / Phone / other (seconds)
 SPOT_TTL_DIGITAL = CONFIG.get("spot_ttl_digital_sec", 180)  # FT8 / FT4 — short; stale decodes = dead click-to-tune
+# How long a higher-priority (e.g. local WSJT-X) cache entry stays authoritative
+# without its OWN source updating it. Past this, its freq/audio-offset/tune data
+# are assumed frozen (station moved or faded locally), so a lower-priority spot
+# is allowed to take it over rather than leave a zombie local entry whose freq
+# and click-to-tune target are stale. ~4 FT8 cycles.
+LOCAL_SPOT_FRESH_SEC = 60
 MAX_SPOTS = 5000      # hard cap
 PURGE_INTERVAL = 30   # seconds
 REGION = 2            # ARRL band plan
@@ -1630,27 +1636,27 @@ def add_spot(spot, cluster_name):
             existing_priority = SOURCE_PRIORITY.get(
                 existing.get("source", ""), SOURCE_PRIORITY_DEFAULT)
             if new_priority < existing_priority:
-                # A higher-priority source (e.g. our local WSJT-X) already owns
-                # this entry; keep its richer data rather than overwrite with the
-                # lower-priority spot, and refresh recency so it doesn't age out
-                # while a lower-priority feed keeps spotting it (the premature-
-                # purge fix).
+                # A higher-priority source (e.g. our local WSJT-X) owns this entry.
+                # Keep it ONLY while that source is genuinely still producing it —
+                # otherwise its freq / audio offset / click-to-tune match data are
+                # frozen at the last real local decode while the station moved or
+                # faded, leaving a "fresh-looking" zombie that points stale.
                 #
-                # EXCEPTION — stale local provenance: a WSJTX-LOCAL spot stamped
-                # with band X is only still "local" if a WSJT-X instance is
-                # currently on band X. Once the slice retunes (e.g. SliceB moves
-                # 17m -> 20m), its old-band decodes must NOT keep their SliceN
-                # local label alive off cluster re-spots — that implies a live
-                # local RX on a band the slice has left, and click-to-tune no
-                # longer works. In that case fall through and let the lower-
-                # priority spot overwrite: same signal, correct band, demoted to
-                # the cluster source/spotter.
-                stale_local = (
-                    existing.get("source") == "WSJTX-LOCAL"
-                    and _wsjtx_state_for_band(existing.get("band", "")) is None
+                # Authoritative iff BOTH:
+                #   (a) updated by its own source within LOCAL_SPOT_FRESH_SEC, and
+                #   (b) for WSJTX-LOCAL, a WSJT-X instance is still on this band
+                #       (a retuned slice — SliceB 17m -> 20m — stops decoding its
+                #       old band, so those entries must hand off).
+                # Note we do NOT refresh ts here: ts must track the entry's own
+                # source so staleness is detectable. If it goes stale, fall through
+                # and let the lower-priority spot overwrite — demoting to the
+                # cluster's live freq + honest source instead of a zombie local.
+                fresh = (time.time() - existing.get("ts", 0)) < LOCAL_SPOT_FRESH_SEC
+                band_live = (
+                    existing.get("source") != "WSJTX-LOCAL"
+                    or _wsjtx_state_for_band(existing.get("band", "")) is not None
                 )
-                if not stale_local:
-                    existing["ts"] = time.time()
+                if fresh and band_live:
                     return
 
     # Distance is computed against the SPOTTER's QTH (where the listener is),

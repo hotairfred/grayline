@@ -232,6 +232,17 @@ everything lives under `[Unreleased]` until the first tagged release.
   "producing" 17m spots. Such entries are now demoted to the cluster
   source when re-spotted (same signal, correct band, honest spotter)
   instead of masquerading as a live local decode.
+- **Frozen frequency / stale click-to-tune on a zombie local spot.**
+  Generalizes the above. A high-priority (local WSJT-X) cache entry is
+  only authoritative while its *own* source keeps updating it. If the
+  station moved or faded locally but the cluster kept re-spotting it,
+  the entry's timestamp was being refreshed (looked live) while its
+  freq, audio offset, and click-to-tune match data stayed frozen at the
+  last real local decode — so it pointed to a stale frequency. Now a
+  local entry not refreshed by its own source within
+  `LOCAL_SPOT_FRESH_SEC` (~4 FT8 cycles), or whose slice has left the
+  band, hands off to the next cluster spot (live freq, honest source)
+  rather than persisting as a frozen zombie.
 - **Spot grids no longer blank mid-QSO.** FT8 carries a grid only in
   the CQ/grid-reply; mid-QSO messages have none, and a later decode
   would wipe the grid already deduced. Grid now persists (never
