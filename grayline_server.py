@@ -1259,10 +1259,55 @@ def _forward_wsjtx(data: bytes):
         log.debug("WSJT-X forward failed: %s", e)
 
 
+# WSJT-X message types a CLIENT sends TO WSJT-X (never sent *by* it): Reply(4),
+# HaltTx(8), FreeText(9), Location(11), HighlightCallsign(13),
+# SwitchConfiguration(14), Configure(15). Receiving one on our listen port means
+# it came from a downstream consumer we forward decodes to (e.g. GridTracker) and
+# is headed UPSTREAM — relaying it to WSJT-X is what makes that consumer's
+# click-to-tune (Reply) work while Grayline is the WSJT-X receiver. Identified by
+# type/direction, not source address, so it's robust even if WSJT-X and the
+# consumer share a host.
+_WSJTX_CLIENT_MSG_TYPES = frozenset({4, 8, 9, 11, 13, 14, 15})
+
+
+def _wsjtx_peek_type(data: bytes):
+    """Message type of a raw WSJT-X datagram (magic + schema + type@offset 8),
+    or None if it doesn't look like one."""
+    if len(data) >= 12 and data[:4] == b"\xad\xbc\xcb\xda":
+        return int.from_bytes(data[8:12], "big")
+    return None
+
+
+def _relay_to_wsjtx(data: bytes):
+    """Relay a client→WSJT-X control packet (e.g. a GridTracker click-to-tune
+    Reply) to every known WSJT-X instance. The instance whose Id matches acts on
+    it; the others ignore it — so broadcasting is safe and needs no Id parsing.
+    Makes Grayline a bidirectional WSJT-X UDP hub: WSJT-X ⇄ Grayline ⇄ {GT, ...}."""
+    global _wsjtx_fwd_sock
+    with _wsjtx_state_lock:
+        addrs = {s["source_addr"] for s in _wsjtx_state.values() if s.get("source_addr")}
+    if not addrs:
+        return
+    try:
+        if _wsjtx_fwd_sock is None:
+            _wsjtx_fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for a in addrs:
+            _wsjtx_fwd_sock.sendto(data, a)
+    except Exception as e:
+        log.debug("WSJT-X reply relay failed: %s", e)
+
+
 def _wsjtx_handle_datagram(data: bytes, addr: tuple):
     """Top-level WSJT-X UDP message dispatcher. Called from the asyncio
     DatagramProtocol on each received packet. Errors are caught here so
     one malformed packet can't kill the listener task."""
+    # A client→WSJT-X control packet (click-to-tune Reply, Halt, etc.) from a
+    # downstream consumer we forward to is headed upstream — relay it to WSJT-X
+    # and stop. Don't mirror it back out (would echo to the consumer) or try to
+    # parse it as a decode.
+    if _wsjtx_peek_type(data) in _WSJTX_CLIENT_MSG_TYPES:
+        _relay_to_wsjtx(data)
+        return
     _forward_wsjtx(data)   # mirror raw datagram to GridTracker / other consumers
     try:
         from wsjtx_udp import (parse_message, MSG_HEARTBEAT, MSG_STATUS,

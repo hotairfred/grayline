@@ -127,6 +127,17 @@ everything lives under `[Unreleased]` until the first tagged release.
 - **Click-to-tune.** Click a spot to tune the rig there — to a
   running WSJT-X instance via a `Reply` message (matches the audio
   offset), or to a Flex slice via the SmartSDR API.
+- **Bidirectional WSJT-X UDP hub.** Grayline already mirrors WSJT-X
+  broadcasts to `wsjtx_forward_targets` (e.g. GridTracker); it now also
+  relays the *reverse* direction — a client→WSJT-X control packet
+  (click-to-tune `Reply`, Halt Tx, free text, location, callsign
+  highlight) arriving from a downstream consumer is forwarded **up** to
+  WSJT-X. So you can run GridTracker for contesting (its click-to-tune
+  works) while Grayline stays the always-on receiver flagging FFMA/award
+  priorities — `WSJT-X ⇄ Grayline ⇄ {GridTracker, …}`. Packets are routed
+  by message type/direction (not source address, so it's correct even if
+  WSJT-X and the consumer share a host) and broadcast to all known
+  instances (the matching Id acts, others ignore — no Id parsing needed).
 - **N1MM / SDC contest integration.** Live QSO logging over the
   N1MM UDP protocol, with delete/replace sync (contactdelete /
   contactreplace) and own-skimmer spot suppression during contests.
