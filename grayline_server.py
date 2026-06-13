@@ -80,7 +80,13 @@ REQUIRE_SPOTTER_GRID = CONFIG.get("require_spotter_grid", False)
 DXCC_BANDS = {"160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"}
 GRID_BANDS = {"6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm"}
 HTTP_PORT = CONFIG.get("http_port", 8080)
-SPOT_TTL = 600        # seconds
+# Spot lifetimes, by mode class. CW/Phone/other spots stay useful for a while —
+# the station tends to sit on frequency calling CQ. Digital (FT8/FT4) is "while
+# the iron is hot": a decode minutes old usually means the station finished its
+# QSO or moved, so clicking it just tunes you to a dead frequency. Hence a much
+# shorter default for digital. Both configurable.
+SPOT_TTL = CONFIG.get("spot_ttl_sec", 600)                  # CW / Phone / other (seconds)
+SPOT_TTL_DIGITAL = CONFIG.get("spot_ttl_digital_sec", 180)  # FT8 / FT4 — short; stale decodes = dead click-to-tune
 MAX_SPOTS = 5000      # hard cap
 PURGE_INTERVAL = 30   # seconds
 REGION = 2            # ARRL band plan
@@ -1762,9 +1768,12 @@ def add_spot(spot, cluster_name):
 def purge_loop():
     while True:
         time.sleep(PURGE_INTERVAL)
-        cutoff = time.time() - SPOT_TTL
+        now = time.time()
         with _lock:
-            stale = [k for k, v in _cache.items() if v["ts"] < cutoff]
+            stale = [
+                k for k, v in _cache.items()
+                if now - v["ts"] > (SPOT_TTL_DIGITAL if v.get("modeclass") == "Digital" else SPOT_TTL)
+            ]
             for k in stale:
                 del _cache[k]
 

@@ -8,6 +8,9 @@
   "require_spotter_grid": false,
   "http_port": 8080,
 
+  "spot_ttl_sec": 600,
+  "spot_ttl_digital_sec": 180,
+
   "flex_enabled": false,
   "flex_host": "192.168.1.100",
   "flex_port": 4992,
