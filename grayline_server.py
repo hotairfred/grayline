@@ -1630,7 +1630,14 @@ def add_spot(spot, cluster_name):
             existing_priority = SOURCE_PRIORITY.get(
                 existing.get("source", ""), SOURCE_PRIORITY_DEFAULT)
             if new_priority < existing_priority:
-                # Higher-priority spot already cached. Skip the write entirely.
+                # A higher-priority source (e.g. our local WSJT-X) already owns
+                # this entry; keep its richer data rather than overwrite with the
+                # lower-priority spot. But the station IS still being heard right
+                # now, so refresh the timestamp — otherwise the entry would age
+                # out on the higher-priority source's last-decode time even while
+                # a lower-priority feed keeps spotting it (premature purge,
+                # especially under the short digital TTL).
+                existing["ts"] = time.time()
                 return
 
     # Distance is computed against the SPOTTER's QTH (where the listener is),
