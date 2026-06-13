@@ -1721,6 +1721,24 @@ def add_spot(spot, cluster_name):
         waja_pref, waja_status = _ja_pref_for_spot(spot.dx_call)
 
     with _lock:
+        # Nearest-spotter-wins. The local-spotter radius filter asks "did a
+        # spotter NEAR me hear this?" — and once one did, that's a sticky fact for
+        # the spot's life. A DX station (e.g. JA) is reported by many spotters at
+        # different distances; without this, each re-spot overwrote distance_mi
+        # with the latest spotter's distance, so a far re-spot would bump a
+        # near-spotted station back outside the radius and it would vanish from
+        # view mid-life. So: on a same-tier re-spot by a FARTHER spotter, keep the
+        # nearer spotter's view (distance/spotter/snr) and just refresh recency —
+        # the station is still active. A nearer (or higher-priority, i.e. local)
+        # re-spot falls through and replaces the entry as before.
+        existing = _cache.get(key)
+        if existing is not None:
+            ep = SOURCE_PRIORITY.get(existing.get("source", ""), SOURCE_PRIORITY_DEFAULT)
+            ed = existing.get("distance_mi")
+            if new_priority == ep and ed is not None and (distance_mi is None or distance_mi > ed):
+                existing["ts"] = time.time()
+                _cache.move_to_end(key)
+                return
         _cache[key] = {
             "ts": time.time(),
             "band": band,

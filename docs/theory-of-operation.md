@@ -78,6 +78,18 @@ panel; overrides persist per device. The 6 m case is the one that drove the
 feature: a flat 300 mi radius is simply wrong for a band whose openings are
 ~150 mi wide.
 
+### Nearest-spotter-wins
+
+A DX station is reported by many spotters at once, at wildly different distances
+from you (a JA station might be heard by a spotter 200 mi away *and* one 3,000 mi
+away in the same minute). The question the filter answers is **"did anyone *near
+me* hear it?"** — and once someone did, that's a sticky fact for the spot's life.
+So a spot's stored distance is the **nearest spotter** seen for it, not the most
+recent: a later report from a farther spotter refreshes the spot's recency (the
+station is still active) but does **not** push it back outside your radius. Without
+this, a near-spotted station would flicker out of view the instant a far spotter
+re-reported it.
+
 ---
 
 ## 3. Why you want QRZ lookups (and what happens without them)
