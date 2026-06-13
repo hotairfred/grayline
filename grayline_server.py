@@ -1245,16 +1245,16 @@ def _ingest_wsjtx_qso_logged(parsed: dict):
 
 def _forward_wsjtx(data: bytes):
     """Mirror a raw WSJT-X UDP datagram to WSJTX_FORWARD_TARGETS (e.g. GridTracker
-    on the workstation). Fire-and-forget; a forward failure never affects local
-    handling."""
-    global _wsjtx_fwd_sock
-    if not WSJTX_FORWARD_TARGETS:
+    on the workstation). Sent FROM the listener socket (bound to :2237) so a
+    downstream consumer sees the decodes arriving from :2237 and sends its replies
+    (click-to-tune) BACK to :2237 — where the relay path catches them. Sending
+    from a throwaway ephemeral socket would make the consumer reply to that
+    ephemeral port, which nothing reads, so click-to-tune would be lost."""
+    if not WSJTX_FORWARD_TARGETS or _wsjtx_transport is None:
         return
     try:
-        if _wsjtx_fwd_sock is None:
-            _wsjtx_fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for tgt in WSJTX_FORWARD_TARGETS:
-            _wsjtx_fwd_sock.sendto(data, tgt)
+            _wsjtx_transport.sendto(data, tgt)
     except Exception as e:
         log.debug("WSJT-X forward failed: %s", e)
 
@@ -1305,7 +1305,9 @@ def _wsjtx_handle_datagram(data: bytes, addr: tuple):
     # downstream consumer we forward to is headed upstream — relay it to WSJT-X
     # and stop. Don't mirror it back out (would echo to the consumer) or try to
     # parse it as a decode.
-    if _wsjtx_peek_type(data) in _WSJTX_CLIENT_MSG_TYPES:
+    _mt = _wsjtx_peek_type(data)
+    if _mt in _WSJTX_CLIENT_MSG_TYPES:
+        log.debug("relaying downstream WSJT-X control packet (type %s) from %s upstream", _mt, addr)
         _relay_to_wsjtx(data)
         return
     _forward_wsjtx(data)   # mirror raw datagram to GridTracker / other consumers

@@ -230,6 +230,15 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Fixed
 
+- **Downstream click-to-tune now actually reaches WSJT-X.** The bidirectional
+  hub forwarded decodes from a throwaway ephemeral socket, so a downstream
+  consumer (GridTracker) saw them arriving from `:<random>` and sent its
+  click-to-tune `Reply` back *there* — a port nothing reads — so the relay never
+  caught it. Decodes are now forwarded **from the `:2237` listener socket**, so
+  the consumer replies to `:2237` where the relay picks it up and forwards it
+  upstream. Verified end-to-end: GridTracker click-to-tune tunes the rig through
+  Grayline. (Also confirmed the type-based relay discrimination is correct even
+  when WSJT-X and the consumer share a host — they do here.)
 - **Spots no longer purge while still being heard.** When a
   higher-priority source (local WSJT-X) owned a cache entry, lower-
   priority cluster re-spots weren't refreshing its timestamp, so it
