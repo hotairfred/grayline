@@ -29,7 +29,7 @@ import logbook_uploads
 import lotw_fetch
 import telnet_server
 from ctydat import CtyDat
-from worked_state import WorkedState, mode_class
+from worked_state import WorkedState, mode_class, resolve_prefecture
 
 log = logging.getLogger("grayline")
 
@@ -305,6 +305,89 @@ def _qrz_writeback(callsign: str, grid: str):
         log.warning("QRZ cache writeback failed for %s: %s", callsign, e)
 
 
+# ---- JA prefecture cache (for the WAJA spot pill) ----
+# Maps a JA callsign -> prefecture code ("01".."47"), or "" when QRZ knows the
+# call but we couldn't resolve a prefecture from its addr2 (cache the negative so
+# we don't keep re-querying). Resolved best-effort from QRZ addr2 by the same
+# lookup worker, on a separate lower-priority queue. Advisory only — never award
+# credit (that comes from the logged QSO's STATE/CNTY). Written only by us, so no
+# external-reload loop is needed (unlike the GTBridge-shared grid cache).
+JA_PREF_CACHE_PATH = _BASE_DIR / "ja_pref_cache.json"
+_ja_pref_cache: dict[str, str] = {}
+_ja_pref_cache_lock = threading.Lock()
+_pref_queue: "OrderedDict[str, None]" = OrderedDict()  # JA calls awaiting prefecture lookup
+_pref_queue_lock = threading.Lock()
+
+
+def load_ja_pref_cache():
+    global _ja_pref_cache
+    try:
+        data = json.loads(JA_PREF_CACHE_PATH.read_text())
+        with _ja_pref_cache_lock:
+            _ja_pref_cache = data
+        log.info("JA prefecture cache loaded: %d entries", len(data))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log.warning("JA prefecture cache load failed: %s", e)
+
+
+def _ja_pref_writeback(callsign: str, code: str):
+    """Persist a single (callsign, code) to ja_pref_cache.json. code may be ""
+    (negative cache: call exists but no resolvable prefecture)."""
+    try:
+        with _ja_pref_cache_lock:
+            snapshot = dict(_ja_pref_cache)
+        tmp = JA_PREF_CACHE_PATH.with_suffix(JA_PREF_CACHE_PATH.suffix + ".tmp")
+        tmp.write_text(json.dumps(snapshot, indent=1, sort_keys=True))
+        tmp.replace(JA_PREF_CACHE_PATH)
+    except Exception as e:
+        log.warning("JA prefecture cache writeback failed for %s: %s", callsign, e)
+
+
+def _enqueue_pref(callsign: str):
+    """Queue a JA callsign for a prefecture (addr2) lookup, if not already
+    cached or queued. Lower priority than grid lookups."""
+    if not callsign:
+        return
+    with _ja_pref_cache_lock:
+        if callsign in _ja_pref_cache:
+            return
+    with _pref_queue_lock:
+        if callsign in _pref_queue:
+            return
+        _pref_queue[callsign] = None
+        while len(_pref_queue) > 5000:
+            _pref_queue.popitem(last=False)
+
+
+def _ja_pref_for_spot(call: str):
+    """Return (pref_code, waja_status) for a JA spot. Enqueues a lookup on a
+    cache miss. ("","") forms: unknown-yet or unresolved -> ("", None) -> no pill;
+    a resolved code -> (code, "new"/"worked"/"confirmed")."""
+    with _ja_pref_cache_lock:
+        code = _ja_pref_cache.get(call)
+    if code is None:
+        _enqueue_pref(call)      # not looked up yet
+        return "", None
+    if not code:
+        return "", None          # looked up, no resolvable prefecture
+    return code, (_worked.prefecture_status(code) if _worked else "new")
+
+
+def _apply_prefecture_to_cache(call: str, code: str):
+    """After a prefecture lookup resolves, stamp it onto any cached JA spots for
+    that call so the pill appears immediately (not just on the next refresh)."""
+    if not _worked:
+        return
+    status = _worked.prefecture_status(code)
+    with _lock:
+        for s in _cache.values():
+            if s.get("dx_call") == call and s.get("country") == "Japan":
+                s["waja_pref"] = code
+                s["waja_status"] = status
+
+
 def qrz_lookup_worker():
     """Background worker: pops from queue, calls QRZ XML API, caches result."""
     import qrz as qrz_module  # use existing GTBridge QRZ client for auth + parse
@@ -320,32 +403,58 @@ def qrz_lookup_worker():
         return
 
     while True:
+        # Grid lookups take priority — in strict mode they gate spot ingest.
         with _lookup_queue_lock:
-            if _lookup_queue:
-                callsign, _ = _lookup_queue.popitem(last=False)
-            else:
-                callsign = None
-        if not callsign:
-            time.sleep(5)
-            continue
-        # Skip if it's been resolved between enqueue and pop
-        with _qrz_cache_lock:
-            if callsign in _qrz_cache:
-                continue
-        try:
-            grid = client._fetch_grid(callsign)  # synchronous; blocks for HTTP
-        except Exception as e:
-            log.warning("QRZ lookup error for %s: %s", callsign, e)
-            grid = None
-            _negative_cache[callsign] = time.time()
-        if grid and isinstance(grid, str) and len(grid) >= 4:
+            callsign = _lookup_queue.popitem(last=False)[0] if _lookup_queue else None
+        if callsign:
+            # Skip if it's been resolved between enqueue and pop
             with _qrz_cache_lock:
-                _qrz_cache[callsign] = grid
-            _qrz_writeback(callsign, grid)
-            log.info("QRZ lookup: %s -> %s", callsign, grid)
-        else:
-            _negative_cache[callsign] = time.time()
-        time.sleep(_LOOKUP_RATE_SEC)
+                if callsign in _qrz_cache:
+                    continue
+            try:
+                grid = client._fetch_grid(callsign)  # synchronous; blocks for HTTP
+            except Exception as e:
+                log.warning("QRZ lookup error for %s: %s", callsign, e)
+                grid = None
+                _negative_cache[callsign] = time.time()
+            if grid and isinstance(grid, str) and len(grid) >= 4:
+                with _qrz_cache_lock:
+                    _qrz_cache[callsign] = grid
+                _qrz_writeback(callsign, grid)
+                log.info("QRZ lookup: %s -> %s", callsign, grid)
+            else:
+                _negative_cache[callsign] = time.time()
+            time.sleep(_LOOKUP_RATE_SEC)
+            continue
+
+        # Then JA prefecture lookups (advisory WAJA pill, lower priority).
+        with _pref_queue_lock:
+            pcall = _pref_queue.popitem(last=False)[0] if _pref_queue else None
+        if pcall:
+            with _ja_pref_cache_lock:
+                if pcall in _ja_pref_cache:
+                    continue  # resolved between enqueue and pop
+            try:
+                addr2 = client.fetch_addr2(pcall)
+            except Exception as e:
+                log.warning("QRZ addr2 lookup error for %s: %s", pcall, e)
+                addr2 = None
+            if addr2 is None:
+                # Transient failure — don't cache; it'll re-enqueue on the next
+                # JA spot for this call (naturally rate-limited by spot arrival).
+                pass
+            else:
+                code = resolve_prefecture(pcall, addr2) or ""
+                with _ja_pref_cache_lock:
+                    _ja_pref_cache[pcall] = code
+                _ja_pref_writeback(pcall, code)
+                if code:
+                    log.info("JA prefecture: %s -> %s", pcall, code)
+                    _apply_prefecture_to_cache(pcall, code)
+            time.sleep(_LOOKUP_RATE_SEC)
+            continue
+
+        time.sleep(5)
 
 
 def _should_inject_to_flex(record: dict, active_bands: set[str]) -> bool:
@@ -918,6 +1027,8 @@ def _refresh_cache_worked_status():
             grid = s.get("grid", "")
             if grid:
                 s["grid_band_status"] = _worked.grid_band_status(grid, band)
+            if s.get("waja_pref"):
+                s["waja_status"] = _worked.prefecture_status(s["waja_pref"])
 
 
 def _build_adif_record(parsed: dict, country: str = "", dxcc: str = "", band: str = "") -> str:
@@ -1588,6 +1699,14 @@ def add_spot(spot, cluster_name):
         if eff_grid:
             grid_band_status = _worked.grid_band_status(eff_grid, band)
 
+    # WAJA (JARL) — advisory prefecture pill for JA stations. Prefecture is
+    # resolved best-effort from QRZ addr2 (cached/looked-up async); unknown or
+    # unresolvable -> waja_status None -> no pill. The award itself is credited
+    # from the logged QSO's STATE/CNTY, not from this.
+    waja_pref, waja_status = ("", None)
+    if country == "Japan":
+        waja_pref, waja_status = _ja_pref_for_spot(spot.dx_call)
+
     with _lock:
         _cache[key] = {
             "ts": time.time(),
@@ -1610,6 +1729,8 @@ def add_spot(spot, cluster_name):
             "dxcc_modeclass_status": dxcc_modeclass_status,  # country+ARRL-class, ANY band — the real ARRL mode DXCC (CW/Phone/Digital)
             "modeclass": modeclass,                         # CW | Phone | Digital | Other — derived from mode_class(mode)
             "grid_band_status": grid_band_status,           # scoped to grid×band (FFMA on 6m, VUCC on 2m+)
+            "waja_pref": waja_pref,                          # JA prefecture code ("01".."47") or "" — for the WAJA pill
+            "waja_status": waja_status,                      # 'new'|'worked'|'confirmed' or None (no pill)
             "comment": spot.comment[:60] if spot.comment else "",
             "time_utc": spot.time_utc,
             "source": cluster_name,                         # WSJTX-LOCAL / SPARKGAP-LOCAL / GOCLUSTER / external — drives precedence dedup
@@ -2327,6 +2448,9 @@ const JA_PREFECTURES = [
   ["43","熊本県","Kumamoto"],["44","大分県","Oita"],["45","宮崎県","Miyazaki"],
   ["46","鹿児島県","Kagoshima"],["47","沖縄県","Okinawa"],
 ];
+// code -> {romaji, kanji} for WAJA pill tooltips (English name on hover).
+const JA_PREF_BY_CODE = Object.fromEntries(
+  JA_PREFECTURES.map(([code, kanji, romaji]) => [code, {romaji, kanji}]));
 
 function isScopeEnabled(band, scope) {
   return !!(awardScopes[band] && awardScopes[band][scope] === true);
@@ -2400,6 +2524,14 @@ function scopeTags(s) {
   if (ms) {
     const status = scopeStatus(s, ms);
     if (status !== null) out.push({ label: ms, status, mode: true });
+  }
+  // WAJA (JARL) — global, any band, opt-in (off by default). The prefecture is
+  // resolved best-effort from QRZ addr2 on the backend; waja_status is null when
+  // it couldn't be placed, so the pill is silent rather than guessing.
+  if (awardOn("waja") && s.waja_status) {
+    const p = JA_PREF_BY_CODE[s.waja_pref];
+    const title = p ? `WAJA — ${p.romaji} ${p.kanji} (${s.waja_status})` : "WAJA";
+    out.push({ label: "WAJA", status: s.waja_status, title });
   }
   return out;
 }
@@ -2838,7 +2970,7 @@ async function refresh() {
       const rowClass = isUs ? "us-spotted" : "";
       const spotterClass = isUs ? "spotter us" : "spotter";
       const awardCell = scopeTags(s).map(t =>
-        `<span class="pill ${t.status}">${escapeHTML(t.label)}</span>`
+        `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
       ).join("");
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
@@ -3793,6 +3925,7 @@ async def main():
     global _cty, _worked, _flex, _main_loop, _telnet_feed
     _main_loop = asyncio.get_running_loop()
     load_qrz_cache()  # initial load before any spots come in
+    load_ja_pref_cache()  # JA prefecture cache for the WAJA pill
     try:
         _cty = CtyDat(str(CTY_DAT_PATH))
         log.info("cty.dat loaded: %d entities, %d prefixes", _cty.entity_count, _cty.prefix_count)

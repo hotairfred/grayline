@@ -145,6 +145,42 @@ class QRZLookup:
             log.warning("[QRZ] Lookup error for %s: %s", callsign, e)
             return _LOOKUP_FAILED  # network error — don't cache
 
+    def fetch_addr2(self, callsign: str) -> Optional[str]:
+        """Blocking QRZ lookup returning the raw `addr2` field (city/prefecture
+        free text), used to resolve a JA station's prefecture for the WAJA spot
+        pill. Same session/error semantics as _fetch_grid:
+
+            text  — addr2 present
+            ''     — call exists but has no addr2 (cache the negative)
+            None   — transient failure, do NOT cache (retry later)
+        """
+        if not self._session_key:
+            self._login()
+        if not self._session_key:
+            return _LOOKUP_FAILED
+        url = f'{_QRZ_URL}?s={self._session_key};callsign={quote(callsign)}'
+        try:
+            resp = urllib.request.urlopen(url, timeout=10)
+            root = self._parse_xml(resp.read().decode())
+            err = root.findtext('.//Session/Error')
+            if err:
+                if 'session' in err.lower() or 'timeout' in err.lower():
+                    self._session_key = None
+                    self._login()
+                    if self._session_key:
+                        return self.fetch_addr2(callsign)
+                    return _LOOKUP_FAILED
+                elif 'not found' in err.lower():
+                    return _NOT_FOUND
+                else:
+                    log.warning("[QRZ] addr2 lookup error for %s: %s", callsign, err)
+                    return _LOOKUP_FAILED
+            addr2 = root.findtext('.//Callsign/addr2')
+            return addr2 if addr2 else _NOT_FOUND
+        except Exception as e:
+            log.warning("[QRZ] addr2 lookup error for %s: %s", callsign, e)
+            return _LOOKUP_FAILED
+
     # ------------------------------------------------------------------ #
     #  Async interface                                                     #
     # ------------------------------------------------------------------ #

@@ -154,6 +154,112 @@ _US_STATES_50 = frozenset({
 _JAPAN_DXCC = "339"
 _JA_PREFECTURES_47 = frozenset(f"{i:02d}" for i in range(1, 48))
 
+# Romaji prefecture name -> ADIF/WAJA code, for resolving a prefecture from a
+# QRZ `addr2` free-text string (e.g. "Kobe, HYOGO 651-2244" -> "27"). Codes match
+# the ADIF Primary-Administrative-Subdivision scheme above (Tokyo=10), NOT ISO.
+# Used ONLY for the live spot-roster WAJA pill (an advisory "probably-new"
+# nudge) — never for award credit, which always comes from the logged QSO's
+# STATE/CNTY. Includes common spelling variants (macron-stripped, Gunma/Gumma).
+# Matching is whole-token (see resolve_prefecture_from_addr2): "Saga" must not
+# fire on "Sagamihara" (Kanagawa), "Nara" must not fire on "Narashino" (Chiba).
+_JA_PREF_NAME_TO_CODE = {
+    "hokkaido": "01", "aomori": "02", "iwate": "03", "akita": "04",
+    "yamagata": "05", "miyagi": "06", "fukushima": "07", "niigata": "08",
+    "nagano": "09", "tokyo": "10", "tokio": "10", "kanagawa": "11",
+    "chiba": "12", "saitama": "13", "ibaraki": "14", "ibaragi": "14",
+    "tochigi": "15", "gunma": "16", "gumma": "16", "yamanashi": "17",
+    "shizuoka": "18", "gifu": "19", "aichi": "20", "mie": "21",
+    "kyoto": "22", "shiga": "23", "nara": "24", "osaka": "25", "oosaka": "25",
+    "wakayama": "26", "hyogo": "27", "hyougo": "27", "toyama": "28",
+    "fukui": "29", "ishikawa": "30", "okayama": "31", "shimane": "32",
+    "yamaguchi": "33", "tottori": "34", "hiroshima": "35", "kagawa": "36",
+    "tokushima": "37", "ehime": "38", "kochi": "39", "kouchi": "39",
+    "fukuoka": "40", "saga": "41", "nagasaki": "42", "kumamoto": "43",
+    "oita": "44", "ooita": "44", "miyazaki": "45", "kagoshima": "46",
+    "okinawa": "47",
+}
+
+
+# JA call-area digit -> the set of WAJA prefecture codes in that area. The digit
+# after the prefix letters (JE*6*RPM, JA*1*RL) pins the operating region, which
+# guards against QRZ `addr2` being a mailing/QSL address in a different region
+# (e.g. a JE6/Kyushu op whose QRZ address reads "Minato-ku, Tokyo"). Area 8 is
+# the one region with a single prefecture (Hokkaido), so JA8 resolves with
+# certainty even when addr2 names no prefecture. Totals to all 47.
+_JA_AREA_PREFECTURES = {
+    "1": frozenset({"10", "11", "12", "13", "14", "15", "16", "17"}),  # Kanto
+    "2": frozenset({"18", "19", "20", "21"}),                          # Tokai
+    "3": frozenset({"22", "23", "24", "25", "26", "27"}),              # Kansai
+    "4": frozenset({"31", "32", "33", "34", "35"}),                    # Chugoku
+    "5": frozenset({"36", "37", "38", "39"}),                          # Shikoku
+    "6": frozenset({"40", "41", "42", "43", "44", "45", "46", "47"}),  # Kyushu+Okinawa
+    "7": frozenset({"02", "03", "04", "05", "06", "07"}),              # Tohoku
+    "8": frozenset({"01"}),                                            # Hokkaido
+    "9": frozenset({"28", "29", "30"}),                                # Hokuriku
+    "0": frozenset({"08", "09"}),                                      # Shinetsu
+}
+
+
+def ja_call_area(call: str) -> str | None:
+    """The JA call-area digit ("0".."9") from a callsign, or None. Handles the
+    7J–7N / 8J–8N prefixes (leading digit is the prefix, not the area) and a
+    /N portable indicator (operating in area N overrides the home call area)."""
+    if not call:
+        return None
+    c = call.upper().strip()
+    # Portable area override: JA1XXX/6 means operating in area 6.
+    if "/" in c:
+        tail = c.rsplit("/", 1)[1]
+        if len(tail) == 1 and tail.isdigit():
+            return tail
+        c = c.split("/", 1)[0]  # else fall through to base-call area
+    m = re.match(r"^[78]?[A-Z]{1,2}(\d)[A-Z]", c)
+    return m.group(1) if m else None
+
+
+def resolve_prefecture(call: str, addr2: str) -> str | None:
+    """Best-effort WAJA prefecture code for a JA station, combining the QRZ
+    `addr2` text with the call-area digit. addr2 supplies the specific
+    prefecture; the call area validates it (declining a mailing-address mismatch)
+    and resolves the unambiguous single-prefecture area (JA8 -> Hokkaido) when
+    addr2 names nothing. Returns a code or None (-> no pill)."""
+    valid = _JA_AREA_PREFECTURES.get(ja_call_area(call) or "")
+    code = resolve_prefecture_from_addr2(addr2)
+    if code:
+        if valid is None or code in valid:
+            return code          # consistent, or call area unknown -> trust addr2
+        return None              # addr2 disagrees with call area -> decline
+    if valid and len(valid) == 1:
+        return next(iter(valid))  # single-prefecture area (Hokkaido) -> certain
+    return None
+
+
+def resolve_prefecture_from_addr2(addr2: str) -> str | None:
+    """Best-effort prefecture (WAJA) code from a QRZ `addr2` free-text string.
+
+    Returns a two-digit code ("01".."47") or None when nothing matches
+    confidently. Whole-token, case-insensitive: the address is split on
+    non-letters and each token matched against the prefecture-name table, so
+    "Sagamihara" (a Kanagawa city) does NOT resolve to Saga, and "Narashino"
+    (Chiba) does NOT resolve to Nara. Prefecture-capital cities that share their
+    prefecture's name (Osaka, Kyoto, Kumamoto, ...) resolve correctly because
+    the city sits in the like-named prefecture. No match -> None -> no pill;
+    a wrong pill is worse than a missing one."""
+    if not addr2:
+        return None
+    seen = None
+    for tok in re.split(r"[^A-Za-z]+", addr2):
+        if not tok:
+            continue
+        code = _JA_PREF_NAME_TO_CODE.get(tok.lower())
+        if code:
+            if seen and seen != code:
+                # Two different prefectures named in one address (rare; e.g. a
+                # QSL-manager line). Ambiguous -> decline rather than guess.
+                return None
+            seen = code
+    return seen
+
 
 def mode_class(mode: str) -> str:
     """Classify an ADIF mode into one of: CW, Phone, Digital, Other.
@@ -966,6 +1072,19 @@ class WorkedState:
         if key in self.confirmed_grid_band:
             return "confirmed"
         if key in self.worked_grid_band:
+            return "worked"
+        return "new"
+
+    def prefecture_status(self, code: str) -> str:
+        """WAJA status for a prefecture code ("01".."47"): "new" / "worked" /
+        "confirmed". Entity-level (any band), matching the WAJA award grain.
+        Drives the advisory spot-roster pill; award credit itself comes from the
+        logged QSO's STATE/CNTY, not from here."""
+        if not code:
+            return "new"
+        if code in self.confirmed_prefectures:
+            return "confirmed"
+        if code in self.worked_prefectures:
             return "worked"
         return "new"
 
