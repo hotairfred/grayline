@@ -1632,13 +1632,26 @@ def add_spot(spot, cluster_name):
             if new_priority < existing_priority:
                 # A higher-priority source (e.g. our local WSJT-X) already owns
                 # this entry; keep its richer data rather than overwrite with the
-                # lower-priority spot. But the station IS still being heard right
-                # now, so refresh the timestamp — otherwise the entry would age
-                # out on the higher-priority source's last-decode time even while
-                # a lower-priority feed keeps spotting it (premature purge,
-                # especially under the short digital TTL).
-                existing["ts"] = time.time()
-                return
+                # lower-priority spot, and refresh recency so it doesn't age out
+                # while a lower-priority feed keeps spotting it (the premature-
+                # purge fix).
+                #
+                # EXCEPTION — stale local provenance: a WSJTX-LOCAL spot stamped
+                # with band X is only still "local" if a WSJT-X instance is
+                # currently on band X. Once the slice retunes (e.g. SliceB moves
+                # 17m -> 20m), its old-band decodes must NOT keep their SliceN
+                # local label alive off cluster re-spots — that implies a live
+                # local RX on a band the slice has left, and click-to-tune no
+                # longer works. In that case fall through and let the lower-
+                # priority spot overwrite: same signal, correct band, demoted to
+                # the cluster source/spotter.
+                stale_local = (
+                    existing.get("source") == "WSJTX-LOCAL"
+                    and _wsjtx_state_for_band(existing.get("band", "")) is None
+                )
+                if not stale_local:
+                    existing["ts"] = time.time()
+                    return
 
     # Distance is computed against the SPOTTER's QTH (where the listener is),
     # not the DX's QTH (where the rare station is). If a spotter near you

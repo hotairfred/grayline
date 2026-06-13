@@ -224,6 +224,14 @@ everything lives under `[Unreleased]` until the first tagged release.
   priority cluster re-spots weren't refreshing its timestamp, so it
   could age out on the local source's last-decode time even while
   the cluster kept spotting it. The short digital TTL exposed this.
+- **Stale local-slice provenance after a band change.** A
+  `WSJTX-LOCAL` decode is only "local" while a WSJT-X instance is
+  still on that band. When a slice retuned (e.g. SliceB 17m → 20m),
+  its old-band decodes were being kept alive by cluster re-spots and
+  kept their `SliceB` local label — so a slice on 20m appeared to be
+  "producing" 17m spots. Such entries are now demoted to the cluster
+  source when re-spotted (same signal, correct band, honest spotter)
+  instead of masquerading as a live local decode.
 - **Spot grids no longer blank mid-QSO.** FT8 carries a grid only in
   the CQ/grid-reply; mid-QSO messages have none, and a later decode
   would wipe the grid already deduced. Grid now persists (never
