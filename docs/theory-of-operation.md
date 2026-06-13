@@ -111,14 +111,22 @@ QRZ lookups serve **two** purposes:
    the DX station's grid. FT8 decodes carry it in the message ("CQ N5FWB EL29"),
    but cluster spots and mid-QSO decodes don't; the QRZ cache fills the gap.
 
-**This is why QRZ credentials are recommended.** Without them:
+**A QRZ XML Logbook Data subscription is effectively a prerequisite for the
+spotting features to be worth anything.** It is not a nice-to-have. The entire
+reason Grayline exists — the local-spotter distance intelligence — is built on
+resolving spotter callsigns to grids, and *only QRZ does that*. Without it:
 
-- Spotter grids never resolve → **you cannot use the local-spotter distance
-  filter at all** (the killer feature is dark),
-- DX grids fall back to whatever the decode carried.
+- Spotter grids never resolve → **the local-spotter distance filter cannot
+  function at all** — which is to say the one thing that distinguishes Grayline
+  from every other spot list goes dark,
+- DX grids fall back to whatever the decode happened to carry (so grid awards
+  lose their backfill too).
 
-You can still run Grayline with no QRZ account — you'll just be filtering by
-band and mode only, on the full firehose, with no distance awareness.
+Yes, Grayline will *run* with no QRZ account — but you're then left with a plain
+band/mode firehose, no distance awareness, no "who near me is hearing this." That
+is **not what Grayline is for**, and for the spotting side it's damn near
+pointless. If you're going to use the spotting features, get the QRZ XML
+subscription first; everything downstream assumes it.
 
 ### The spotter gate: strict vs. lenient (`require_spotter_grid`)
 
@@ -219,6 +227,27 @@ everything else (RBN/PSKR/DXSummit via the aggregator)   lowest
 ```
 
 Your own receive path is trusted over third-party propagation reports.
+
+### The invariant: local wins *while live*, then hands off
+
+The one rule that governs all of this:
+
+> **Local always wins. The moment it stops winning, someone else can still spot it.**
+
+While your own radio is decoding a station, that local decode is the truth —
+highest priority, precise frequency and audio offset, click-to-tune that matches
+the live decode in WSJT-X. Nothing overwrites a *live* local decode.
+
+But the instant local *ceases* to win — the station faded from your receiver, or
+your slice retuned to another band — the spot must neither vanish nor freeze. It
+**hands off** to whoever else is still hearing it (the cluster), losing the local
+label and precision but staying visible at the correct, live frequency. The
+trap to avoid: a cache entry's *liveness* (is it recent?) and its *data* (freq,
+source, tune target) are **not the same thing** — keeping a stale local entry
+"alive" by refreshing its timestamp off someone else's spot just produces a
+fresh-looking zombie pointing at a stale frequency. So a high-priority entry
+stays authoritative only while *its own source* keeps updating it; once it goes
+stale, a lower-priority spot takes it over rather than propping it up.
 
 ### Grid persistence
 

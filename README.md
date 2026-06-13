@@ -79,8 +79,13 @@ filter by band/mode in the UI). Everything credential- or hardware-dependent
 To unlock the rest, in order of payoff:
 
 1. **`home_grid`** — anchors the spotter-distance ("local spotters") filter.
-2. **QRZ credentials** (`secrets.json`) — resolves spotter grids so that filter
-   actually works (see below), and pulls in your worked/needed status.
+2. **QRZ credentials** (`secrets.json`) — **effectively required for the spotting
+   features to be worth anything.** Resolving spotter callsigns → grids is what
+   powers the local-spotter distance filter (the whole point of Grayline), and
+   *only QRZ does that*. Without a QRZ XML subscription you're left with a plain
+   band/mode firehose — no distance awareness, no "who near me hears this." Also
+   backfills DX grids for grid awards and pulls worked/needed status. Get this
+   first if you intend to use the spotting side at all.
 3. **`lotw_fetch_enabled` + LoTW creds** — confirmations for the award scoreboard.
 4. **`require_spotter_grid: true`** — once the QRZ cache is warm, for the clean
    verified-spotter feed.
