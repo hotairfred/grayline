@@ -98,6 +98,8 @@ operator-specific settings:
 | `login_commands` | commands sent after login (default none). Put GoCluster/DXSpider filter dialect here for those servers |
 | `require_spotter_grid` | strict spotter gate — drop spots whose spotter can't be placed. Default `false` (see below) |
 | `http_port` | web UI port (default 8080) |
+| `spot_ttl_sec` | how long a CW/Phone/other spot stays before purge (default 600) |
+| `spot_ttl_digital_sec` | how long a digital (FT8/FT4) spot stays — shorter, since stale decodes are dead frequencies (default 180) |
 | `flex_enabled` / `flex_host` / `flex_inject_enabled` | FlexRadio 6000-series TCP API |
 | `telnet_feed_enabled` / `telnet_feed_port` | re-broadcast as a DX-Spider node |
 | `wsjtx_enabled` / `wsjtx_forward_targets` | WSJT-X UDP listen + optional mirror to e.g. GridTracker |

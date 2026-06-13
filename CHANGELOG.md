@@ -119,6 +119,60 @@ everything lives under `[Unreleased]` until the first tagged release.
   the user explicitly turned off. Existing settings are migrated
   on first load — any scope not in storage gets its default
   state.
+- **WSJT-X UDP integration.** Listens for WSJT-X broadcasts
+  (heartbeat / status / decode / QSO-logged) and ingests decodes
+  as local-source spots (`WSJTX-LOCAL`, highest precedence). FT8
+  message text is parsed to the transmitting call + grid. Forwards
+  to additional WSJT-X targets when configured.
+- **Click-to-tune.** Click a spot to tune the rig there — to a
+  running WSJT-X instance via a `Reply` message (matches the audio
+  offset), or to a Flex slice via the SmartSDR API.
+- **N1MM / SDC contest integration.** Live QSO logging over the
+  N1MM UDP protocol, with delete/replace sync (contactdelete /
+  contactreplace) and own-skimmer spot suppression during contests.
+- **LoTW + logbook-upload integration.** Hourly LoTW confirmation
+  fetch merges into worked-state; optional real-time upload of each
+  logged QSO to QRZ/ClubLog/eQSL/LoTW. Manual "Log Sync" buttons
+  (QRZ + LoTW) in settings.
+- **DX-cluster telnet re-broadcast feed.** Grayline re-serves its
+  filtered, distance-aware stream as a telnet node (with `sh/dx`
+  backlog) so SDC / other clients can consume it.
+- **Full ARRL log-derivable award set.** 5BWAS, NBDXCC (5BDXCC base
+  + WARC/160/6m endorsements → 8BDXCC / 10BDXCC), DXCC Honor Roll,
+  per-mode WAS `(state × mode-class)`, Triple Play (LoTW-only, all
+  50 states × CW+Phone+Digital), and WAC (6 continents). Built on
+  **confirmation-source tracking** — LoTW vs paper card vs eQSL are
+  distinguished per QSO, so ARRL awards count LoTW/card only (not
+  eQSL), Triple Play counts LoTW only, and CQ awards count all three.
+- **WAJA (JARL Worked All Japan Prefectures) tracker.** 47-prefecture
+  award as an opt-in Scores row, keyed on the ADIF `STATE` code
+  (= WAJA reference number; ADIF scheme, Tokyo=10, not ISO 13), with
+  LoTW carrying the prefecture so worked→confirmed closes
+  automatically. Includes a **kanji prefecture grid** drill-in
+  (green = confirmed, amber = worked, dim = needed; hover for romaji).
+- **WAJA prefecture spot pill.** Flags needed JA prefectures live in
+  the spot roster. The prefecture is resolved best-effort from the
+  station's QRZ `addr2`, **validated against the JA call-area digit**
+  (declines a mailing-address mismatch — e.g. a JE6/Kyushu op whose
+  address reads "Tokyo" — and resolves JA8 = Hokkaido with certainty
+  when the address names nothing). Silent when unsure; advisory only.
+  Hover shows the English prefecture name. Off by default (JARL
+  opt-in) — enable in Scores setup.
+- **Scores-setup award toggle panel.** Per-award on/off in a
+  collapsible Scores-setup panel. ARRL awards default-on; CQ (WAZ)
+  and JARL (WAJA) are opt-in (off). Persists to localStorage.
+- **Per-mode spot lifetime (TTL).** Digital (FT8/FT4) spots expire
+  on a much shorter clock than CW/Phone — a stale FT8 decode just
+  tunes you to a dead frequency. Configurable: `spot_ttl_sec`
+  (default 600) and `spot_ttl_digital_sec` (default 180).
+- **Clone-and-run configuration.** Operator settings extracted to
+  `config.json` (+ `secrets.json`), with committed `.example`
+  templates. Defaults point at a public cluster and the lenient
+  spotter gate, so a fresh clone runs with just a callsign set.
+- **Theory of Operation doc** (`docs/theory-of-operation.md`) —
+  the local-spotter thesis, tiered radius, nearest-spotter-wins,
+  the strict/lenient spotter gate, confirmation-source rules, and
+  why Grayline pairs well with running your own GoCluster.
 
 ### Changed
 
@@ -142,6 +196,54 @@ everything lives under `[Unreleased]` until the first tagged release.
 - **First-time-default tab is now All.** Fresh users land on the
   combined view rather than a single band, surfacing the new
   layout naturally.
+- **Mode DXCC awards are now entity-level and self-retiring.**
+  DXCC-CW / DXCC-Phone / DXCC-Digital are entity-count awards (any
+  band), not band×mode — so the pills stop nagging you to re-work
+  an entity on a mode you already have it on. Each auto-retires
+  (stops highlighting) at 100 confirmed, re-armable for
+  endorsements. The Country cell reflects band-slot status only.
+- **Nearest-spotter-wins distance.** A spot's stored distance is the
+  nearest spotter ever seen for it, sticky for its lifetime — a
+  later report from a farther spotter refreshes recency but doesn't
+  push the spot back outside your local-spotter radius. Fixes DX
+  spots (e.g. JA) flickering in and out of view as near and far
+  spotters alternately reported them.
+- **Triple Play shown as legs-complete / 3.** Reframed from a raw
+  QSO count to "legs done out of 3" (CW / Phone / Digital, all 50
+  states each) — it's an award-for-having-awards, like 5BDXCC.
+- **Log view auto-refreshes**, and the worked-state reload runs more
+  frequently (mtime-gated, so idle ticks stay cheap) — logged QSOs
+  flip award status live instead of after a long roundtrip.
+- **Relicensed to BSD-3-Clause** (from GPL-3.0), matching the
+  GridTracker family, ahead of the public release.
+
+### Fixed
+
+- **Spots no longer purge while still being heard.** When a
+  higher-priority source (local WSJT-X) owned a cache entry, lower-
+  priority cluster re-spots weren't refreshing its timestamp, so it
+  could age out on the local source's last-decode time even while
+  the cluster kept spotting it. The short digital TTL exposed this.
+- **Spot grids no longer blank mid-QSO.** FT8 carries a grid only in
+  the CQ/grid-reply; mid-QSO messages have none, and a later decode
+  would wipe the grid already deduced. Grid now persists (never
+  regresses to blank).
+- **QSO-logged grid backfill from own decode.** A logged QSO missing
+  its grid is backfilled from our own decode history, never from QRZ
+  (correct for portables — QRZ would give the home grid, not the
+  operating one).
+- **Scores panel per-band DXCC under-count.** `dxcc_by_band` now
+  counts from the LoTW-mirror-merged sets (the same sets the spot
+  coloring uses), matching LoTW to ±1 (the +1s being legitimate
+  paper-card credits LoTW's online total doesn't show).
+- **WAS Alaska/Hawaii capture.** State capture was dropping Hawaii
+  and most of Alaska and miscounting DC; now gated correctly on the
+  50 US states across DXCC 291/6/110.
+- **False "needed" flags.** Worked-state is keyed by cty.dat entity
+  rather than the source's country-name label, so QRZ/cty.dat label
+  drift can't make a worked entity look needed.
+- **N1MM contactdelete** removes ADIF records by `<EOR>`, not by
+  line, so multi-line records delete cleanly.
 
 ### Vendor / reference
 
@@ -153,13 +255,6 @@ everything lives under `[Unreleased]` until the first tagged release.
   (re-cloneable from gitlab.com/gridtracker.org/gridtracker2).
 - **`NOTICE`** — third-party attributions. Currently covers GT2's
   BSD 3-Clause license for the mode tables and algorithm ports.
-
-### Planned (deferred — Fred 2026-05-04, "do this when I'm home")
-
-- **WSJT-X UDP integration.** Receive WSJT-X UDP broadcasts (heartbeat, status, decode messages, QSO Logged) so Grayline sees real-time WSJT-X activity. Encode/decode logic already exists in the gtbridge codebase at `wsjtx_udp.py` — port across, don't rewrite.
-- **Click-to-tune from Grayline → WSJT-X.** Send WSJT-X "Reply" message UDP back to the running instance so clicking a spot in Grayline causes WSJT-X to tune to that audio offset. Reply parser is already in gtbridge's `wsjtx_udp.py`.
-- **Click-to-tune from Grayline → Flex slice.** `flexradio.py` already has slice-tuning logic for the SmartSDR TCP API on port 4992 (used by Phase 2 panadapter inject). What's missing is wiring a click-handler in the Grayline spot table to call into it. *Not* a from-scratch effort; just hooking up the existing client.
-- **Sequence when revisited:** Flex click-to-tune is the smaller change (existing client, just add UI handler). WSJT-X integration is bigger (new UDP listener, message parsing, real-time decode display). Recommended order: Flex first to validate the click-handler pattern, then WSJT-X UDP RX, then WSJT-X click-to-tune Reply.
 
 ### Notes
 
