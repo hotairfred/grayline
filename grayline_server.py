@@ -942,8 +942,24 @@ def _build_scores_payload() -> dict:
         "continents": sorted(_worked.confirmed_continents),
     }
 
+    # Contacts by year × mode-class — for the Scores bar chart. Pure-stdlib walk
+    # over the deduped QSO list; no new deps and no external charting/Python
+    # packages (rendered client-side as a vanilla CSS bar). mode_class() is our
+    # own GT2-ported classifier, already imported.
+    _ym: dict[str, dict[str, int]] = {}
+    for q in _worked.qsos:
+        d = q.get("qso_date") or ""
+        if len(d) < 4 or not d[:4].isdigit():
+            continue
+        cls = mode_class(q.get("mode") or "")
+        if cls not in ("CW", "Phone", "Digital"):
+            cls = "Other"
+        _ym.setdefault(d[:4], {"CW": 0, "Phone": 0, "Digital": 0, "Other": 0})[cls] += 1
+    qso_by_year_mode = {yr: _ym[yr] for yr in sorted(_ym)}
+
     return {
         "as_of": time.time(),
+        "qso_by_year_mode": qso_by_year_mode,
         "totals": {
             "qsos": _worked.qso_count,
             "unique_calls": _worked.unique_calls_count,
@@ -2142,6 +2158,15 @@ details[open] .gear-icon { color: #fff; }
 .score-card td.s-c.partial  { color: #ff5; font-weight: 600; }
 .score-card td.s-c.empty    { color: #555; }
 .score-card td.s-g     { color: #666; }
+/* Contacts-by-mode-by-year stacked bars (vanilla CSS, no charting lib) */
+.score-card.mychart .mylegend { font-size: 0.72em; color: #aaa; margin: 0.1em 0 0.5em; }
+.mychart .myl  { margin-right: 0.9em; white-space: nowrap; }
+.mychart .mysw { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin-right: 0.3em; vertical-align: middle; }
+.mychart .myrow { display: flex; align-items: center; gap: 0.5em; margin: 0.18em 0; font-size: 0.8em; }
+.mychart .myyr  { width: 2.7em; color: #ccc; text-align: right; flex: 0 0 auto; }
+.mychart .mybar { flex: 1 1 auto; display: flex; height: 1.2em; border-radius: 2px; overflow: hidden; background: #1a1a1a; }
+.mychart .myseg { display: flex; align-items: center; justify-content: center; font-size: 0.8em; color: #111; font-weight: 600; overflow: hidden; min-width: 0; }
+.mychart .mytot { width: 3.6em; text-align: right; color: #999; flex: 0 0 auto; }
 .scores-totals { color: #888; font-size: 0.85em; margin-top: 1em; }
 
 .log-search-input, .log-search-select {
@@ -3356,6 +3381,27 @@ function renderScores(j) {
       }
     }
     if (rows.length) cards.push(awardCard("VHF / UHF / Satellite VUCC", rows));
+  }
+
+  // Contacts by mode × year — vanilla CSS stacked bars, zero charting deps.
+  if (j.qso_by_year_mode && Object.keys(j.qso_by_year_mode).length) {
+    const MC = [["CW","#f2c14e"],["Phone","#4ea3f2"],["Digital","#5fd07a"],["Other","#8a8a8a"]];
+    const years = Object.keys(j.qso_by_year_mode).sort().reverse();   // newest first
+    const legend = MC.map(([k,c]) => `<span class="myl"><span class="mysw" style="background:${c}"></span>${k}</span>`).join("");
+    const rows = years.map(yr => {
+      const r = j.qso_by_year_mode[yr];
+      const tot = MC.reduce((s,[k]) => s + (r[k]||0), 0);
+      if (!tot) return "";
+      const segs = MC.map(([k,c]) => {
+        const n = r[k]||0; if (!n) return "";
+        const pct = n/tot*100;
+        return `<span class="myseg" style="width:${pct}%;background:${c}" title="${k}: ${n.toLocaleString()} (${pct.toFixed(1)}%)">${pct>=9?Math.round(pct)+"%":""}</span>`;
+      }).join("");
+      return `<div class="myrow"><span class="myyr">${yr}</span><span class="mybar">${segs}</span><span class="mytot">${tot.toLocaleString()}</span></div>`;
+    }).join("");
+    cards.push(`<div class="score-card mychart"><h3>Contacts by Mode × Year</h3>`
+      + `<div class="mylegend">${legend}</div>` + rows
+      + `<div class="mode-hint">Bar = share of that year's QSOs by mode class; number = year total. Hover a segment for exact count / %.</div></div>`);
   }
 
   // Scores setup — per-award visibility. ARRL on by default; CQ / JARL opt-in.
