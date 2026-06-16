@@ -114,9 +114,22 @@ class CtyDat:
         """
         call = callsign.upper().strip()
 
-        # Check exact match first
+        # Check exact match first — preserves cty.dat's explicit overrides
+        # (both the stateside =KG4MLB exceptions and any oddball =KG44WW
+        # Guantanamo entries) above the general rule below.
         if call in self._exact:
             return self._exact[call]
+
+        # Guantanamo Bay deterministic DXCC rule. cty.dat encodes this as an
+        # enumeration (KG4 prefix -> Guantanamo, then every stateside KG4 call
+        # listed as a =CALL exception), so any un-enumerated KG4 call falls
+        # through the greedy KG4 prefix and mis-resolves to Guantanamo. The
+        # real rule is computable: KG4 + exactly two letters = Guantanamo;
+        # KG4 + anything else = US fourth call area. Apply it directly so the
+        # result no longer depends on how current cty.dat happens to be.
+        kg4 = self._kg4_rule(call)
+        if kg4 is not None:
+            return kg4
 
         # Handle portable indicators
         if '/' in call:
@@ -142,6 +155,21 @@ class CtyDat:
                     call = parts[0]  # Fall back to main call
 
         return self._prefix_match(call)
+
+    def _kg4_rule(self, call: str) -> Optional[DXCCEntity]:
+        """Apply the Guantanamo Bay 2-letter rule to a bare KG4 callsign.
+
+        KG4 + exactly two letters -> Guantanamo Bay; KG4 + anything else
+        (one letter, three or more chars, or a digit) -> US fourth call area.
+        Returns None for non-KG4 or slashed calls, so portable forms
+        (W1AW/KG4, KG4XX/P) keep their existing exact/prefix handling.
+        """
+        if '/' in call or not call.startswith('KG4'):
+            return None
+        suffix = call[3:]
+        if len(suffix) == 2 and suffix.isalpha():
+            return self._prefixes.get('KG4')   # Guantanamo Bay (DXCC 105)
+        return self._prefixes.get('K')         # United States (DXCC 291)
 
     def _prefix_match(self, call: str) -> Optional[DXCCEntity]:
         """Find the longest prefix match for a callsign."""
