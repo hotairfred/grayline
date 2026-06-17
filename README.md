@@ -4,7 +4,8 @@ A web-based DX cluster consumer with award-aware worked/needed lookup, built for
 the serious DXer who wants finer per-band/per-award granularity than a general
 spotting tool provides. It runs headless (a container, a Pi, any always-on Linux
 box), serves a self-contained dark-mode web page to any browser on your LAN or
-over Tailscale, and keeps the heavy lifting off your operating PC.
+over Tailscale, and keeps the heavy lifting — cluster ingestion, WSJT-X
+handling, and FlexRadio control — off your operating PC.
 
 Grayline pulls validated spots from a DX cluster, enriches them with
 DXCC / continent / zone data via `cty.dat`, cross-references them against your
@@ -47,6 +48,10 @@ how confirmation-source tracking keeps each award counting by its own rules.
   as a standard DX-Spider telnet node for other logging tools.
 
 ## Quick start
+
+**Requirements:** an always-on Linux host — a Raspberry Pi is plenty — plus
+Python 3 and a browser. It lives *off* your operating PC by design (that's the
+point: keep the UDP/compute load away from the machine running your radio audio).
 
 ```bash
 git clone <your-fork-url> grayline
