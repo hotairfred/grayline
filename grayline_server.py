@@ -2146,7 +2146,7 @@ details[open] > summary::before { transform: rotate(90deg); }
   padding: 0.15em 0.6em; margin-right: 0.3em; cursor: pointer; font-family: inherit; font-size: 0.95em; }
 .rm-controls button.active { background: #ff0; color: #000; border-color: #ff0; font-weight: 700; }
 .rm-scroll { max-height: 72vh; overflow: auto; border: 1px solid #1a1a1a; }
-table.rm { border-collapse: collapse; font-size: 0.72em; font-variant-numeric: tabular-nums; }
+table.rm { border-collapse: collapse; width: auto; font-size: 0.72em; font-variant-numeric: tabular-nums; }
 table.rm th { color: #888; font-weight: normal; padding: 0.15em 0.35em; background: #0a0a0a;
   position: sticky; top: 0; border-bottom: 1px solid #222; z-index: 1; }
 table.rm td { padding: 0.05em 0.35em; border-bottom: 1px dotted #141414; white-space: nowrap; }
