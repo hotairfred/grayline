@@ -133,6 +133,30 @@ and the cache has warmed, flip it to `true` for the cleaner, verified-spotter
 feed. See [docs/theory-of-operation.md](docs/theory-of-operation.md) for the
 full rationale.
 
+### Club Log integration (optional — bring your own account)
+
+Grayline can talk to [Club Log](https://clublog.org) for three things: real-time
+QSO upload, the Most Wanted **rarity badge** on spots, and the **Most Wanted tab**
+(your worked/confirmed-by-band-and-mode matrix plus an OQRS "confirmable" list and
+"suspect / not-in-their-log" flags). All of it reads *your* Club Log account, so
+it's per-operator — set these in `secrets.json`:
+
+| key | what it is / where to get it |
+|---|---|
+| `clublog_email` | the email you log into Club Log with |
+| `clublog_password` | an **Application Password** — Club Log → Settings → App Passwords (**not** your login password) |
+| `clublog_callsign` | your callsign (defaults to `qrz_user` if blank) |
+| `clublog_api_key` | **request your own** at [clublog.org/requestapikey.php](https://clublog.org/requestapikey.php) — free, but hand-reviewed, so allow ~a day. Describe it as e.g. *"Grayline — personal ham dashboard, realtime upload + DXCC charts."* |
+
+Leave any of these blank to disable the Club Log features — Grayline runs fine
+without them. (The Most Wanted **rarity ranking** on spots needs *no* credentials
+at all — it uses Club Log's public list.)
+
+> Club Log issues API keys per-application, so you request your own rather than
+> sharing one — it keeps your traffic on your own account, and it's a one-time
+> setup. On any credentials error Grayline latches the Club Log calls off (Club
+> Log firewalls IPs on repeated 403s), so a wrong key fails safe.
+
 ## Architecture
 
 ```
