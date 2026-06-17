@@ -957,9 +957,29 @@ def _build_scores_payload() -> dict:
         _ym.setdefault(d[:4], {"CW": 0, "Phone": 0, "Digital": 0, "Other": 0})[cls] += 1
     qso_by_year_mode = {yr: _ym[yr] for yr in sorted(_ym)}
 
+    # Last-5 DXCC ATNOs (All-Time-New-Ones): the 5 most-recently first-worked
+    # DXCC entities. Keyed by DXCC id; the ATNO QSO = earliest contact with that
+    # entity in the log. Recent ATNOs are reliable (their QSO is in the log);
+    # deep-past ATNO dates depend on log completeness. Pure stdlib.
+    _first_dxcc: dict = {}
+    for q in _worked.qsos:
+        d = q.get("dxcc")
+        if not d:
+            continue
+        k = (q.get("qso_date") or "", q.get("time_on") or "")
+        cur = _first_dxcc.get(d)
+        if cur is None or k < cur[0]:
+            _first_dxcc[d] = (k, q)
+    last5_atno = [
+        {"date": r.get("qso_date", ""), "country": r.get("country", ""),
+         "call": r.get("call", ""), "band": r.get("band", ""), "mode": r.get("mode", "")}
+        for (_k, r) in sorted(_first_dxcc.values(), key=lambda x: x[0], reverse=True)[:5]
+    ]
+
     return {
         "as_of": time.time(),
         "qso_by_year_mode": qso_by_year_mode,
+        "last5_atno": last5_atno,
         "totals": {
             "qsos": _worked.qso_count,
             "unique_calls": _worked.unique_calls_count,
@@ -3381,6 +3401,18 @@ function renderScores(j) {
       }
     }
     if (rows.length) cards.push(awardCard("VHF / UHF / Satellite VUCC", rows));
+  }
+
+  // Last 5 DXCC ATNOs (all-time-new entities) — most recent first.
+  if (j.last5_atno && j.last5_atno.length) {
+    const fmtd = s => (s && s.length >= 8) ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : (s || "");
+    const rows = j.last5_atno.map(a =>
+      `<tr><td class="s-name" style="white-space:nowrap">${fmtd(a.date)}</td>`
+      + `<td>${escapeHTML(a.country || "?")}</td><td>${escapeHTML(a.call || "")}</td>`
+      + `<td>${escapeHTML(a.band || "")}</td><td>${escapeHTML(a.mode || "")}</td></tr>`).join("");
+    cards.push(`<div class="score-card"><h3>Last 5 DXCC ATNOs</h3>`
+      + `<table><tr><th>Date</th><th>Entity</th><th>Call</th><th>Band</th><th>Mode</th></tr>${rows}</table>`
+      + `<div class="mode-hint">ATNO = All-Time-New-One: your first-ever QSO with that DXCC entity.</div></div>`);
   }
 
   // Contacts by mode × year — vanilla CSS stacked bars, zero charting deps.
