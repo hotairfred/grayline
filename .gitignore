@@ -20,3 +20,4 @@ docs/dxlab/*.pdf
 # Vendor source clones for cross-reference (GridTracker2, etc.) — re-cloneable
 vendor/
 clublog_breaker.json
+*.bak.*
