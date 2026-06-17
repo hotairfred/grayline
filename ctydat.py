@@ -104,13 +104,18 @@ class CtyDat:
                 else:
                     self._prefixes[clean.upper()] = entity
 
-    def lookup(self, callsign: str) -> Optional[DXCCEntity]:
+    def lookup(self, callsign: str, dxcc: bool = True) -> Optional[DXCCEntity]:
         """Look up a callsign and return its DXCC entity.
 
         Uses longest-prefix-match algorithm:
         1. Check exact callsign matches first
         2. Handle portable indicators (/VP9, VP9/)
         3. Try progressively shorter prefixes
+
+        With dxcc=True (default), entities cty.dat flags NON-DXCC (their primary
+        prefix begins with '*' — WAE/zone entities like Sicily, African Italy,
+        European Turkey, which ARRL DXCC folds into a parent) are skipped so the
+        result lands on the real DXCC entity. Pass dxcc=False for raw cty.dat.
         """
         call = callsign.upper().strip()
 
@@ -118,7 +123,9 @@ class CtyDat:
         # (both the stateside =KG4MLB exceptions and any oddball =KG44WW
         # Guantanamo entries) above the general rule below.
         if call in self._exact:
-            return self._exact[call]
+            e = self._exact[call]
+            if not (dxcc and e.prefix.startswith('*')):
+                return e
 
         # Guantanamo Bay deterministic DXCC rule. cty.dat encodes this as an
         # enumeration (KG4 prefix -> Guantanamo, then every stateside KG4 call
@@ -149,12 +156,12 @@ class CtyDat:
                     call = parts[0]  # Use the main call
                 else:
                     # Try the prefix part as a location override
-                    result = self._prefix_match(prefix_part)
+                    result = self._prefix_match(prefix_part, dxcc)
                     if result:
                         return result
                     call = parts[0]  # Fall back to main call
 
-        return self._prefix_match(call)
+        return self._prefix_match(call, dxcc)
 
     def _kg4_rule(self, call: str) -> Optional[DXCCEntity]:
         """Apply the Guantanamo Bay 2-letter rule to a bare KG4 callsign.
@@ -171,13 +178,16 @@ class CtyDat:
             return self._prefixes.get('KG4')   # Guantanamo Bay (DXCC 105)
         return self._prefixes.get('K')         # United States (DXCC 291)
 
-    def _prefix_match(self, call: str) -> Optional[DXCCEntity]:
-        """Find the longest prefix match for a callsign."""
+    def _prefix_match(self, call: str, dxcc: bool = True) -> Optional[DXCCEntity]:
+        """Find the longest prefix match. With dxcc=True, skip non-DXCC (*)
+        WAE/zone entities so the match falls through to the DXCC parent
+        (e.g. IT9 -> Italy, TA1 -> Asiatic Turkey)."""
         # Try progressively shorter prefixes
         for length in range(len(call), 0, -1):
             prefix = call[:length]
-            if prefix in self._prefixes:
-                return self._prefixes[prefix]
+            ent = self._prefixes.get(prefix)
+            if ent and not (dxcc and ent.prefix.startswith('*')):
+                return ent
         return None
 
     def get_entity_by_prefix(self, prefix: str) -> Optional[DXCCEntity]:
