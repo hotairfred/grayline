@@ -1855,6 +1855,7 @@ def add_spot(spot, cluster_name):
             "distance_mi": distance_mi,
             "country": country,
             "dxcc": dxcc_num,
+            "dxcc_rank": (_DXCC_RARITY.get(dxcc_num) if dxcc_num else None),  # Club Log Most Wanted rank (lower=rarer) or None
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
@@ -1927,6 +1928,23 @@ def _load_ffma_grids() -> list[str]:
 _FFMA_GRIDS = _load_ffma_grids()
 _FFMA_GRID_SET = frozenset(g.upper() for g in _FFMA_GRIDS)
 log.info("FFMA grid list loaded: %d grids", len(_FFMA_GRIDS))
+
+
+def _load_dxcc_rarity() -> dict:
+    """{dxcc_number(str): most-wanted rank(int)} from Club Log's public Most
+    Wanted list (cached in data/dxcc_rarity.json as {rank: dxcc#}). Lower rank
+    = rarer. Keyed by ARRL DXCC number so it joins straight onto spot['dxcc']."""
+    try:
+        path = Path(__file__).parent / "data" / "dxcc_rarity.json"
+        rank2num = json.loads(path.read_text())
+        return {str(num): int(rank) for rank, num in rank2num.items()}
+    except Exception as e:
+        log.warning("DXCC rarity list unavailable (%s); rarity badges off", e)
+        return {}
+
+
+_DXCC_RARITY = _load_dxcc_rarity()
+log.info("DXCC rarity list loaded: %d entities", len(_DXCC_RARITY))
 
 
 # ---------------- HTML ----------------
@@ -2035,6 +2053,14 @@ details[open] > summary::before { transform: rotate(90deg); }
 .awards .pill.confirmed {                                          /* already confirmed for this scope — dim */
   color: #666; border-color: #2a2a2a;
 }
+/* Club Log Most Wanted rarity badge in the entity cell — lower rank = rarer. */
+.mw {
+  font-size: 0.72em; font-weight: 700; padding: 0 0.3em; border-radius: 3px;
+  margin-left: 0.35em; vertical-align: middle; letter-spacing: 0.02em;
+}
+.mw-hot  { background: #c0392b; color: #fff; }     /* top 10  — grail */
+.mw-warm { background: #d68910; color: #111; }     /* top 50  */
+.mw-cool { background: #5d4a0a; color: #f5d76e; }  /* top 150 */
 
 /* Per-band mode toggles row */
 .band-mode-toggles {
@@ -2667,6 +2693,17 @@ function scopeStatus(s, scope) {
 
 // Award pills for a spot. Returns only the scopes that (a) the user has
 // enabled for this band AND (b) this spot can actually advance.
+// Club Log Most Wanted rarity badge. Shows for entities in the top
+// RARITY_MAX_RANK; tiered color so the true grails stand out. Rank rides on
+// s.dxcc_rank (joined by DXCC number on the backend).
+const RARITY_MAX_RANK = 150;
+function rarityBadge(s) {
+  const r = s.dxcc_rank;
+  if (!r || r > RARITY_MAX_RANK) return "";
+  const tier = r <= 10 ? "mw-hot" : (r <= 50 ? "mw-warm" : "mw-cool");
+  return ` <span class="mw ${tier}" title="Club Log Most Wanted #${r}">#${r}</span>`;
+}
+
 function scopeTags(s) {
   const out = [];
   for (const scope of availableScopesForBand(s.band)) {
@@ -3132,7 +3169,7 @@ async function refresh() {
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
-        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}</td>
+        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
         ${bandCell}
