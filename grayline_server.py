@@ -1065,7 +1065,9 @@ def _refresh_cache_worked_status():
             mode = s.get("mode") or ""
             modeclass = s.get("modeclass") or (mode_class(mode) if mode else "")
             if country:
-                s["dxcc_band_status"] = _worked.country_band_status(country, band)
+                _dn = s.get("dxcc", "")
+                s["dxcc_band_status"] = (_worked.dxcc_band_status(_dn, band)
+                                         if _dn else _worked.country_band_status(country, band))
                 if mode:
                     s["dxcc_band_mode_status"] = _worked.country_band_mode_status(country, band, mode)
                 if modeclass:
@@ -1770,7 +1772,7 @@ def add_spot(spot, cluster_name):
 
     # cty.dat enrichment for the DX call (entity name doubles as the
     # bridge to your logbook's `country` field)
-    country = continent = cq_zone = itu_zone = ""
+    country = continent = cq_zone = itu_zone = dxcc_num = ""
     if _cty:
         e = _cty.lookup(spot.dx_call)
         if e:
@@ -1778,6 +1780,7 @@ def add_spot(spot, cluster_name):
             continent = e.continent or ""
             cq_zone = str(e.cq_zone) if e.cq_zone is not None else ""
             itu_zone = str(e.itu_zone) if e.itu_zone is not None else ""
+            dxcc_num = str(e.dxcc) if e.dxcc else ""
 
     # Effective grid — never REGRESS to blank. FT8 carries the grid only in a
     # CQ / grid-reply; mid-QSO messages (reports, R-15, RR73, 73) have none, so a
@@ -1806,7 +1809,11 @@ def add_spot(spot, cluster_name):
     if _worked:
         call_status = _worked.call_status(spot.dx_call)
         if country:
-            dxcc_band_status = _worked.country_band_status(country, band)
+            # DXCC band-slot keyed by the authoritative ADIF entity NUMBER when
+            # we have it (LoTW ground truth; collapses WAE/zone splits like
+            # European Turkey -> 390); fall back to the cty.dat name otherwise.
+            dxcc_band_status = (_worked.dxcc_band_status(dxcc_num, band)
+                                if dxcc_num else _worked.country_band_status(country, band))
             if mode:
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
                 dxcc_band_modeclass_status = _worked.country_band_modeclass_status(country, band, modeclass)
@@ -1852,6 +1859,7 @@ def add_spot(spot, cluster_name):
             "grid": eff_grid,
             "distance_mi": distance_mi,
             "country": country,
+            "dxcc": dxcc_num,
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,

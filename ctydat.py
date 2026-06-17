@@ -12,6 +12,7 @@ Usage:
     #     'utc_offset': 0.0}
 """
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -28,6 +29,7 @@ class DXCCEntity:
     lon: float
     utc_offset: float
     prefix: str  # primary prefix (e.g., 'DL' for Germany)
+    dxcc: int = 0  # ADIF/DXCC entity code (from cty.csv); 0 if unknown
 
 
 class CtyDat:
@@ -42,8 +44,40 @@ class CtyDat:
         self._entities = {}
         self._load(filename)
 
+    @staticmethod
+    def _load_dxcc_numbers(cty_dat_path: str):
+        """Read cty.csv (alongside cty.dat) for ADIF/DXCC entity codes, which
+        cty.dat omits. Columns: prefix, name, dxcc_code, ... Returns
+        (by_prefix, by_name). Missing/unreadable cty.csv -> empty maps, and
+        callers fall back to country-name matching."""
+        by_prefix: dict = {}
+        by_name: dict = {}
+        csv_path = os.path.join(os.path.dirname(cty_dat_path) or '.', 'cty.csv')
+        try:
+            with open(csv_path, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    parts = line.split(',')
+                    if len(parts) < 3:
+                        continue
+                    try:
+                        code = int(parts[2])
+                    except ValueError:
+                        continue
+                    by_prefix[parts[0].strip().upper()] = code
+                    by_name[parts[1].strip()] = code
+        except OSError:
+            pass
+        return by_prefix, by_name
+
     def _load(self, filename: str):
         """Parse cty.dat file."""
+        # cty.dat carries no DXCC entity NUMBER; cty.csv (same AD1C data, sitting
+        # alongside) does. Load it so each entity gets its ADIF/DXCC code — the
+        # authoritative key (matches what LoTW credits). WAE/zone splits carry
+        # their parent's code (European Turkey -> 390, Sicily -> 248), so the
+        # number resolves the split-entity class on its own.
+        self._dxcc_by_prefix, self._dxcc_by_name = self._load_dxcc_numbers(filename)
+
         with open(filename, 'r') as f:
             content = f.read()
 
@@ -76,6 +110,9 @@ class CtyDat:
                 )
             except (ValueError, IndexError):
                 continue
+
+            entity.dxcc = (self._dxcc_by_prefix.get(entity.prefix.upper())
+                           or self._dxcc_by_name.get(entity.entity) or 0)
 
             self._entities[entity.prefix.upper()] = entity
 
