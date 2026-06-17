@@ -27,6 +27,7 @@ API references:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -325,6 +326,67 @@ def upload_lotw(adif_record: str, station_location: str = TQSL_STATION_DEFAULT,
 
 
 # ------------------------------------------------------------------ #
+#  ClubLog 403 circuit-breaker                                        #
+# ------------------------------------------------------------------ #
+# ClubLog firewalls the source IP after repeated 403s and its docs require
+# that on a credentials error we "immediately disable further requests with
+# those credentials." So once a 403/401 is seen for a given set of ClubLog
+# creds, latch ClubLog OFF until the creds in secrets.json change (detected
+# via a hash). Only a hash is stored, never the credentials. Gitignored.
+_CLUBLOG_BREAKER_PATH = _BASE_DIR / "clublog_breaker.json"
+
+
+def _clublog_creds_hash(email: str, password: str, api_key: str) -> str:
+    raw = f"{email}\x00{password}\x00{api_key}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _clublog_blocked(creds_hash: str) -> bool:
+    try:
+        st = json.loads(_CLUBLOG_BREAKER_PATH.read_text())
+    except Exception:
+        return False
+    return bool(st.get("disabled")) and st.get("creds_hash") == creds_hash
+
+
+def _trip_clublog_breaker(creds_hash: str, reason: str):
+    try:
+        _CLUBLOG_BREAKER_PATH.write_text(json.dumps({
+            "disabled": True,
+            "creds_hash": creds_hash,
+            "reason": reason[:200],
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }))
+        log.warning("ClubLog breaker TRIPPED (auth error) — disabling uploads "
+                    "until creds change: %s", reason[:120])
+    except Exception as e:
+        log.warning("could not write ClubLog breaker file: %s", e)
+
+
+def _clear_clublog_breaker():
+    try:
+        _CLUBLOG_BREAKER_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _upload_clublog_guarded(adif_record, email, password, callsign, api_key):
+    """upload_clublog wrapped in the 403 circuit-breaker. One auth failure
+    latches ClubLog off for this credential set; changing the creds (new hash)
+    or a later success re-enables it."""
+    ch = _clublog_creds_hash(email, password, api_key)
+    if _clublog_blocked(ch):
+        return False, ("disabled after a prior 403 — update ClubLog creds in "
+                       "secrets.json to re-enable")
+    ok, msg = upload_clublog(adif_record, email, password, callsign, api_key)
+    if ok:
+        _clear_clublog_breaker()
+    elif msg.startswith("HTTP 403") or msg.startswith("HTTP 401"):
+        _trip_clublog_breaker(ch, msg)
+    return ok, msg
+
+
+# ------------------------------------------------------------------ #
 #  Dispatcher — parallel fire-and-forget                              #
 # ------------------------------------------------------------------ #
 
@@ -355,9 +417,9 @@ def _run_uploads_in_parallel(adif_record: str, dx_call: str):
 
     targets = [
         ("QRZ", lambda: upload_qrz(adif_record, qrz_key)),
-        ("CLUBLOG", lambda: upload_clublog(adif_record, clublog_email,
-                                           clublog_password, clublog_callsign,
-                                           clublog_api)),
+        ("CLUBLOG", lambda: _upload_clublog_guarded(adif_record, clublog_email,
+                                                    clublog_password, clublog_callsign,
+                                                    clublog_api)),
         ("EQSL", lambda: upload_eqsl(adif_record, eqsl_user, eqsl_pass)),
         ("LOTW", lambda: upload_lotw(adif_record, tqsl_station, tqsl_passphrase)),
     ]
