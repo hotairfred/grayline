@@ -1009,6 +1009,18 @@ class WorkedState:
                 return "worked"
         return "new"
 
+    def entity_band_status(self, dxcc: str, country: str, band: str) -> str:
+        """DXCC band-slot status using the authoritative ADIF entity NUMBER when
+        present, UNION'd with the cty-name lookup. The number is ground truth and
+        collapses WAE/zone splits (European Turkey -> 390); the name is the safety
+        net so a worked slot is never missed when only one key has it (a QSO
+        logged without a dxcc number, or an exact-call entity whose logged number
+        differs from its prefix). Worked if EITHER says so — never a false miss."""
+        rank = {"new": 0, "worked": 1, "confirmed": 2}
+        sn = self.dxcc_band_status(dxcc, band) if dxcc else "new"
+        sc = self.country_band_status(country, band) if country else "new"
+        return sn if rank[sn] >= rank[sc] else sc
+
     def country_band_mode_status(self, country: str, band: str, mode: str) -> str:
         """Per-band-per-mode status — for mode-specific awards (DXCC-CW, DXCC-FT8, etc.)."""
         if not country or not band or not mode:

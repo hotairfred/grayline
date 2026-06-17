@@ -1065,9 +1065,7 @@ def _refresh_cache_worked_status():
             mode = s.get("mode") or ""
             modeclass = s.get("modeclass") or (mode_class(mode) if mode else "")
             if country:
-                _dn = s.get("dxcc", "")
-                s["dxcc_band_status"] = (_worked.dxcc_band_status(_dn, band)
-                                         if _dn else _worked.country_band_status(country, band))
+                s["dxcc_band_status"] = _worked.entity_band_status(s.get("dxcc", ""), country, band)
                 if mode:
                     s["dxcc_band_mode_status"] = _worked.country_band_mode_status(country, band, mode)
                 if modeclass:
@@ -1809,11 +1807,8 @@ def add_spot(spot, cluster_name):
     if _worked:
         call_status = _worked.call_status(spot.dx_call)
         if country:
-            # DXCC band-slot keyed by the authoritative ADIF entity NUMBER when
-            # we have it (LoTW ground truth; collapses WAE/zone splits like
-            # European Turkey -> 390); fall back to the cty.dat name otherwise.
-            dxcc_band_status = (_worked.dxcc_band_status(dxcc_num, band)
-                                if dxcc_num else _worked.country_band_status(country, band))
+            # Number-keyed (LoTW ground truth, collapses WAE splits) UNION name.
+            dxcc_band_status = _worked.entity_band_status(dxcc_num, country, band)
             if mode:
                 dxcc_band_mode_status = _worked.country_band_mode_status(country, band, mode)
                 dxcc_band_modeclass_status = _worked.country_band_modeclass_status(country, band, modeclass)
