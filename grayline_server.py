@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1945,6 +1946,39 @@ def _load_dxcc_rarity() -> dict:
 
 _DXCC_RARITY = _load_dxcc_rarity()
 log.info("DXCC rarity list loaded: %d entities", len(_DXCC_RARITY))
+
+
+def dxcc_rarity_refresh_loop():
+    """Re-fetch Club Log's public Most Wanted ranking every 2 weeks and atomically
+    rewrite data/dxcc_rarity.json + reload the in-memory map. Public endpoint, no
+    API key. Club Log re-ranks ~monthly, so a fortnightly poll catches it with
+    margin. Checks daily but only re-fetches when the cache is >=14 days old, so
+    it survives restarts (refreshes on boot if stale) without polling needlessly."""
+    global _DXCC_RARITY
+    url = "https://clublog.org/mostwanted.php?api=1"
+    path = Path(__file__).parent / "data" / "dxcc_rarity.json"
+    INTERVAL = 14 * 86400
+    while True:
+        try:
+            age = time.time() - path.stat().st_mtime
+        except OSError:
+            age = INTERVAL + 1  # missing cache -> fetch now
+        if age >= INTERVAL:
+            try:
+                with urllib.request.urlopen(url, timeout=30) as r:
+                    data = r.read().decode("utf-8")
+                rank2num = json.loads(data)
+                if isinstance(rank2num, dict) and len(rank2num) > 100:
+                    tmp = path.with_suffix(".json.tmp")
+                    tmp.write_text(data)
+                    tmp.replace(path)
+                    _DXCC_RARITY = {str(num): int(rank) for rank, num in rank2num.items()}
+                    log.info("DXCC rarity refreshed: %d entities", len(_DXCC_RARITY))
+                else:
+                    log.warning("DXCC rarity refresh: unexpected payload, kept cache")
+            except Exception as e:
+                log.warning("DXCC rarity refresh failed (kept cache): %s", e)
+        time.sleep(86400)  # re-check daily; refetch only when cache >= 14 days old
 
 
 # ---------------- HTML ----------------
@@ -4219,6 +4253,7 @@ async def main():
     threading.Thread(target=qrz_cache_reload_loop, daemon=True).start()
     threading.Thread(target=qrz_lookup_worker, daemon=True).start()
     threading.Thread(target=worked_state_reload_loop, daemon=True).start()
+    threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:
         threading.Thread(target=lotw_fetch_loop, daemon=True).start()
 
