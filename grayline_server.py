@@ -2150,14 +2150,18 @@ details[open] .gear-icon { color: #fff; }
 
 /* Scores — multi-column GT-style W/C/Goal table */
 .scores-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22em, 1fr));
-  gap: 0.4em 1.2em;
+  /* Masonry-style multi-column: cards keep natural height and pack vertically,
+     so short cards don't leave dead space under tall ones (CSS grid forced
+     equal row heights + equal widths). Column count adapts to width. */
+  column-width: 20em;
+  column-gap: 1.2em;
   font-size: 0.85em;
   font-variant-numeric: tabular-nums;
 }
 .score-card {
   background: #0a0a0a; border: 1px solid #1a1a1a; padding: 0.4em 0.6em;
+  break-inside: avoid; -webkit-column-break-inside: avoid; page-break-inside: avoid;
+  margin: 0 0 0.7em;   /* vertical gap between stacked cards (column-gap is horizontal only) */
 }
 .score-card h3 {
   margin: 0 0 0.3em; font-size: 0.85em; color: #ff0;
@@ -2178,6 +2182,11 @@ details[open] .gear-icon { color: #fff; }
 .score-card td.s-c.partial  { color: #ff5; font-weight: 600; }
 .score-card td.s-c.empty    { color: #555; }
 .score-card td.s-g     { color: #666; }
+/* ATNO table has free-text columns (entity names) so its natural min-width is
+   wide; pin it to the card width and let cells wrap, so it stays inside the box
+   instead of overflowing when the column is narrow. */
+.score-card table.atno-tbl { table-layout: fixed; }
+.score-card table.atno-tbl th, .score-card table.atno-tbl td { overflow-wrap: anywhere; white-space: normal; }
 /* Contacts-by-mode-by-year stacked bars (vanilla CSS, no charting lib) */
 .score-card.mychart .mylegend { font-size: 0.72em; color: #aaa; margin: 0.1em 0 0.5em; }
 .mychart .myl  { margin-right: 0.9em; white-space: nowrap; }
@@ -3407,11 +3416,12 @@ function renderScores(j) {
   if (j.last5_atno && j.last5_atno.length) {
     const fmtd = s => (s && s.length >= 8) ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : (s || "");
     const rows = j.last5_atno.map(a =>
-      `<tr><td class="s-name" style="white-space:nowrap">${fmtd(a.date)}</td>`
+      `<tr><td class="s-name">${fmtd(a.date)}</td>`
       + `<td>${escapeHTML(a.country || "?")}</td><td>${escapeHTML(a.call || "")}</td>`
       + `<td>${escapeHTML(a.band || "")}</td><td>${escapeHTML(a.mode || "")}</td></tr>`).join("");
     cards.push(`<div class="score-card"><h3>Last 5 DXCC ATNOs</h3>`
-      + `<table><tr><th>Date</th><th>Entity</th><th>Call</th><th>Band</th><th>Mode</th></tr>${rows}</table>`
+      + `<table class="atno-tbl"><colgroup><col style="width:26%"><col style="width:32%"><col style="width:16%"><col style="width:12%"><col style="width:14%"></colgroup>`
+      + `<tr><th>Date</th><th>Entity</th><th>Call</th><th>Band</th><th>Mode</th></tr>${rows}</table>`
       + `<div class="mode-hint">ATNO = All-Time-New-One: your first-ever QSO with that DXCC entity.</div></div>`);
   }
 
