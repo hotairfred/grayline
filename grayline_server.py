@@ -977,10 +977,29 @@ def _build_scores_payload() -> dict:
         for (_k, r) in sorted(_first_dxcc.values(), key=lambda x: x[0], reverse=True)[:5]
     ]
 
+    # Most Wanted progress — every ranked entity, worked/confirmed per band + mode,
+    # from the number-keyed worked-state (your complete QRZ + LoTW history). Rank
+    # order, rarest first. Pairs with the Club Log rarity list already loaded.
+    _wb = _worked.worked_dxcc_band; _cb = _worked.confirmed_dxcc_band
+    _wm = _worked.worked_dxcc_modeclass; _cm = _worked.confirmed_dxcc_modeclass
+    def _slot(w, c):
+        return "confirmed" if c else ("worked" if w else "new")
+    rare_progress = []
+    for _num, _rank in sorted(_DXCC_RARITY.items(), key=lambda kv: kv[1]):
+        bands = {b: _slot((_num, b) in _wb, (_num, b) in _cb) for b in DXCC_CHALLENGE_BANDS}
+        modes = {m: _slot((_num, m) in _wm, (_num, m) in _cm) for m in ("CW", "Phone", "Digital")}
+        rare_progress.append({
+            "rank": _rank, "dxcc": _num, "name": _DXCC_NAME.get(_num, _num),
+            "bands": bands, "modes": modes,
+            "worked": any(s != "new" for s in bands.values()),
+            "confirmed": any(s == "confirmed" for s in bands.values()),
+        })
+
     return {
         "as_of": time.time(),
         "qso_by_year_mode": qso_by_year_mode,
         "last5_atno": last5_atno,
+        "rare_progress": rare_progress,
         "totals": {
             "qsos": _worked.qso_count,
             "unique_calls": _worked.unique_calls_count,
@@ -1948,6 +1967,28 @@ _DXCC_RARITY = _load_dxcc_rarity()
 log.info("DXCC rarity list loaded: %d entities", len(_DXCC_RARITY))
 
 
+def _load_dxcc_names() -> dict:
+    """{dxcc_number(str): entity name} from cty.csv (col0=prefix, col1=name,
+    col2=dxcc code). Skips '*'-prefixed WAE/non-DXCC rows so the real DXCC
+    entity name wins (Asiatic Turkey, not European Turkey, for 390)."""
+    names = {}
+    try:
+        path = Path(__file__).parent / "cty.csv"
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            p = line.split(",")
+            if len(p) >= 3 and not p[0].startswith("*"):
+                try:
+                    names[str(int(p[2]))] = p[1].strip()
+                except ValueError:
+                    pass
+    except Exception as e:
+        log.warning("cty.csv entity names unavailable (%s)", e)
+    return names
+
+
+_DXCC_NAME = _load_dxcc_names()
+
+
 def dxcc_rarity_refresh_loop():
     """Re-fetch Club Log's public Most Wanted ranking every 2 weeks and atomically
     rewrite data/dxcc_rarity.json + reload the in-memory map. Public endpoint, no
@@ -2095,6 +2136,25 @@ details[open] > summary::before { transform: rotate(90deg); }
 .mw-hot  { background: #c0392b; color: #fff; }     /* top 10  — grail */
 .mw-warm { background: #d68910; color: #111; }     /* top 50  */
 .mw-cool { background: #5d4a0a; color: #f5d76e; }  /* top 150 */
+
+/* Most Wanted progress matrix — full-width scoreboard below the score cards. */
+.rare-matrix { margin: 1.2em 0 0; }
+.rare-matrix > summary { cursor: pointer; color: #ff0; font-size: 0.85em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; padding: 0.3em 0; }
+.rm-controls { margin: 0.5em 0; font-size: 0.8em; color: #888; }
+.rm-controls button { background: #1a1a1a; color: #aaa; border: 1px solid #333; border-radius: 3px;
+  padding: 0.15em 0.6em; margin-right: 0.3em; cursor: pointer; font-family: inherit; font-size: 0.95em; }
+.rm-controls button.active { background: #ff0; color: #000; border-color: #ff0; font-weight: 700; }
+.rm-scroll { max-height: 72vh; overflow: auto; border: 1px solid #1a1a1a; }
+table.rm { border-collapse: collapse; font-size: 0.72em; font-variant-numeric: tabular-nums; }
+table.rm th { color: #888; font-weight: normal; padding: 0.15em 0.35em; background: #0a0a0a;
+  position: sticky; top: 0; border-bottom: 1px solid #222; z-index: 1; }
+table.rm td { padding: 0.05em 0.35em; border-bottom: 1px dotted #141414; white-space: nowrap; }
+table.rm td.rk  { color: #777; text-align: right; }
+table.rm td.ent { color: #ccc; max-width: 15em; overflow: hidden; text-overflow: ellipsis; }
+table.rm td.s   { text-align: center; width: 1.6em; color: #333; }
+table.rm td.s.confirmed { background: #1c5c2e; color: #9f9; }   /* confirmed — green */
+table.rm td.s.worked    { background: #5c4a14; color: #fc6; }   /* worked, not confirmed — amber */
 
 /* Per-band mode toggles row */
 .band-mode-toggles {
@@ -2350,6 +2410,7 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-tabs">
   <button data-view="live" class="active">Live</button>
   <button data-view="scores">Scores</button>
+  <button data-view="rares">Most Wanted</button>
   <button data-view="log">Log search</button>
 </div>
 <div class="view-section active" id="view_live">
@@ -2370,6 +2431,9 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-section" id="view_scores">
   <div class="scores-grid" id="scores_grid">Loading…</div>
   <div class="scores-totals" id="scores_totals"></div>
+</div>
+<div class="view-section" id="view_rares">
+  <div id="rare_matrix">Loading…</div>
 </div>
 <div class="view-section" id="view_log">
   <div class="log-search-filters">
@@ -3296,6 +3360,53 @@ function awardCard(title, rows) {
     </table>
   </div>`;
 }
+let rareMatrixOpen = true;
+// Most Wanted progress matrix — full-width scoreboard of every ranked entity's
+// worked/confirmed status per band + mode, built from j.rare_progress.
+function renderRareMatrix(rp) {
+  const host = document.getElementById("rare_matrix");
+  if (!host) return;
+  if (!rp || !rp.length) { host.innerHTML = ""; return; }
+  const BANDS = ["160m","80m","40m","30m","20m","17m","15m","12m","10m","6m"];
+  const BL = {"160m":"160","80m":"80","40m":"40","30m":"30","20m":"20","17m":"17","15m":"15","12m":"12","10m":"10","6m":"6"};
+  const glyph = s => s === "confirmed" ? "✓" : (s === "worked" ? "·" : "");
+  const cell = s => `<td class="s ${s}" title="${s}">${glyph(s)}</td>`;
+  const workedN = rp.filter(r => r.worked).length;
+  let rows = "";
+  for (const r of rp) {
+    const cls = r.confirmed ? "rm-conf" : (r.worked ? "rm-worked" : "rm-needed");
+    rows += `<tr class="${cls}"><td class="rk">${r.rank}</td>`
+      + `<td class="ent" title="${escapeHTML(r.name)} (DXCC ${r.dxcc})">${escapeHTML(r.name)}</td>`
+      + BANDS.map(b => cell(r.bands[b] || "new")).join("")
+      + cell(r.modes.CW) + cell(r.modes.Phone) + cell(r.modes.Digital)
+      + `</tr>`;
+  }
+  const hdr = `<tr><th>#</th><th>Entity</th>` + BANDS.map(b => `<th>${BL[b]}</th>`).join("")
+    + `<th>CW</th><th>Ph</th><th>Dig</th></tr>`;
+  host.innerHTML = `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
+    + `<summary>Most Wanted — worked / confirmed by band &amp; mode (${workedN}/${rp.length} worked)</summary>`
+    + `<div class="rm-controls">Show: `
+    + `<button data-rmf="all" class="active">all</button>`
+    + `<button data-rmf="needed">needed (unconfirmed)</button>`
+    + `<button data-rmf="worked">worked, not confirmed</button>`
+    + `&nbsp;&nbsp;<span style="color:#9f9">✓</span> confirmed &nbsp;<span style="color:#fc6">·</span> worked</div>`
+    + `<div class="rm-scroll"><table class="rm">${hdr}${rows}</table></div></details>`;
+  const det = host.querySelector("details.rare-matrix");
+  if (det) det.addEventListener("toggle", () => { rareMatrixOpen = det.open; });
+  host.querySelectorAll("[data-rmf]").forEach(btn => btn.addEventListener("click", () => {
+    host.querySelectorAll("[data-rmf]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const f = btn.dataset.rmf;
+    host.querySelectorAll("table.rm tr").forEach(tr => {
+      if (tr.querySelector("th")) return;
+      let show = true;
+      if (f === "needed") show = tr.classList.contains("rm-needed") || tr.classList.contains("rm-worked");
+      else if (f === "worked") show = tr.classList.contains("rm-worked");
+      tr.style.display = show ? "" : "none";
+    });
+  }));
+}
+
 function renderScores(j) {
   const grid = document.getElementById("scores_grid");
   if (!j || j.error) {
@@ -3566,6 +3677,7 @@ function renderScores(j) {
       fetchScores();    // re-render this panel (chip styling)
     });
   });
+  renderRareMatrix(j.rare_progress);
   const t = j.totals || {};
   document.getElementById("scores_totals").textContent =
     `${(t.qsos||0).toLocaleString()} QSOs · ${(t.unique_calls||0).toLocaleString()} unique calls · ` +
