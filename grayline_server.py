@@ -2239,6 +2239,10 @@ details[open] > summary::before { transform: rotate(90deg); }
 .mw-hot  { background: #c0392b; color: #fff; }     /* top 10  — grail */
 .mw-warm { background: #d68910; color: #111; }     /* top 50  */
 .mw-cool { background: #5d4a0a; color: #f5d76e; }  /* top 150 */
+/* "CQ" tag — digital spot whose latest decode is a CQ (actively soliciting). */
+.cqtag { display: inline-block; padding: 0 0.3em; margin-left: 0.35em; border-radius: 3px;
+  background: #1c5c2e; color: #9f9; font-size: 0.72em; font-weight: 700;
+  letter-spacing: 0.03em; vertical-align: middle; }
 
 /* Most Wanted progress matrix — full-width scoreboard below the score cards. */
 .rare-matrix { margin: 1.2em 0 0; }
@@ -2916,6 +2920,16 @@ function rarityBadge(s) {
   return ` <span class="mw ${tier}" title="Club Log Most Wanted #${r}">#${r}</span>`;
 }
 
+// "CQ" tag for digital spots whose latest decode is a CQ — i.e. the station is
+// actively calling, not mid-QSO. Derived from the decode message in s.comment,
+// which refreshes on every WSJT-X decode, so it clears when they stop CQing.
+function cqTag(s) {
+  if (s.modeclass !== "Digital") return "";
+  const c = (s.comment || "").trim();
+  return /^CQ\b/i.test(c)
+    ? ` <span class="cqtag" title="Calling CQ — ${escapeHTML(c)}">CQ</span>` : "";
+}
+
 function scopeTags(s) {
   const out = [];
   for (const scope of availableScopesForBand(s.band)) {
@@ -3381,7 +3395,7 @@ async function refresh() {
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
-        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}</td>
+        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
         ${bandCell}
