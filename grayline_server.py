@@ -2258,6 +2258,17 @@ table.rm td.ent { color: #ccc; max-width: 15em; overflow: hidden; text-overflow:
 table.rm td.s   { text-align: center; width: 1.6em; color: #333; }
 table.rm td.s.confirmed { background: #1c5c2e; color: #9f9; }   /* confirmed — green */
 table.rm td.s.worked    { background: #5c4a14; color: #fc6; }   /* worked, not confirmed — amber */
+table.rm td.s.claimable { background: #0e5a5a; color: #6ff; }   /* matched on Club Log — do OQRS (cyan) */
+table.rm td.s.suspect   { background: #6a1b2e; color: #f9a; }   /* logged but not in their log — verify (red) */
+/* OQRS claimable / suspect punch-lists above the matrix */
+.oqrs-box { margin: 0.6em 0; font-size: 0.85em; }
+.oqrs-box > summary { cursor: pointer; font-weight: 600; padding: 0.25em 0; }
+.oqrs-box.claim > summary { color: #6ff; }
+.oqrs-box.susp  > summary { color: #f9a; }
+.oqrs-box ul { margin: 0.3em 0 0.6em 1.2em; padding: 0; list-style: none; }
+.oqrs-box li { padding: 0.12em 0; color: #ccc; }
+.oqrs-box .rk { color: #777; display: inline-block; width: 3.2em; }
+.oqrs-box .mwc { color: #6ad; font-weight: 600; }
 
 /* Per-band mode toggles row */
 .band-mode-toggles {
@@ -3463,17 +3474,18 @@ function awardCard(title, rows) {
     </table>
   </div>`;
 }
-let rareMatrixOpen = true;
-// Most Wanted progress matrix — full-width scoreboard of every ranked entity's
-// worked/confirmed status per band + mode, built from j.rare_progress.
-function renderRareMatrix(rp) {
+let rareMatrixOpen = true, oqrsClaimOpen = true, oqrsSuspOpen = false;
+// Most Wanted tab: OQRS-claimable + suspect punch-lists, then the full progress
+// matrix (worked/confirmed/claimable/suspect per band & mode).
+function renderRareMatrix(j) {
   const host = document.getElementById("rare_matrix");
   if (!host) return;
+  const rp = j.rare_progress;
   if (!rp || !rp.length) { host.innerHTML = ""; return; }
   const BANDS = ["160m","80m","40m","30m","20m","17m","15m","12m","10m","6m"];
   const BL = {"160m":"160","80m":"80","40m":"40","30m":"30","20m":"20","17m":"17","15m":"15","12m":"12","10m":"10","6m":"6"};
-  const glyph = s => s === "confirmed" ? "✓" : (s === "worked" ? "·" : "");
-  const cell = s => `<td class="s ${s}" title="${s}">${glyph(s)}</td>`;
+  const GLY = {confirmed:"✓", claimable:"◆", suspect:"?", worked:"·"};
+  const cell = s => `<td class="s ${s}" title="${s}">${GLY[s] || ""}</td>`;
   const workedN = rp.filter(r => r.worked).length;
   let rows = "";
   for (const r of rp) {
@@ -3486,16 +3498,32 @@ function renderRareMatrix(rp) {
   }
   const hdr = `<tr><th>#</th><th>Entity</th>` + BANDS.map(b => `<th>${BL[b]}</th>`).join("")
     + `<th>CW</th><th>Ph</th><th>Dig</th></tr>`;
-  host.innerHTML = `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
+  const cl = j.oqrs_claimable || [], su = j.oqrs_suspect || [];
+  const clItems = cl.map(e => `<li><span class="rk">#${e.rank}</span><b>${escapeHTML(e.name)}</b> — `
+    + e.slots.map(s => `${s.band} <span class="mwc">${escapeHTML(s.call)}</span>`).join(", ") + `</li>`).join("");
+  const suItems = su.map(e => `<li><span class="rk">#${e.rank}</span><b>${escapeHTML(e.name)}</b> — `
+    + escapeHTML(e.bands.join(", ")) + `</li>`).join("");
+  const claimBox = cl.length ? `<details class="oqrs-box claim"${oqrsClaimOpen ? " open" : ""}>`
+    + `<summary>◆ Confirmable via OQRS — ${cl.length} rare${cl.length > 1 ? "s" : ""} one QSL request away</summary>`
+    + `<ul>${clItems}</ul></details>` : "";
+  const suspBox = su.length ? `<details class="oqrs-box susp"${oqrsSuspOpen ? " open" : ""}>`
+    + `<summary>? Suspect — ${su.length} logged but not in the DX's log (verify)</summary>`
+    + `<ul>${suItems}</ul></details>` : "";
+  host.innerHTML = claimBox + suspBox
+    + `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
     + `<summary>Most Wanted — worked / confirmed by band &amp; mode (${workedN}/${rp.length} worked)</summary>`
     + `<div class="rm-controls">Show: `
     + `<button data-rmf="all" class="active">all</button>`
     + `<button data-rmf="needed">needed (unconfirmed)</button>`
     + `<button data-rmf="worked">worked, not confirmed</button>`
-    + `&nbsp;&nbsp;<span style="color:#9f9">✓</span> confirmed &nbsp;<span style="color:#fc6">·</span> worked</div>`
+    + `&nbsp;&nbsp;<span style="color:#9f9">✓</span> conf &nbsp;<span style="color:#6ff">◆</span> OQRS &nbsp;<span style="color:#f9a">?</span> verify &nbsp;<span style="color:#fc6">·</span> worked</div>`
     + `<div class="rm-scroll"><table class="rm">${hdr}${rows}</table></div></details>`;
   const det = host.querySelector("details.rare-matrix");
   if (det) det.addEventListener("toggle", () => { rareMatrixOpen = det.open; });
+  const cbx = host.querySelector("details.oqrs-box.claim");
+  if (cbx) cbx.addEventListener("toggle", () => { oqrsClaimOpen = cbx.open; });
+  const sbx = host.querySelector("details.oqrs-box.susp");
+  if (sbx) sbx.addEventListener("toggle", () => { oqrsSuspOpen = sbx.open; });
   host.querySelectorAll("[data-rmf]").forEach(btn => btn.addEventListener("click", () => {
     host.querySelectorAll("[data-rmf]").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
@@ -3780,7 +3808,7 @@ function renderScores(j) {
       fetchScores();    // re-render this panel (chip styling)
     });
   });
-  renderRareMatrix(j.rare_progress);
+  renderRareMatrix(j);
   const t = j.totals || {};
   document.getElementById("scores_totals").textContent =
     `${(t.qsos||0).toLocaleString()} QSOs · ${(t.unique_calls||0).toLocaleString()} unique calls · ` +
