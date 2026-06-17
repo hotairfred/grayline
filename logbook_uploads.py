@@ -178,8 +178,13 @@ def upload_clublog(adif_record: str, email: str, password: str,
     Non-2xx HTTP = fail. Realtime API accepts ~20k QSOs/hour and dedupes by
     content, so retries on transient errors are safe.
     """
-    if not (email and password and callsign):
-        return False, "missing creds (need email + password + callsign)"
+    # ClubLog realtime.php REQUIRES the api key in addition to email/password/
+    # callsign. Sending without it returns HTTP 403, and ClubLog's docs warn
+    # that repeated 403s get the source IP blocked — so refuse to POST at all
+    # until every required field (api_key included) is present. Better skipped
+    # than IP-banned.
+    if not (email and password and callsign and api_key):
+        return False, "skipped: ClubLog realtime needs email+password+callsign+api_key (set clublog_api_key)"
     body_dict = {
         "email": email,
         "password": password,
