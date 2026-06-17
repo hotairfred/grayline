@@ -985,21 +985,42 @@ def _build_scores_payload() -> dict:
     def _slot(w, c):
         return "confirmed" if c else ("worked" if w else "new")
     rare_progress = []
+    oqrs_claimable = []   # rares with a matched, not-yet-confirmed slot (do OQRS)
+    oqrs_suspect = []     # rares logged on a band that is NOT in the DX's log (verify)
     for _num, _rank in sorted(_DXCC_RARITY.items(), key=lambda kv: kv[1]):
-        bands = {b: _slot((_num, b) in _wb, (_num, b) in _cb) for b in DXCC_CHALLENGE_BANDS}
+        bands = {}
+        claim, suspect = [], []
+        for b in DXCC_CHALLENGE_BANDS:
+            if (_num, b) in _cb:
+                bands[b] = "confirmed"
+            elif (_num, b) in _wb:
+                if (_num, b) in _MATCHED_SLOTS:
+                    bands[b] = "claimable"; claim.append({"band": b, "call": _MATCHED_SLOTS[(_num, b)]})
+                elif _num in _MATCHED_ENTS:
+                    bands[b] = "suspect"; suspect.append(b)
+                else:
+                    bands[b] = "worked"
+            else:
+                bands[b] = "new"
         modes = {m: _slot((_num, m) in _wm, (_num, m) in _cm) for m in ("CW", "Phone", "Digital")}
+        nm = _DXCC_NAME.get(_num, _num)
         rare_progress.append({
-            "rank": _rank, "dxcc": _num, "name": _DXCC_NAME.get(_num, _num),
-            "bands": bands, "modes": modes,
+            "rank": _rank, "dxcc": _num, "name": nm, "bands": bands, "modes": modes,
             "worked": any(s != "new" for s in bands.values()),
             "confirmed": any(s == "confirmed" for s in bands.values()),
         })
+        if claim:
+            oqrs_claimable.append({"rank": _rank, "dxcc": _num, "name": nm, "slots": claim})
+        if suspect:
+            oqrs_suspect.append({"rank": _rank, "dxcc": _num, "name": nm, "bands": suspect})
 
     return {
         "as_of": time.time(),
         "qso_by_year_mode": qso_by_year_mode,
         "last5_atno": last5_atno,
         "rare_progress": rare_progress,
+        "oqrs_claimable": oqrs_claimable,
+        "oqrs_suspect": oqrs_suspect,
         "totals": {
             "qsos": _worked.qso_count,
             "unique_calls": _worked.unique_calls_count,
@@ -1987,6 +2008,88 @@ def _load_dxcc_names() -> dict:
 
 
 _DXCC_NAME = _load_dxcc_names()
+
+
+# ---- Club Log log/OQRS matches (weekly) -> claimable + discrepancy detection ----
+# getmatches.php returns QSOs validated against uploaded logs (log search + OQRS).
+# A worked-not-confirmed slot that IS matched = claimable (do OQRS); one that is
+# NOT matched while the entity is matched on other bands = suspect ("you logged
+# it, you're not in their log").
+_MATCHED_SLOTS: dict = {}   # (dxcc_str, band_str) -> matched DX callsign
+_MATCHED_ENTS: set = set()  # dxcc_str with any match
+
+
+def _band_from_clublog(bn) -> str:
+    return {"70": "70cm", "23": "23cm"}.get(str(bn), str(bn) + "m")
+
+
+def _process_clublog_matches(matches) -> tuple:
+    slots, ents = {}, set()
+    for m in matches:
+        try:
+            dxcc = str(m[1]); band = _band_from_clublog(m[3])
+        except (IndexError, TypeError):
+            continue
+        slots[(dxcc, band)] = m[0]
+        ents.add(dxcc)
+    return slots, ents
+
+
+def _load_clublog_matches():
+    global _MATCHED_SLOTS, _MATCHED_ENTS
+    try:
+        path = Path(__file__).parent / "data" / "clublog_matches.json"
+        _MATCHED_SLOTS, _MATCHED_ENTS = _process_clublog_matches(json.loads(path.read_text()))
+    except Exception as e:
+        log.warning("Club Log matches cache unavailable (%s)", e)
+        _MATCHED_SLOTS, _MATCHED_ENTS = {}, set()
+
+
+_load_clublog_matches()
+log.info("Club Log matches loaded: %d slots, %d entities", len(_MATCHED_SLOTS), len(_MATCHED_ENTS))
+
+
+def clublog_matches_refresh_loop():
+    """Weekly: fetch getmatches.php (log + OQRS matches), atomically cache, reload.
+    Reuses the ClubLog 403 breaker (repeated 403s firewall the IP), skips without
+    creds, keeps the last cache on any failure. Checks daily, refetches at >=7d."""
+    global _MATCHED_SLOTS, _MATCHED_ENTS
+    path = Path(__file__).parent / "data" / "clublog_matches.json"
+    INTERVAL = 7 * 86400
+    while True:
+        try:
+            age = time.time() - path.stat().st_mtime
+        except OSError:
+            age = INTERVAL + 1
+        if age >= INTERVAL:
+            sec = logbook_uploads._load_secrets()
+            email = sec.get("clublog_email", ""); pw = sec.get("clublog_password", "")
+            api = sec.get("clublog_api_key", "")
+            cs = sec.get("clublog_callsign", "") or sec.get("qrz_user", "").upper()
+            if not (email and pw and api and cs):
+                log.info("Club Log matches: creds incomplete, skipping refresh")
+            else:
+                ch = logbook_uploads._clublog_creds_hash(email, pw, api)
+                if logbook_uploads._clublog_blocked(ch):
+                    log.warning("Club Log matches: breaker tripped, skipping until creds change")
+                else:
+                    try:
+                        q = urllib.parse.urlencode({"api": api, "email": email,
+                                                    "password": pw, "callsign": cs})
+                        with urllib.request.urlopen("https://clublog.org/getmatches.php?" + q,
+                                                    timeout=60) as r:
+                            data = r.read().decode("utf-8")
+                        matches = json.loads(data)
+                        if isinstance(matches, list):
+                            tmp = path.with_suffix(".json.tmp"); tmp.write_text(data); tmp.replace(path)
+                            _MATCHED_SLOTS, _MATCHED_ENTS = _process_clublog_matches(matches)
+                            log.info("Club Log matches refreshed: %d slots", len(_MATCHED_SLOTS))
+                    except Exception as e:
+                        code = getattr(e, "code", None)
+                        if code in (401, 403):
+                            logbook_uploads._trip_clublog_breaker(ch, "getmatches HTTP " + str(code))
+                        log.warning("Club Log matches refresh failed (kept cache): %s", e)
+        time.sleep(86400)
 
 
 def dxcc_rarity_refresh_loop():
@@ -4366,6 +4469,7 @@ async def main():
     threading.Thread(target=qrz_lookup_worker, daemon=True).start()
     threading.Thread(target=worked_state_reload_loop, daemon=True).start()
     threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
+    threading.Thread(target=clublog_matches_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:
         threading.Thread(target=lotw_fetch_loop, daemon=True).start()
 

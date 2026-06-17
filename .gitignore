@@ -21,3 +21,6 @@ docs/dxlab/*.pdf
 vendor/
 clublog_breaker.json
 *.bak.*
+
+# Personal Club Log match data (your QSOs) — regenerated weekly
+data/clublog_matches.json
