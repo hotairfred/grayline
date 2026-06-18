@@ -1033,13 +1033,20 @@ def _build_scores_payload() -> dict:
             num = str(e.dxcc)
             groups.setdefault(num, {"name": _DXCC_NAME.get(num, e.entity), "calls": []})["calls"].append(c)
         for num, g in groups.items():
+            conf_ent = num in _worked.confirmed_dxcc
+            open_slots = sorted({b for (d, b) in _wb if d == num} - {b for (d, b) in _cb if d == num})
+            # new = entity unconfirmed (the real prize); partial = entity confirmed
+            # but some worked bands aren't; done = fully confirmed (no action). Being
+            # in an M0OXO log says nothing about needing M0OXO — most go to LoTW free.
+            status = "new" if not conf_ent else ("partial" if open_slots else "done")
             m0oxo.append({
                 "dxcc": num, "name": g["name"],
                 "rank": _DXCC_RARITY.get(num, 9999),
                 "calls": sorted(g["calls"]),
-                "new_entity": num not in _worked.confirmed_dxcc,
+                "new_entity": not conf_ent, "status": status, "open_slots": open_slots,
             })
-        m0oxo.sort(key=lambda x: (not x["new_entity"], x["rank"]))
+        _ord = {"new": 0, "partial": 1, "done": 2}
+        m0oxo.sort(key=lambda x: (_ord[x["status"]], x["rank"]))
 
     return {
         "as_of": time.time(),
@@ -2332,6 +2339,9 @@ table.rm td.s.suspect   { background: #6a1b2e; color: #f9a; }   /* logged but no
 .oqrs-box.susp  > summary { color: #f9a; }
 .oqrs-box.m0oxo > summary { color: #c9f; }   /* M0OXO — separate OQRS channel (violet) */
 .oqrs-box .mo-new { color: #1a1a1a; background: #fc6; font-weight: 700; padding: 0 0.35em; border-radius: 3px; font-size: 0.9em; }
+.oqrs-box .mo-part { color: #6ff; font-size: 0.9em; }
+.oqrs-box .mo-done { color: #6a6; font-size: 0.9em; }
+.oqrs-box li.mo-done { opacity: 0.5; }   /* already confirmed — informational, no action */
 .oqrs-box ul { margin: 0.3em 0 0.6em 1.2em; padding: 0; list-style: none; }
 .oqrs-box li { padding: 0.12em 0; color: #ccc; }
 .oqrs-box .rk { color: #777; display: inline-block; width: 3.2em; }
@@ -3601,13 +3611,19 @@ function renderRareMatrix(j) {
     + `<summary>? Suspect — ${su.length} logged but not in the DX's log (verify)</summary>`
     + `<ul>${suItems}</ul></details>` : "";
   const mo = j.m0oxo || [];
-  const newN = mo.filter(e => e.new_entity).length;
-  const moItems = mo.map(e => `<li><span class="rk">${e.rank < 9999 ? "#" + e.rank : "—"}</span>`
-    + `<b>${escapeHTML(e.name)}</b>${e.new_entity ? ` <span class="mo-new">NEW ENTITY</span>` : ""} — `
-    + `<span class="mwc">${e.calls.map(escapeHTML).join(", ")}</span></li>`).join("");
+  const moNew = mo.filter(e => e.status === "new"), moPart = mo.filter(e => e.status === "partial"),
+        moDone = mo.filter(e => e.status === "done");
+  const moTag = e => e.status === "new" ? ` <span class="mo-new">NEW ENTITY</span>`
+    : e.status === "partial" ? ` <span class="mo-part">&#10003; entity &middot; ${e.open_slots.length} band${e.open_slots.length > 1 ? "s" : ""} unconfirmed</span>`
+    : ` <span class="mo-done">&#10003; confirmed</span>`;
+  const moLi = e => `<li class="mo-${e.status}"><span class="rk">${e.rank < 9999 ? "#" + e.rank : "—"}</span>`
+    + `<b>${escapeHTML(e.name)}</b>${moTag(e)} — <span class="mwc">${e.calls.map(escapeHTML).join(", ")}</span></li>`;
+  const moItems = [...moNew, ...moPart, ...moDone].map(moLi).join("");
+  const moSummary = (moNew.length ? `${moNew.length} NEW ENTITY` : "nothing new")
+    + (moPart.length ? `, ${moPart.length} with unconfirmed bands` : "")
+    + `, ${moDone.length} already confirmed`;
   const moBox = mo.length ? `<details class="oqrs-box m0oxo"${m0oxoOpen ? " open" : ""}>`
-    + `<summary>M0OXO — ${mo.length} entit${mo.length > 1 ? "ies" : "y"} with your call in an M0OXO-managed log`
-    + (newN ? `, ${newN} a NEW ENTITY` : "") + ` (confirm at m0oxo.com — separate from Club Log)</summary>`
+    + `<summary>M0OXO-managed logs holding your call — ${moSummary} (m0oxo.com, separate from Club Log)</summary>`
     + `<ul>${moItems}</ul></details>` : "";
   host.innerHTML = claimBox + suspBox + moBox
     + `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
