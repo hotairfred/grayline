@@ -2260,6 +2260,10 @@ table.rm td { padding: 0.05em 0.35em; border-bottom: 1px dotted #141414; white-s
 table.rm td.rk  { color: #777; text-align: right; }
 table.rm td.ent { color: #ccc; max-width: 15em; overflow: hidden; text-overflow: ellipsis; }
 table.rm td.s   { text-align: center; width: 1.6em; color: #333; }
+/* Column zebra — alternating columns get a subtle gray so a center cell traces
+   cleanly up to its header. Status colors below win on specificity, so the
+   confirmed/claimable/etc cells stay vivid on top of the stripe. */
+table.rm td:nth-child(even), table.rm th:nth-child(even) { background: #161616; }
 table.rm td.s.confirmed { background: #1c5c2e; color: #9f9; }   /* confirmed — green */
 table.rm td.s.worked    { background: #5c4a14; color: #fc6; }   /* worked, not confirmed — amber */
 table.rm td.s.claimable { background: #0e5a5a; color: #6ff; }   /* matched on Club Log — do OQRS (cyan) */
