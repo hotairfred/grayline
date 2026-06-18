@@ -1020,6 +1020,27 @@ def _build_scores_payload() -> dict:
         if suspect:
             oqrs_suspect.append({"rank": _rank, "dxcc": _num, "name": nm, "slots": suspect})
 
+    # M0OXO OQRS — entities whose M0OXO-managed logs hold your call (separate
+    # confirmation channel from Club Log). Entity-level only; new-entity hits
+    # (worked but confirmed nowhere) float to the top — those are the prizes.
+    m0oxo = []
+    if _cty and _M0OXO_CALLS:
+        groups: dict = {}
+        for c in _M0OXO_CALLS:
+            e = _cty.lookup(c)
+            if not e:
+                continue
+            num = str(e.dxcc)
+            groups.setdefault(num, {"name": _DXCC_NAME.get(num, e.entity), "calls": []})["calls"].append(c)
+        for num, g in groups.items():
+            m0oxo.append({
+                "dxcc": num, "name": g["name"],
+                "rank": _DXCC_RARITY.get(num, 9999),
+                "calls": sorted(g["calls"]),
+                "new_entity": num not in _worked.confirmed_dxcc,
+            })
+        m0oxo.sort(key=lambda x: (not x["new_entity"], x["rank"]))
+
     return {
         "as_of": time.time(),
         "qso_by_year_mode": qso_by_year_mode,
@@ -1027,6 +1048,7 @@ def _build_scores_payload() -> dict:
         "rare_progress": rare_progress,
         "oqrs_claimable": oqrs_claimable,
         "oqrs_suspect": oqrs_suspect,
+        "m0oxo": m0oxo,
         "totals": {
             "qsos": _worked.qso_count,
             "unique_calls": _worked.unique_calls_count,
@@ -2060,6 +2082,30 @@ _load_clublog_matches()
 log.info("Club Log matches loaded: %d slots, %d calls", len(_MATCHED_SLOTS), len(_MATCHED_CALLS))
 
 
+# ---- M0OXO OQRS matches (manual paste) — entity-level confirmation pointer ----
+# M0OXO (m0oxo.com) manages QSLs/OQRS for many DXpeditions, entirely separate
+# from Club Log, and exposes no public match API — so this is hand-maintained:
+# search your call at m0oxo.com OQRS and drop the DX callsigns into
+# data/m0oxo_matches.json. We resolve each to an entity and flag it as
+# "confirmable on M0OXO." Bands aren't available (the search returns calls only),
+# so this is entity-level only — it just says "look here to confirm this one."
+_M0OXO_CALLS: list = []
+
+
+def _load_m0oxo_calls() -> list:
+    try:
+        path = Path(__file__).parent / "data" / "m0oxo_matches.json"
+        d = json.loads(path.read_text())
+        return [str(c).strip().upper() for c in d.get("calls", []) if str(c).strip()]
+    except Exception as e:
+        log.warning("M0OXO matches unavailable (%s)", e)
+        return []
+
+
+_M0OXO_CALLS = _load_m0oxo_calls()
+log.info("M0OXO matches loaded: %d DX logs", len(_M0OXO_CALLS))
+
+
 def clublog_matches_refresh_loop():
     """Weekly: fetch getmatches.php (log + OQRS matches), atomically cache, reload.
     Reuses the ClubLog 403 breaker (repeated 403s firewall the IP), skips without
@@ -2284,6 +2330,8 @@ table.rm td.s.suspect   { background: #6a1b2e; color: #f9a; }   /* logged but no
 .oqrs-box > summary { cursor: pointer; font-weight: 600; padding: 0.25em 0; }
 .oqrs-box.claim > summary { color: #6ff; }
 .oqrs-box.susp  > summary { color: #f9a; }
+.oqrs-box.m0oxo > summary { color: #c9f; }   /* M0OXO — separate OQRS channel (violet) */
+.oqrs-box .mo-new { color: #1a1a1a; background: #fc6; font-weight: 700; padding: 0 0.35em; border-radius: 3px; font-size: 0.9em; }
 .oqrs-box ul { margin: 0.3em 0 0.6em 1.2em; padding: 0; list-style: none; }
 .oqrs-box li { padding: 0.12em 0; color: #ccc; }
 .oqrs-box .rk { color: #777; display: inline-block; width: 3.2em; }
@@ -3503,7 +3551,7 @@ function awardCard(title, rows) {
     </table>
   </div>`;
 }
-let rareMatrixOpen = true, oqrsClaimOpen = true, oqrsSuspOpen = false;
+let rareMatrixOpen = true, oqrsClaimOpen = true, oqrsSuspOpen = false, m0oxoOpen = true;
 let rareSort = "rarity";   // "rarity" (rank, rarest first) | "az" (entity name)
 let rareFilter = "all";    // "all" | "needed" | "worked" — persists across re-sort
 // Apply the current Show filter to already-rendered rows (no re-render).
@@ -3552,7 +3600,16 @@ function renderRareMatrix(j) {
   const suspBox = su.length ? `<details class="oqrs-box susp"${oqrsSuspOpen ? " open" : ""}>`
     + `<summary>? Suspect — ${su.length} logged but not in the DX's log (verify)</summary>`
     + `<ul>${suItems}</ul></details>` : "";
-  host.innerHTML = claimBox + suspBox
+  const mo = j.m0oxo || [];
+  const newN = mo.filter(e => e.new_entity).length;
+  const moItems = mo.map(e => `<li><span class="rk">${e.rank < 9999 ? "#" + e.rank : "—"}</span>`
+    + `<b>${escapeHTML(e.name)}</b>${e.new_entity ? ` <span class="mo-new">NEW ENTITY</span>` : ""} — `
+    + `<span class="mwc">${e.calls.map(escapeHTML).join(", ")}</span></li>`).join("");
+  const moBox = mo.length ? `<details class="oqrs-box m0oxo"${m0oxoOpen ? " open" : ""}>`
+    + `<summary>M0OXO — ${mo.length} entit${mo.length > 1 ? "ies" : "y"} with your call in an M0OXO-managed log`
+    + (newN ? `, ${newN} a NEW ENTITY` : "") + ` (confirm at m0oxo.com — separate from Club Log)</summary>`
+    + `<ul>${moItems}</ul></details>` : "";
+  host.innerHTML = claimBox + suspBox + moBox
     + `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
     + `<summary>Most Wanted — worked / confirmed by band &amp; mode (${workedN}/${rp.length} worked)</summary>`
     + `<div class="rm-controls">Sort: `
@@ -3570,6 +3627,8 @@ function renderRareMatrix(j) {
   if (cbx) cbx.addEventListener("toggle", () => { oqrsClaimOpen = cbx.open; });
   const sbx = host.querySelector("details.oqrs-box.susp");
   if (sbx) sbx.addEventListener("toggle", () => { oqrsSuspOpen = sbx.open; });
+  const mbx = host.querySelector("details.oqrs-box.m0oxo");
+  if (mbx) mbx.addEventListener("toggle", () => { m0oxoOpen = mbx.open; });
   host.querySelectorAll("[data-rmf]").forEach(btn => btn.addEventListener("click", () => {
     rareFilter = btn.dataset.rmf;
     host.querySelectorAll("[data-rmf]").forEach(b => b.classList.toggle("active", b === btn));
