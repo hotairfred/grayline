@@ -3504,13 +3504,27 @@ function awardCard(title, rows) {
   </div>`;
 }
 let rareMatrixOpen = true, oqrsClaimOpen = true, oqrsSuspOpen = false;
+let rareSort = "rarity";   // "rarity" (rank, rarest first) | "az" (entity name)
+let rareFilter = "all";    // "all" | "needed" | "worked" — persists across re-sort
+// Apply the current Show filter to already-rendered rows (no re-render).
+function applyRareFilter(host) {
+  host.querySelectorAll("table.rm tr").forEach(tr => {
+    if (tr.querySelector("th")) return;
+    let show = true;
+    if (rareFilter === "needed") show = tr.classList.contains("rm-needed") || tr.classList.contains("rm-worked");
+    else if (rareFilter === "worked") show = tr.classList.contains("rm-worked");
+    tr.style.display = show ? "" : "none";
+  });
+}
 // Most Wanted tab: OQRS-claimable + suspect punch-lists, then the full progress
 // matrix (worked/confirmed/claimable/suspect per band & mode).
 function renderRareMatrix(j) {
   const host = document.getElementById("rare_matrix");
   if (!host) return;
-  const rp = j.rare_progress;
-  if (!rp || !rp.length) { host.innerHTML = ""; return; }
+  if (!j.rare_progress || !j.rare_progress.length) { host.innerHTML = ""; return; }
+  const rp = j.rare_progress.slice();
+  if (rareSort === "az") rp.sort((a, b) => a.name.localeCompare(b.name));
+  else rp.sort((a, b) => a.rank - b.rank);
   const BANDS = ["160m","80m","40m","30m","20m","17m","15m","12m","10m","6m"];
   const BL = {"160m":"160","80m":"80","40m":"40","30m":"30","20m":"20","17m":"17","15m":"15","12m":"12","10m":"10","6m":"6"};
   const GLY = {confirmed:"✓", claimable:"◆", suspect:"?", worked:"·"};
@@ -3541,10 +3555,13 @@ function renderRareMatrix(j) {
   host.innerHTML = claimBox + suspBox
     + `<details class="rare-matrix"${rareMatrixOpen ? " open" : ""}>`
     + `<summary>Most Wanted — worked / confirmed by band &amp; mode (${workedN}/${rp.length} worked)</summary>`
-    + `<div class="rm-controls">Show: `
-    + `<button data-rmf="all" class="active">all</button>`
-    + `<button data-rmf="needed">needed (unconfirmed)</button>`
-    + `<button data-rmf="worked">worked, not confirmed</button>`
+    + `<div class="rm-controls">Sort: `
+    + `<button data-rms="rarity" class="${rareSort === "rarity" ? "active" : ""}">rarity</button>`
+    + `<button data-rms="az" class="${rareSort === "az" ? "active" : ""}">A&ndash;Z</button>`
+    + `&nbsp;&nbsp;Show: `
+    + `<button data-rmf="all" class="${rareFilter === "all" ? "active" : ""}">all</button>`
+    + `<button data-rmf="needed" class="${rareFilter === "needed" ? "active" : ""}">needed (unconfirmed)</button>`
+    + `<button data-rmf="worked" class="${rareFilter === "worked" ? "active" : ""}">worked, not confirmed</button>`
     + `&nbsp;&nbsp;<span style="color:#9f9">✓</span> conf &nbsp;<span style="color:#6ff">◆</span> OQRS &nbsp;<span style="color:#f9a">?</span> verify &nbsp;<span style="color:#fc6">·</span> worked</div>`
     + `<div class="rm-scroll"><table class="rm">${hdr}${rows}</table></div></details>`;
   const det = host.querySelector("details.rare-matrix");
@@ -3554,17 +3571,15 @@ function renderRareMatrix(j) {
   const sbx = host.querySelector("details.oqrs-box.susp");
   if (sbx) sbx.addEventListener("toggle", () => { oqrsSuspOpen = sbx.open; });
   host.querySelectorAll("[data-rmf]").forEach(btn => btn.addEventListener("click", () => {
-    host.querySelectorAll("[data-rmf]").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    const f = btn.dataset.rmf;
-    host.querySelectorAll("table.rm tr").forEach(tr => {
-      if (tr.querySelector("th")) return;
-      let show = true;
-      if (f === "needed") show = tr.classList.contains("rm-needed") || tr.classList.contains("rm-worked");
-      else if (f === "worked") show = tr.classList.contains("rm-worked");
-      tr.style.display = show ? "" : "none";
-    });
+    rareFilter = btn.dataset.rmf;
+    host.querySelectorAll("[data-rmf]").forEach(b => b.classList.toggle("active", b === btn));
+    applyRareFilter(host);
   }));
+  host.querySelectorAll("[data-rms]").forEach(btn => btn.addEventListener("click", () => {
+    rareSort = btn.dataset.rms;
+    renderRareMatrix(lastScores);   // re-sort rows; filter state is preserved
+  }));
+  applyRareFilter(host);   // re-apply current Show filter after a (re-)render
 }
 
 function renderScores(j) {
