@@ -982,6 +982,7 @@ def _build_scores_payload() -> dict:
     # order, rarest first. Pairs with the Club Log rarity list already loaded.
     _wb = _worked.worked_dxcc_band; _cb = _worked.confirmed_dxcc_band
     _wm = _worked.worked_dxcc_modeclass; _cm = _worked.confirmed_dxcc_modeclass
+    _sc = getattr(_worked, "slot_calls", {})  # (dxcc,band) -> {calls worked there}
     def _slot(w, c):
         return "confirmed" if c else ("worked" if w else "new")
     rare_progress = []
@@ -994,10 +995,15 @@ def _build_scores_payload() -> dict:
             if (_num, b) in _cb:
                 bands[b] = "confirmed"
             elif (_num, b) in _wb:
+                here = _sc.get((_num, b), set())  # calls you actually worked on this slot
                 if (_num, b) in _MATCHED_SLOTS:
                     bands[b] = "claimable"; claim.append({"band": b, "call": _MATCHED_SLOTS[(_num, b)]})
-                elif _num in _MATCHED_ENTS:
-                    bands[b] = "suspect"; suspect.append(b)
+                elif here & _MATCHED_CALLS:
+                    # The exact station you logged here is in Club Log's match set on
+                    # some other band, but not this slot -> genuine "they don't have me
+                    # on this band." A different op of the same entity does NOT count.
+                    bands[b] = "suspect"
+                    suspect.append({"band": b, "calls": sorted(here & _MATCHED_CALLS)})
                 else:
                     bands[b] = "worked"
             else:
@@ -1012,7 +1018,7 @@ def _build_scores_payload() -> dict:
         if claim:
             oqrs_claimable.append({"rank": _rank, "dxcc": _num, "name": nm, "slots": claim})
         if suspect:
-            oqrs_suspect.append({"rank": _rank, "dxcc": _num, "name": nm, "bands": suspect})
+            oqrs_suspect.append({"rank": _rank, "dxcc": _num, "name": nm, "slots": suspect})
 
     return {
         "as_of": time.time(),
@@ -2012,11 +2018,15 @@ _DXCC_NAME = _load_dxcc_names()
 
 # ---- Club Log log/OQRS matches (weekly) -> claimable + discrepancy detection ----
 # getmatches.php returns QSOs validated against uploaded logs (log search + OQRS).
-# A worked-not-confirmed slot that IS matched = claimable (do OQRS); one that is
-# NOT matched while the entity is matched on other bands = suspect ("you logged
-# it, you're not in their log").
-_MATCHED_SLOTS: dict = {}   # (dxcc_str, band_str) -> matched DX callsign
-_MATCHED_ENTS: set = set()  # dxcc_str with any match
+# A worked-not-confirmed slot that IS matched = claimable (do OQRS). Suspect is
+# keyed on the *callsign*, not the entity: a slot is suspect only when the very
+# station you logged there appears in getmatches on some OTHER band but not this
+# one ("you logged TT1GD on 10m, but TT1GD's own log only has you on 40m"). It is
+# NOT suspect just because a *different* station of the same entity matched —
+# e.g. a real TT8XX DXpedition QSO must not be flagged because TT1GD matched.
+_MATCHED_SLOTS: dict = {}        # (dxcc_str, band_str) -> matched DX callsign
+_MATCHED_CALL_SLOTS: set = set() # (call, band_str) confirmed in the DX's own log
+_MATCHED_CALLS: set = set()      # callsigns that appear anywhere in getmatches
 
 
 def _band_from_clublog(bn) -> str:
@@ -2024,36 +2034,37 @@ def _band_from_clublog(bn) -> str:
 
 
 def _process_clublog_matches(matches) -> tuple:
-    slots, ents = {}, set()
+    slots, call_slots, calls = {}, set(), set()
     for m in matches:
         try:
-            dxcc = str(m[1]); band = _band_from_clublog(m[3])
+            call = str(m[0]).strip().upper(); dxcc = str(m[1]); band = _band_from_clublog(m[3])
         except (IndexError, TypeError):
             continue
         slots[(dxcc, band)] = m[0]
-        ents.add(dxcc)
-    return slots, ents
+        call_slots.add((call, band))
+        calls.add(call)
+    return slots, call_slots, calls
 
 
 def _load_clublog_matches():
-    global _MATCHED_SLOTS, _MATCHED_ENTS
+    global _MATCHED_SLOTS, _MATCHED_CALL_SLOTS, _MATCHED_CALLS
     try:
         path = Path(__file__).parent / "data" / "clublog_matches.json"
-        _MATCHED_SLOTS, _MATCHED_ENTS = _process_clublog_matches(json.loads(path.read_text()))
+        _MATCHED_SLOTS, _MATCHED_CALL_SLOTS, _MATCHED_CALLS = _process_clublog_matches(json.loads(path.read_text()))
     except Exception as e:
         log.warning("Club Log matches cache unavailable (%s)", e)
-        _MATCHED_SLOTS, _MATCHED_ENTS = {}, set()
+        _MATCHED_SLOTS, _MATCHED_CALL_SLOTS, _MATCHED_CALLS = {}, set(), set()
 
 
 _load_clublog_matches()
-log.info("Club Log matches loaded: %d slots, %d entities", len(_MATCHED_SLOTS), len(_MATCHED_ENTS))
+log.info("Club Log matches loaded: %d slots, %d calls", len(_MATCHED_SLOTS), len(_MATCHED_CALLS))
 
 
 def clublog_matches_refresh_loop():
     """Weekly: fetch getmatches.php (log + OQRS matches), atomically cache, reload.
     Reuses the ClubLog 403 breaker (repeated 403s firewall the IP), skips without
     creds, keeps the last cache on any failure. Checks daily, refetches at >=7d."""
-    global _MATCHED_SLOTS, _MATCHED_ENTS
+    global _MATCHED_SLOTS, _MATCHED_CALL_SLOTS, _MATCHED_CALLS
     path = Path(__file__).parent / "data" / "clublog_matches.json"
     INTERVAL = 7 * 86400
     while True:
@@ -2082,7 +2093,7 @@ def clublog_matches_refresh_loop():
                         matches = json.loads(data)
                         if isinstance(matches, list):
                             tmp = path.with_suffix(".json.tmp"); tmp.write_text(data); tmp.replace(path)
-                            _MATCHED_SLOTS, _MATCHED_ENTS = _process_clublog_matches(matches)
+                            _MATCHED_SLOTS, _MATCHED_CALL_SLOTS, _MATCHED_CALLS = _process_clublog_matches(matches)
                             log.info("Club Log matches refreshed: %d slots", len(_MATCHED_SLOTS))
                     except Exception as e:
                         code = getattr(e, "code", None)
@@ -3520,7 +3531,7 @@ function renderRareMatrix(j) {
   const clItems = cl.map(e => `<li><span class="rk">#${e.rank}</span><b>${escapeHTML(e.name)}</b> — `
     + e.slots.map(s => `${s.band} <span class="mwc">${escapeHTML(s.call)}</span>`).join(", ") + `</li>`).join("");
   const suItems = su.map(e => `<li><span class="rk">#${e.rank}</span><b>${escapeHTML(e.name)}</b> — `
-    + escapeHTML(e.bands.join(", ")) + `</li>`).join("");
+    + e.slots.map(s => `${s.band} <span class="mwc">${escapeHTML((s.calls || []).join("/"))}</span>`).join(", ") + `</li>`).join("");
   const claimBox = cl.length ? `<details class="oqrs-box claim"${oqrsClaimOpen ? " open" : ""}>`
     + `<summary>◆ Confirmable via OQRS — ${cl.length} rare${cl.length > 1 ? "s" : ""} one QSL request away</summary>`
     + `<ul>${clItems}</ul></details>` : "";

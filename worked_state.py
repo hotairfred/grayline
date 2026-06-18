@@ -473,6 +473,7 @@ class WorkedState:
         # Indexed by ADIF DXCC ID (the number QRZ uses)
         self.worked_dxcc_band: set[tuple[str, str]] = set()  # (dxcc_id, band)
         self.confirmed_dxcc_band: set[tuple[str, str]] = set()
+        self.slot_calls: dict[tuple[str, str], set] = {}  # (dxcc,band) -> {callsigns}
 
         # Indexed by country/entity name (matches cty.dat's `entity` field)
         self.worked_country_band: set[tuple[str, str]] = set()  # (country, band)
@@ -604,6 +605,7 @@ class WorkedState:
         confirmed_calls: set[str] = set()
         worked_dxcc_band: set[tuple[str, str]] = set()
         confirmed_dxcc_band: set[tuple[str, str]] = set()
+        slot_calls: dict[tuple[str, str], set] = {}  # (dxcc,band) -> {callsigns worked there}
         worked_country_band: set[tuple[str, str]] = set()
         confirmed_country_band: set[tuple[str, str]] = set()
         worked_country_band_mode: set[tuple[str, str, str]] = set()
@@ -748,6 +750,8 @@ class WorkedState:
                     confirmed_dxcc.add(dxcc)
                 if band:
                     worked_dxcc_band.add((dxcc, band))
+                    if call:
+                        slot_calls.setdefault((dxcc, band), set()).add(call)
                     if confirmed:
                         confirmed_dxcc_band.add((dxcc, band))
                 if mode:
@@ -856,6 +860,7 @@ class WorkedState:
         self.confirmed_calls = confirmed_calls
         self.worked_dxcc_band = worked_dxcc_band
         self.confirmed_dxcc_band = confirmed_dxcc_band
+        self.slot_calls = slot_calls
         self.worked_country_band = worked_country_band
         self.confirmed_country_band = confirmed_country_band
         self.worked_country_band_mode = worked_country_band_mode
