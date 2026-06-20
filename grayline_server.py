@@ -2325,12 +2325,13 @@ details[open] > summary::before { transform: rotate(90deg); }
 .cqtag { display: inline-block; padding: 0 0.3em; margin-left: 0.35em; border-radius: 3px;
   background: #1c5c2e; color: #9f9; font-size: 0.72em; font-weight: 700;
   letter-spacing: 0.03em; vertical-align: middle; }
-/* LoTW-user badge — fresh uploader (good confirm bet) vs stale. Red per request;
-   flip .lotw-fresh background to a green (#1c5c2e) for the GT2 convention. */
+/* LoTW-user badge — fresh uploader (good confirm bet) vs stale. Blue (LoTW's own
+   brand hue): the one strong color free on the roster — green is the CQ tag, red
+   is rarity, orange is the award pills. Bold blue = fresh, muted slate = stale. */
 .lotw { display: inline-block; padding: 0 0.3em; margin-left: 0.35em; border-radius: 3px;
   font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; }
-.lotw-fresh { background: #c0392b; color: #fff; }            /* uploaded within threshold — work it */
-.lotw-stale { background: #3a2a2a; color: #b88; opacity: 0.8; }  /* LoTW user but quiet for a while */
+.lotw-fresh { background: #2f81f7; color: #fff; }                  /* uploaded within threshold — work it */
+.lotw-stale { background: #2a3f55; color: #8fb3d9; opacity: 0.85; } /* LoTW user but quiet for a while */
 /* "Calling you" — a station transmitting MY callsign right now. Red row, white
    text, floated to the top of the roster. The whole point is to not miss it. */
 tr.calling-me td { background: #d11 !important; color: #fff !important; }
