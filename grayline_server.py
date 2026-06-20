@@ -28,6 +28,7 @@ import dxcluster
 import flexradio
 import logbook_uploads
 import lotw_fetch
+import lotw_activity
 import telnet_server
 from ctydat import CtyDat
 from worked_state import WorkedState, mode_class, resolve_prefecture
@@ -197,6 +198,12 @@ QSO_LOG_PATH = _BASE_DIR / "qso_logged.adi"
 # the cursor + auth model (lifted from GT2 adif.js).
 LOTW_FETCH_ENABLED = CONFIG.get("lotw_fetch_enabled", False)
 LOTW_FETCH_INTERVAL_SEC = 3600   # 1 hr — LoTW pull is incremental; hourly is plenty
+
+# Roster LoTW-user badge: a station that uploaded to LoTW within this many days
+# is a "fresh" / good-bet target (the QSO will confirm). Stale users get a dimmed
+# badge; non-users get none. Default 365 (Fred's "within the past year" rule of
+# thumb). Mirror this into the frontend so the slider can tune it later.
+LOTW_FRESH_DAYS = int(CONFIG.get("lotw_fresh_days", 365))
 
 # Source priority for spot dedup. Higher numbers win when the same
 # (band, mode, freq, call) tuple arrives from multiple sources within
@@ -723,6 +730,15 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
     if de_call and call.upper() == de_call:
         return
 
+    # "Calling me": a directed message whose CALLEE (the FIRST token) is my own
+    # callsign — i.e. some station is transmitting toward ME this cycle (saw me
+    # working someone and clicked me to start a QSO, or is replying to my CQ).
+    # These should jump out and bypass the roster's band/mode/wanted/radius
+    # filters, since the whole point is "don't miss someone trying to work me."
+    mp = message.strip().split()
+    calling_me = bool(len(mp) >= 2 and mp[0].upper() == CALLSIGN.upper()
+                      and _looks_like_call(mp[1]))
+
     # WSJT-X mode glyph maps to a printable mode string. ~ = FT8, + = FT4.
     glyph = parsed.get("mode", "") or ""
     mode_str = {"~": "FT8", "+": "FT4"}.get(glyph, "FT8")
@@ -738,7 +754,7 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
         grid=grid,
         audio_offset=delta_freq,
     )
-    add_spot(spot, "WSJTX-LOCAL")
+    add_spot(spot, "WSJTX-LOCAL", calling_me=calling_me)
 
     # Stash WSJT-X-specific fields needed to construct a Reply that matches
     # the original decode in WSJT-X's recent-decode list. Reply matching
@@ -1766,7 +1782,7 @@ def _telnet_feed_radius_mi(band: str) -> int:
             else TELNET_FEED_RADIUS_HF_MI)
 
 
-def add_spot(spot, cluster_name):
+def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
         return
@@ -1932,6 +1948,8 @@ def add_spot(spot, cluster_name):
             "country": country,
             "dxcc": dxcc_num,
             "dxcc_rank": (_DXCC_RARITY.get(dxcc_num) if dxcc_num else None),  # Club Log Most Wanted rank (lower=rarer) or None
+            "lotw_days": lotw_activity.days_since_upload(spot.dx_call),  # days since last LoTW upload, or None if not a LoTW user
+            "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
@@ -2307,6 +2325,21 @@ details[open] > summary::before { transform: rotate(90deg); }
 .cqtag { display: inline-block; padding: 0 0.3em; margin-left: 0.35em; border-radius: 3px;
   background: #1c5c2e; color: #9f9; font-size: 0.72em; font-weight: 700;
   letter-spacing: 0.03em; vertical-align: middle; }
+/* LoTW-user badge — fresh uploader (good confirm bet) vs stale. Red per request;
+   flip .lotw-fresh background to a green (#1c5c2e) for the GT2 convention. */
+.lotw { display: inline-block; padding: 0 0.3em; margin-left: 0.35em; border-radius: 3px;
+  font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; }
+.lotw-fresh { background: #c0392b; color: #fff; }            /* uploaded within threshold — work it */
+.lotw-stale { background: #3a2a2a; color: #b88; opacity: 0.8; }  /* LoTW user but quiet for a while */
+/* "Calling you" — a station transmitting MY callsign right now. Red row, white
+   text, floated to the top of the roster. The whole point is to not miss it. */
+tr.calling-me td { background: #d11 !important; color: #fff !important; }
+tr.calling-me td.dx { font-weight: 800; }
+tr.calling-me:hover td { background: #e22 !important; }
+.callsyou { display: inline-block; padding: 0 0.35em; margin-left: 0.4em; border-radius: 3px;
+  background: #fff; color: #c0392b; font-size: 0.66em; font-weight: 800;
+  letter-spacing: 0.04em; vertical-align: middle; animation: callsyou-pulse 1s ease-in-out infinite; }
+@keyframes callsyou-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 
 /* Most Wanted progress matrix — full-width scoreboard below the score cards. */
 .rare-matrix { margin: 1.2em 0 0; }
@@ -2993,6 +3026,23 @@ function rarityBadge(s) {
   return ` <span class="mw ${tier}" title="Club Log Most Wanted #${r}">#${r}</span>`;
 }
 
+// LoTW-user badge. s.lotw_days = days since this call's last LoTW upload (null if
+// they don't use LoTW). Fresh uploader (<= LOTW_FRESH_DAYS) => good bet, the QSO
+// will confirm; stale user => dimmed. Non-user => no badge. Threshold is injected
+// from config so a recency slider can drive it later.
+const LOTW_FRESH_DAYS = parseInt("__LOTW_FRESH_DAYS__", 10) || 365;
+function lotwBadge(s) {
+  const d = s.lotw_days;
+  if (d == null) return "";   // not a LoTW user
+  const fresh = d <= LOTW_FRESH_DAYS;
+  const cls = fresh ? "lotw lotw-fresh" : "lotw lotw-stale";
+  const ago = d < 30 ? `${d}d` : (d < 365 ? `${Math.round(d / 30)}mo` : `${(d / 365).toFixed(1)}y`);
+  const title = fresh
+    ? `LoTW user — uploaded ${ago} ago (good bet to confirm)`
+    : `LoTW user but stale — last upload ${ago} ago`;
+  return ` <span class="${cls}" title="${title}">LoTW</span>`;
+}
+
 // "CQ" tag for digital spots whose latest decode is a CQ — i.e. the station is
 // actively calling, not mid-QSO. Derived from the decode message in s.comment,
 // which refreshes on every WSJT-X decode, so it clears when they stop CQing.
@@ -3274,6 +3324,7 @@ async function refresh() {
 
   // Apply filters in order: band/mode visibility, show-wanted (any enabled scope is new), 300mi
   spots = spots.filter(s => {
+    if (s.calling_me) return true;   // someone calling ME always shows — bypass all filters
     if (disabledBands.has(s.band)) { filteredOut++; return false; }
     if (disabledModes.has(s.mode)) { filteredOut++; return false; }
     if (showWanted && !anyScopeNeeded(s)) { filteredOut++; return false; }
@@ -3416,8 +3467,10 @@ async function refresh() {
       allRows.push(...byBand[activeBand][m]);
     }
   }
-  // Sort: band order, then freq within band
+  // Sort: anyone calling ME floats to the very top (time-critical — I want to
+  // click them this cycle), then band order, then freq within band.
   allRows.sort((x, y) => {
+    if (!!x.calling_me !== !!y.calling_me) return x.calling_me ? -1 : 1;
     const bd = bandIdx(x.band) - bandIdx(y.band);
     if (bd !== 0) return bd;
     return x.freq_khz - y.freq_khz;
@@ -3460,15 +3513,16 @@ async function refresh() {
       // infrastructure spots) so they still highlight as "us".
       const isUs = (s.source || "").endsWith("-LOCAL")
                 || (s.spotter || "").toUpperCase().startsWith(MY_CALLSIGN);
-      const rowClass = isUs ? "us-spotted" : "";
+      const rowClass = (s.calling_me ? "calling-me " : "") + (isUs ? "us-spotted" : "");
       const spotterClass = isUs ? "spotter us" : "spotter";
+      const callTag = s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "";
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
       ).join("");
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
-        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}</td>
-        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${cqTag(s)}</td>
+        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}</td>
+        <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
         ${bandCell}
@@ -4239,7 +4293,8 @@ class Handler(BaseHTTPRequestHandler):
             ffma_js = ",".join('"' + g + '"' for g in _FFMA_GRIDS)
             page = (HTML_PAGE.replace("__FFMA_GRIDS_INJECT__", ffma_js)
                     .replace("__MY_CALLSIGN__", CALLSIGN)
-                    .replace("__MY_GRID__", HOME_GRID or "your QTH"))
+                    .replace("__MY_GRID__", HOME_GRID or "your QTH")
+                    .replace("__LOTW_FRESH_DAYS__", str(LOTW_FRESH_DAYS)))
             self._send(page.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/spots.json":
             payload = {"spots": snapshot(), "now": time.time()}
@@ -4610,6 +4665,7 @@ async def main():
             host="0.0.0.0", port=TELNET_FEED_PORT, node_call=TELNET_FEED_NODE)
         await _telnet_feed.start()
 
+    lotw_activity.start_background_refresh()   # loads cache instantly, refreshes if >7 days stale
     threading.Thread(target=serve_http, daemon=True).start()
     threading.Thread(target=purge_loop, daemon=True).start()
     threading.Thread(target=qrz_cache_reload_loop, daemon=True).start()

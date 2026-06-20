@@ -12,6 +12,8 @@ qrz_logbook.adi
 # LoTW fetch state + confirmation data and the live WSJT-X QSO log (all runtime data)
 lotw_state.json
 lotw_qsl.adi
+# LoTW user-activity roster cache (re-fetched weekly from ARRL; ~5.5MB)
+lotw_activity.json
 qso_logged.adi
 *.log
 *.bak
