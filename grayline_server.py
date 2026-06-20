@@ -4612,6 +4612,12 @@ async def main():
         log.warning("cty.dat load failed (DXCC enrichment disabled): %s", e)
     try:
         _worked = WorkedState(str(LOGBOOK_PATH))
+        # Share Grayline's QRZ-derived JA prefecture cache so the WAJA scores grid
+        # can resolve prefecture for FT8 QSOs that carry no ADIF STATE (e.g. JH0RNN
+        # -> Niigata), matching what the live roster pill already shows. The ctor
+        # already ran one reload(), so rebuild now that the cache is attached.
+        _worked.ja_pref_lookup = _ja_pref_cache
+        _worked.force_reload()
     except Exception as e:
         log.warning("worked_state load failed (worked-status disabled): %s", e)
 

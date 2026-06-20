@@ -518,6 +518,11 @@ class WorkedState:
         # WAJA — JARL Worked All Japan prefectures. Two-digit ADIF codes ("01"-"47").
         self.worked_prefectures: set[str] = set()
         self.confirmed_prefectures: set[str] = set()
+        # Optional call -> prefecture-code map (Grayline's QRZ-derived ja_pref_cache),
+        # injected by the server. Used as a fallback when a Japan QSO carries no ADIF
+        # STATE/CNTY (the common FT8 case) so the WAJA scores agree with the live
+        # roster pill, which already resolves prefecture from this same cache.
+        self.ja_pref_lookup: dict[str, str] = {}
         # Per-band-per-prefecture (mirrors WAS-by-band; not an ARRL award, kept
         # for parity / future per-band display).
         self.worked_prefecture_band: set[tuple[str, str]] = set()
@@ -829,6 +834,13 @@ class WorkedState:
                 if pref not in _JA_PREFECTURES_47:
                     cnty = (q.get("cnty") or "").strip()
                     pref = cnty[:2] if len(cnty) >= 2 else ""
+                if pref not in _JA_PREFECTURES_47:
+                    # No ADIF prefecture (typical for FT8 — WSJT-X logs only the
+                    # grid). Fall back to Grayline's QRZ-derived call->prefecture
+                    # cache, the SAME source the live roster pill uses, so the
+                    # WAJA scores grid agrees with the pill (e.g. JH0RNN -> 08).
+                    pref = self.ja_pref_lookup.get(
+                        (q.get("call") or "").strip().upper(), "")
                 if pref in _JA_PREFECTURES_47:
                     worked_prefectures.add(pref)
                     if confirmed:
