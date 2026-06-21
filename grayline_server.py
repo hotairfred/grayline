@@ -1986,6 +1986,8 @@ def add_spot(spot, cluster_name, calling_me=False):
                 existing["ts"] = time.time()
                 _cache.move_to_end(key)
                 return
+        # FFMA grid rarity (Tier 0, global): only meaningful on 6m (FFMA is a 6m award).
+        ffma_rarity = _FFMA_RARITY.get(eff_grid[:4].upper()) if (band == "6m" and eff_grid) else None
         _cache[key] = {
             "ts": time.time(),
             "band": band,
@@ -2002,6 +2004,7 @@ def add_spot(spot, cluster_name, calling_me=False):
             "lotw_days": lotw_activity.days_since_upload(spot.dx_call),  # days since last LoTW upload, or None if not a LoTW user
             "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
             "marathon": marathon,                           # CQ DX Marathon need this year: 'DXCC'|'CQz'|'DX+CQz'|None
+            "ffma_rarity": ffma_rarity,                     # FFMA grid rarity (6m only): {pct_needed,leaders_needing,tier} or None
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
@@ -2074,6 +2077,26 @@ def _load_ffma_grids() -> list[str]:
 _FFMA_GRIDS = _load_ffma_grids()
 _FFMA_GRID_SET = frozenset(g.upper() for g in _FFMA_GRIDS)
 log.info("FFMA grid list loaded: %d grids", len(_FFMA_GRIDS))
+
+
+def _load_ffma_rarity() -> dict:
+    """Per-grid FFMA rarity (Tier 0): {GRID: {pct_needed, leaders_needing, tier}}.
+    Authoritative source = N7PHY's FFMA Leader Board (% of 400+-confirmed leaders
+    who still need each grid). Location-AGNOSTIC global rarity — the universal
+    default everyone ships with; the HOME_GRID reachability overlay is Tier 1."""
+    try:
+        path = Path(__file__).parent / "data" / "ffma_rarity.json"
+        return json.loads(path.read_text()).get("grids", {})
+    except Exception as e:
+        log.warning("FFMA rarity data unavailable (%s); rarity badge disabled", e)
+        return {}
+
+
+_FFMA_RARITY = {k.upper(): v for k, v in _load_ffma_rarity().items()}
+log.info("FFMA rarity loaded: %d grids (%d rare, %d uncommon)",
+         len(_FFMA_RARITY),
+         sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "rare"),
+         sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "uncommon"))
 
 
 def _load_dxcc_rarity() -> dict:
@@ -2386,6 +2409,12 @@ details[open] > summary::before { transform: rotate(90deg); }
 .lotw-stale { background: #2a3f55; color: #8fb3d9; opacity: 0.85; } /* LoTW user but quiet for a while */
 /* CQ DX Marathon badge — needed entity/zone this year. Purple: a free hue, distinct
    from rarity-red, CQ-green, LoTW-blue, award-orange. */
+/* FFMA grid-rarity badge — gold = grail (FFMA's the gold award). In the grid cell,
+   so it reads against grid-need color, not the country-cell rarity. */
+.ffr { display: inline-block; padding: 0 0.3em; margin-left: 0.3em; border-radius: 3px;
+  font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
+.ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
+.ffr-unc  { background: #6b5a1a; color: #f5d76e; }   /* uncommon — muted gold */
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
@@ -3110,6 +3139,19 @@ function marathonBadge(s) {
   return ` <span class="mara" title="${title}">${label}</span>`;
 }
 
+// FFMA grid-rarity badge (Tier 0, global) — % of FFMA leaders who still need this
+// grid, from N7PHY's Leader Board. Only badges uncommon+rare (the 369 common grids
+// stay quiet). 6m only (set server-side). The grail tier when it's also a needed grid.
+function ffmaRarityBadge(s) {
+  const r = s.ffma_rarity;
+  if (!r || r.tier === "common") return "";
+  const pct = (r.pct_needed != null) ? Math.round(r.pct_needed) + "%" : "";
+  const cls = r.tier === "rare" ? "ffr ffr-rare" : "ffr ffr-unc";
+  const title = `FFMA: ${r.pct_needed}% of leaders still need this grid (${r.leaders_needing})`
+              + (r.tier === "rare" ? " — top-tier rare" : "");
+  return ` <span class="${cls}" title="${title}">${pct}</span>`;
+}
+
 function lotwBadge(s) {
   const d = s.lotw_days;
   if (d == null) return "";   // not a LoTW user
@@ -3603,7 +3645,7 @@ async function refresh() {
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
-        <td class="${gridCellClass}">${escapeHTML(s.grid)}</td>
+        <td class="${gridCellClass}">${escapeHTML(s.grid)}${ffmaRarityBadge(s)}</td>
         ${bandCell}
         <td class="mode">${escapeHTML(s.mode)}</td>
         <td class="awards">${awardCell}</td>
