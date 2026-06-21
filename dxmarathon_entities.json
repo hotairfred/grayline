@@ -1,0 +1,4311 @@
+{
+"246": {
+"id": "246",
+"name": "SMO of Malta",
+"adif_dxcc": "246",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"1A"
+]
+},
+"247": {
+"id": "247",
+"name": "Spratly Is.",
+"adif_dxcc": "247",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": []
+},
+"260": {
+"id": "260",
+"name": "Monaco",
+"adif_dxcc": "260",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"3A"
+]
+},
+"4": {
+"id": "4",
+"name": "Agalega & St. Brandon",
+"adif_dxcc": "4",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"3B6",
+"3B7"
+]
+},
+"165": {
+"id": "165",
+"name": "Mauritius",
+"adif_dxcc": "165",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"3B8"
+]
+},
+"207": {
+"id": "207",
+"name": "Rodrigues I.",
+"adif_dxcc": "207",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"3B9"
+]
+},
+"49": {
+"id": "49",
+"name": "Equatorial Guinea",
+"adif_dxcc": "49",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"3C"
+]
+},
+"195": {
+"id": "195",
+"name": "Annobón",
+"adif_dxcc": "195",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"3C0"
+]
+},
+"176": {
+"id": "176",
+"name": "Fiji",
+"adif_dxcc": "176",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"3D2"
+]
+},
+"489": {
+"id": "489",
+"name": "Conway Reef",
+"adif_dxcc": "489",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"3D2"
+]
+},
+"460": {
+"id": "460",
+"name": "Rotuma I.",
+"adif_dxcc": "460",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"3D2"
+]
+},
+"468": {
+"id": "468",
+"name": "Eswatini",
+"adif_dxcc": "468",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"3DA"
+]
+},
+"474": {
+"id": "474",
+"name": "Tunisia",
+"adif_dxcc": "474",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"3V"
+]
+},
+"293": {
+"id": "293",
+"name": "Viet Nam",
+"adif_dxcc": "293",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"3W",
+"XV"
+]
+},
+"107": {
+"id": "107",
+"name": "Guinea",
+"adif_dxcc": "107",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"3X"
+]
+},
+"24": {
+"id": "24",
+"name": "Bouvet I.",
+"adif_dxcc": "24",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"3Y"
+]
+},
+"199": {
+"id": "199",
+"name": "Peter I I.",
+"adif_dxcc": "199",
+"source": "DXCC",
+"continent": "AN",
+"cq_zones": "12",
+"prefixes": [
+"3Y"
+]
+},
+"18": {
+"id": "18",
+"name": "Azerbaijan",
+"adif_dxcc": "18",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"4J",
+"4K"
+]
+},
+"75": {
+"id": "75",
+"name": "Georgia",
+"adif_dxcc": "75",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"4L"
+]
+},
+"514": {
+"id": "514",
+"name": "Montenegro",
+"adif_dxcc": "514",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"4O"
+]
+},
+"315": {
+"id": "315",
+"name": "Sri Lanka",
+"adif_dxcc": "315",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"4S"
+]
+},
+"117": {
+"id": "117",
+"name": "ITU HQ",
+"adif_dxcc": "117",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"4U"
+]
+},
+"289": {
+"id": "289",
+"name": "UN HQ",
+"adif_dxcc": "289",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "5",
+"prefixes": [
+"4U"
+]
+},
+"901": {
+"id": "901",
+"name": "UN Viena IC",
+"adif_dxcc": "206",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"4U1V"
+]
+},
+"511": {
+"id": "511",
+"name": "Timor-Leste",
+"adif_dxcc": "511",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"4W"
+]
+},
+"336": {
+"id": "336",
+"name": "Israel",
+"adif_dxcc": "336",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"4X",
+"4Z"
+]
+},
+"436": {
+"id": "436",
+"name": "Libya",
+"adif_dxcc": "436",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "34",
+"prefixes": [
+"5A"
+]
+},
+"215": {
+"id": "215",
+"name": "Cyprus",
+"adif_dxcc": "215",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"5B",
+"C4",
+"P3"
+]
+},
+"470": {
+"id": "470",
+"name": "Tanzania",
+"adif_dxcc": "470",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"5H",
+"5I"
+]
+},
+"450": {
+"id": "450",
+"name": "Nigeria",
+"adif_dxcc": "450",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"5N"
+]
+},
+"438": {
+"id": "438",
+"name": "Madagascar",
+"adif_dxcc": "438",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"5R"
+]
+},
+"444": {
+"id": "444",
+"name": "Mauritania",
+"adif_dxcc": "444",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"5T"
+]
+},
+"187": {
+"id": "187",
+"name": "Niger",
+"adif_dxcc": "187",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"5U"
+]
+},
+"483": {
+"id": "483",
+"name": "Togo",
+"adif_dxcc": "483",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"5V"
+]
+},
+"190": {
+"id": "190",
+"name": "Samoa",
+"adif_dxcc": "190",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"5W"
+]
+},
+"286": {
+"id": "286",
+"name": "Uganda",
+"adif_dxcc": "286",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"5X"
+]
+},
+"430": {
+"id": "430",
+"name": "Kenya",
+"adif_dxcc": "430",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"5Y",
+"5Z"
+]
+},
+"456": {
+"id": "456",
+"name": "Senegal",
+"adif_dxcc": "456",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"6V",
+"6W"
+]
+},
+"82": {
+"id": "82",
+"name": "Jamaica",
+"adif_dxcc": "82",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"6Y"
+]
+},
+"492": {
+"id": "492",
+"name": "Yemen",
+"adif_dxcc": "492",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"7O"
+]
+},
+"432": {
+"id": "432",
+"name": "Lesotho",
+"adif_dxcc": "432",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"7P"
+]
+},
+"440": {
+"id": "440",
+"name": "Malawi",
+"adif_dxcc": "440",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"7Q"
+]
+},
+"400": {
+"id": "400",
+"name": "Algeria",
+"adif_dxcc": "400",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"7T",
+"7U",
+"7V",
+"7W",
+"7X",
+"7Y"
+]
+},
+"62": {
+"id": "62",
+"name": "Barbados",
+"adif_dxcc": "62",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"8P"
+]
+},
+"159": {
+"id": "159",
+"name": "Maldives",
+"adif_dxcc": "159",
+"source": "DXCC",
+"continent": "AS, AF",
+"cq_zones": "22",
+"prefixes": [
+"8Q"
+]
+},
+"129": {
+"id": "129",
+"name": "Guyana",
+"adif_dxcc": "129",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"8R"
+]
+},
+"497": {
+"id": "497",
+"name": "Croatia",
+"adif_dxcc": "497",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"9A"
+]
+},
+"424": {
+"id": "424",
+"name": "Ghana",
+"adif_dxcc": "424",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"9G"
+]
+},
+"257": {
+"id": "257",
+"name": "Malta",
+"adif_dxcc": "257",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"9H"
+]
+},
+"482": {
+"id": "482",
+"name": "Zambia",
+"adif_dxcc": "482",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"9I",
+"9J"
+]
+},
+"348": {
+"id": "348",
+"name": "Kuwait",
+"adif_dxcc": "348",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"9K"
+]
+},
+"458": {
+"id": "458",
+"name": "Sierra Leone",
+"adif_dxcc": "458",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"9L"
+]
+},
+"299": {
+"id": "299",
+"name": "W. Malaysia",
+"adif_dxcc": "299",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "28",
+"prefixes": [
+"9M2",
+"9M4"
+]
+},
+"46": {
+"id": "46",
+"name": "E. Malaysia",
+"adif_dxcc": "46",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"9M6",
+"9M8"
+]
+},
+"369": {
+"id": "369",
+"name": "Nepal",
+"adif_dxcc": "369",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"9N"
+]
+},
+"414": {
+"id": "414",
+"name": "DR Congo-Kinshasa",
+"adif_dxcc": "414",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"9Q",
+"9R",
+"9S",
+"9T"
+]
+},
+"404": {
+"id": "404",
+"name": "Burundi",
+"adif_dxcc": "404",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"9U"
+]
+},
+"381": {
+"id": "381",
+"name": "Singapore",
+"adif_dxcc": "381",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "28",
+"prefixes": [
+"9V"
+]
+},
+"454": {
+"id": "454",
+"name": "Rwanda",
+"adif_dxcc": "454",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"9X"
+]
+},
+"90": {
+"id": "90",
+"name": "Trinidad & Tobago",
+"adif_dxcc": "90",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"9Y",
+"9Z"
+]
+},
+"402": {
+"id": "402",
+"name": "Botswana",
+"adif_dxcc": "402",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"A2"
+]
+},
+"160": {
+"id": "160",
+"name": "Tonga",
+"adif_dxcc": "160",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"A3"
+]
+},
+"370": {
+"id": "370",
+"name": "Oman",
+"adif_dxcc": "370",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"A4"
+]
+},
+"306": {
+"id": "306",
+"name": "Bhutan",
+"adif_dxcc": "306",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"A5"
+]
+},
+"391": {
+"id": "391",
+"name": "United Arab Emirates",
+"adif_dxcc": "391",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"A6"
+]
+},
+"376": {
+"id": "376",
+"name": "Qatar",
+"adif_dxcc": "376",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"A7"
+]
+},
+"304": {
+"id": "304",
+"name": "Bahrain",
+"adif_dxcc": "304",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"A9"
+]
+},
+"372": {
+"id": "372",
+"name": "Pakistan",
+"adif_dxcc": "372",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"AP"
+]
+},
+"506": {
+"id": "506",
+"name": "Scarborough Shoal",
+"adif_dxcc": "506",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "27",
+"prefixes": [
+"BS7"
+]
+},
+"386": {
+"id": "386",
+"name": "Taiwan",
+"adif_dxcc": "386",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "24",
+"prefixes": [
+"BU",
+"BV",
+"BW",
+"BX"
+]
+},
+"505": {
+"id": "505",
+"name": "Pratas I.",
+"adif_dxcc": "505",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "24",
+"prefixes": [
+"BV9P"
+]
+},
+"318": {
+"id": "318",
+"name": "China",
+"adif_dxcc": "318",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "23, 24",
+"prefixes": [
+"B"
+]
+},
+"157": {
+"id": "157",
+"name": "Nauru",
+"adif_dxcc": "157",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"C2"
+]
+},
+"203": {
+"id": "203",
+"name": "Andorra",
+"adif_dxcc": "203",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"C3"
+]
+},
+"422": {
+"id": "422",
+"name": "The Gambia",
+"adif_dxcc": "422",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"C5"
+]
+},
+"60": {
+"id": "60",
+"name": "Bahamas",
+"adif_dxcc": "60",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"C6"
+]
+},
+"181": {
+"id": "181",
+"name": "Mozambique",
+"adif_dxcc": "181",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"C8",
+"C9"
+]
+},
+"112": {
+"id": "112",
+"name": "Chile",
+"adif_dxcc": "112",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "12",
+"prefixes": [
+"CA",
+"CB",
+"CC",
+"CD",
+"CE"
+]
+},
+"217": {
+"id": "217",
+"name": "San Felix Is.",
+"adif_dxcc": "217",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "12",
+"prefixes": [
+"CE0"
+]
+},
+"47": {
+"id": "47",
+"name": "Easter I.",
+"adif_dxcc": "47",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "12",
+"prefixes": [
+"CE0"
+]
+},
+"125": {
+"id": "125",
+"name": "Juan Fernández Is.",
+"adif_dxcc": "125",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "12",
+"prefixes": [
+"CE0"
+]
+},
+"13": {
+"id": "13",
+"name": "Antarctica",
+"adif_dxcc": "13",
+"source": "DXCC",
+"continent": "AN",
+"cq_zones": "12, 13, 29, 30, 32, 38, 39",
+"prefixes": [
+"*"
+]
+},
+"70": {
+"id": "70",
+"name": "Cuba",
+"adif_dxcc": "70",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"CM",
+"CO"
+]
+},
+"446": {
+"id": "446",
+"name": "Morocco",
+"adif_dxcc": "446",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"CN"
+]
+},
+"104": {
+"id": "104",
+"name": "Bolivia",
+"adif_dxcc": "104",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "10",
+"prefixes": [
+"CP"
+]
+},
+"272": {
+"id": "272",
+"name": "Portugal",
+"adif_dxcc": "272",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"CT"
+]
+},
+"256": {
+"id": "256",
+"name": "Madeira",
+"adif_dxcc": "256",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"CT3"
+]
+},
+"149": {
+"id": "149",
+"name": "Azores",
+"adif_dxcc": "149",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"CU"
+]
+},
+"144": {
+"id": "144",
+"name": "Uruguay",
+"adif_dxcc": "144",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"CV",
+"CW",
+"CX"
+]
+},
+"211": {
+"id": "211",
+"name": "Sable I.",
+"adif_dxcc": "211",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "5",
+"prefixes": [
+"CY0"
+]
+},
+"252": {
+"id": "252",
+"name": "St. Paul I.",
+"adif_dxcc": "252",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "5",
+"prefixes": [
+"CY9"
+]
+},
+"401": {
+"id": "401",
+"name": "Angola",
+"adif_dxcc": "401",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"D2",
+"D3"
+]
+},
+"409": {
+"id": "409",
+"name": "Cape Verde",
+"adif_dxcc": "409",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"D4"
+]
+},
+"411": {
+"id": "411",
+"name": "Comoros",
+"adif_dxcc": "411",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"D6"
+]
+},
+"230": {
+"id": "230",
+"name": "Germany",
+"adif_dxcc": "230",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"DA",
+"DB",
+"DC",
+"DD",
+"DE",
+"DF",
+"DG",
+"DH",
+"DI",
+"DJ",
+"DK",
+"DL",
+"DM",
+"DN",
+"DO",
+"DP",
+"DQ",
+"DR"
+]
+},
+"375": {
+"id": "375",
+"name": "Philippines",
+"adif_dxcc": "375",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"DU",
+"DV",
+"DW",
+"DX",
+"DY",
+"DZ",
+"4D",
+"4E",
+"4F",
+"4G",
+"4H",
+"4I"
+]
+},
+"51": {
+"id": "51",
+"name": "Eritrea",
+"adif_dxcc": "51",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"E3"
+]
+},
+"510": {
+"id": "510",
+"name": "Palestine",
+"adif_dxcc": "510",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"E4"
+]
+},
+"191": {
+"id": "191",
+"name": "North Cook Is.",
+"adif_dxcc": "191",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"E5"
+]
+},
+"234": {
+"id": "234",
+"name": "South Cook Is.",
+"adif_dxcc": "234",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"E5"
+]
+},
+"188": {
+"id": "188",
+"name": "Niue",
+"adif_dxcc": "188",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"E6"
+]
+},
+"501": {
+"id": "501",
+"name": "Bosnia-Herzegovina",
+"adif_dxcc": "501",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"E7"
+]
+},
+"281": {
+"id": "281",
+"name": "Spain",
+"adif_dxcc": "281",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"EA",
+"EB",
+"EC",
+"ED",
+"EE",
+"EF",
+"EG",
+"EH"
+]
+},
+"21": {
+"id": "21",
+"name": "Balearic Is.",
+"adif_dxcc": "21",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"EA6",
+"EB6",
+"EC6",
+"ED6",
+"EE6",
+"EF6",
+"EG6",
+"EH6"
+]
+},
+"29": {
+"id": "29",
+"name": "Canary Is.",
+"adif_dxcc": "29",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"EA8",
+"EB8",
+"EC8",
+"ED8",
+"EE8",
+"EF8",
+"EG8",
+"EH8"
+]
+},
+"32": {
+"id": "32",
+"name": "Ceuta & Melilla",
+"adif_dxcc": "32",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"EA9",
+"EB9",
+"EC9",
+"ED9",
+"EE9",
+"EF9",
+"EG9",
+"EH9"
+]
+},
+"245": {
+"id": "245",
+"name": "Ireland",
+"adif_dxcc": "245",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"EI",
+"EJ"
+]
+},
+"14": {
+"id": "14",
+"name": "Armenia",
+"adif_dxcc": "14",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"EK"
+]
+},
+"434": {
+"id": "434",
+"name": "Liberia",
+"adif_dxcc": "434",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"EL"
+]
+},
+"330": {
+"id": "330",
+"name": "Iran",
+"adif_dxcc": "330",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"EP",
+"EQ"
+]
+},
+"179": {
+"id": "179",
+"name": "Moldova",
+"adif_dxcc": "179",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "16",
+"prefixes": [
+"ER"
+]
+},
+"52": {
+"id": "52",
+"name": "Estonia",
+"adif_dxcc": "52",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"ES"
+]
+},
+"53": {
+"id": "53",
+"name": "Ethiopia",
+"adif_dxcc": "53",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"ET"
+]
+},
+"27": {
+"id": "27",
+"name": "Belarus",
+"adif_dxcc": "27",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "16",
+"prefixes": [
+"EU",
+"EV",
+"EW"
+]
+},
+"135": {
+"id": "135",
+"name": "Kyrgyzstan",
+"adif_dxcc": "135",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "17",
+"prefixes": [
+"EX"
+]
+},
+"262": {
+"id": "262",
+"name": "Tajikistan",
+"adif_dxcc": "262",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "17",
+"prefixes": [
+"EY"
+]
+},
+"280": {
+"id": "280",
+"name": "Turkmenistan",
+"adif_dxcc": "280",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "17",
+"prefixes": [
+"EZ"
+]
+},
+"227": {
+"id": "227",
+"name": "France",
+"adif_dxcc": "227",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"F"
+]
+},
+"79": {
+"id": "79",
+"name": "Guadeloupe",
+"adif_dxcc": "79",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"FG",
+"TO"
+]
+},
+"169": {
+"id": "169",
+"name": "Mayotte",
+"adif_dxcc": "169",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FH",
+"TO"
+]
+},
+"516": {
+"id": "516",
+"name": "St. Barths",
+"adif_dxcc": "516",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"FJ",
+"TO"
+]
+},
+"162": {
+"id": "162",
+"name": "New Caledonia",
+"adif_dxcc": "162",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"FK",
+"TX"
+]
+},
+"512": {
+"id": "512",
+"name": "Chesterfield Is.",
+"adif_dxcc": "512",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "30",
+"prefixes": [
+"FK",
+"TX"
+]
+},
+"84": {
+"id": "84",
+"name": "Martinique",
+"adif_dxcc": "84",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"FM",
+"TO"
+]
+},
+"175": {
+"id": "175",
+"name": "French Polynesia",
+"adif_dxcc": "175",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"FO",
+"TX"
+]
+},
+"508": {
+"id": "508",
+"name": "Austral Is.",
+"adif_dxcc": "508",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"FO",
+"TO"
+]
+},
+"36": {
+"id": "36",
+"name": "Clipperton I.",
+"adif_dxcc": "36",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"FO",
+"TX"
+]
+},
+"509": {
+"id": "509",
+"name": "Marquesas Is.",
+"adif_dxcc": "509",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"FO",
+"TX"
+]
+},
+"277": {
+"id": "277",
+"name": "St. Pierre & Miquelon",
+"adif_dxcc": "277",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "5",
+"prefixes": [
+"FP"
+]
+},
+"453": {
+"id": "453",
+"name": "Réunion",
+"adif_dxcc": "453",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FR",
+"TO"
+]
+},
+"213": {
+"id": "213",
+"name": "St. Martin",
+"adif_dxcc": "213",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"FS",
+"TO"
+]
+},
+"99": {
+"id": "99",
+"name": "Glorioso Is.",
+"adif_dxcc": "99",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/G",
+"TO"
+]
+},
+"124": {
+"id": "124",
+"name": "Juan de Nova & Europa Is.",
+"adif_dxcc": "124",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/J",
+"E",
+"TO"
+]
+},
+"276": {
+"id": "276",
+"name": "Tromelin I.",
+"adif_dxcc": "276",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/T",
+"TO"
+]
+},
+"41": {
+"id": "41",
+"name": "Crozet Is.",
+"adif_dxcc": "41",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/W"
+]
+},
+"131": {
+"id": "131",
+"name": "Kerguelen Is.",
+"adif_dxcc": "131",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/X"
+]
+},
+"10": {
+"id": "10",
+"name": "Amsterdam & Saint-Paul Is.",
+"adif_dxcc": "10",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"FT/Z"
+]
+},
+"298": {
+"id": "298",
+"name": "Wallis & Futuna Is.",
+"adif_dxcc": "298",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"FW"
+]
+},
+"63": {
+"id": "63",
+"name": "French Guiana",
+"adif_dxcc": "63",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"FY"
+]
+},
+"223": {
+"id": "223",
+"name": "England",
+"adif_dxcc": "223",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"G",
+"GX",
+"M"
+]
+},
+"114": {
+"id": "114",
+"name": "Isle of Man",
+"adif_dxcc": "114",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GD",
+"GT"
+]
+},
+"265": {
+"id": "265",
+"name": "Northern Ireland",
+"adif_dxcc": "265",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GI",
+"GN"
+]
+},
+"122": {
+"id": "122",
+"name": "Jersey",
+"adif_dxcc": "122",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GJ",
+"GH"
+]
+},
+"279": {
+"id": "279",
+"name": "Scotland",
+"adif_dxcc": "279",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GM",
+"GS"
+]
+},
+"902": {
+"id": "902",
+"name": "Shetland Is.",
+"adif_dxcc": "279",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GM/s"
+]
+},
+"106": {
+"id": "106",
+"name": "Guernsey",
+"adif_dxcc": "106",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GU",
+"GP"
+]
+},
+"294": {
+"id": "294",
+"name": "Wales",
+"adif_dxcc": "294",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"GW",
+"GC"
+]
+},
+"185": {
+"id": "185",
+"name": "Solomon Is.",
+"adif_dxcc": "185",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"H4"
+]
+},
+"507": {
+"id": "507",
+"name": "Temotu Province",
+"adif_dxcc": "507",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"H40"
+]
+},
+"239": {
+"id": "239",
+"name": "Hungary",
+"adif_dxcc": "239",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"HA",
+"HG"
+]
+},
+"287": {
+"id": "287",
+"name": "Switzerland",
+"adif_dxcc": "287",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"HB"
+]
+},
+"251": {
+"id": "251",
+"name": "Liechtenstein",
+"adif_dxcc": "251",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"HB0"
+]
+},
+"120": {
+"id": "120",
+"name": "Ecuador",
+"adif_dxcc": "120",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "10",
+"prefixes": [
+"HC",
+"HD"
+]
+},
+"71": {
+"id": "71",
+"name": "Galápagos Is.",
+"adif_dxcc": "71",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "10",
+"prefixes": [
+"HC8",
+"HD8"
+]
+},
+"78": {
+"id": "78",
+"name": "Haiti",
+"adif_dxcc": "78",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"HH"
+]
+},
+"72": {
+"id": "72",
+"name": "Dominican Republic",
+"adif_dxcc": "72",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"HI"
+]
+},
+"116": {
+"id": "116",
+"name": "Colombia",
+"adif_dxcc": "116",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"HJ",
+"HK",
+"5J",
+"5K"
+]
+},
+"216": {
+"id": "216",
+"name": "San Andrés & Providencia",
+"adif_dxcc": "216",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"HK0"
+]
+},
+"161": {
+"id": "161",
+"name": "Malpelo I.",
+"adif_dxcc": "161",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"HK0"
+]
+},
+"137": {
+"id": "137",
+"name": "South Korea",
+"adif_dxcc": "137",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "25",
+"prefixes": [
+"HL",
+"6K",
+"6L",
+"6M",
+"6N"
+]
+},
+"88": {
+"id": "88",
+"name": "Panama",
+"adif_dxcc": "88",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"HO",
+"HP"
+]
+},
+"80": {
+"id": "80",
+"name": "Honduras",
+"adif_dxcc": "80",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"HQ",
+"HR"
+]
+},
+"387": {
+"id": "387",
+"name": "Thailand",
+"adif_dxcc": "387",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"HS",
+"E2"
+]
+},
+"295": {
+"id": "295",
+"name": "Vatican",
+"adif_dxcc": "295",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"HV"
+]
+},
+"378": {
+"id": "378",
+"name": "Saudi Arabia",
+"adif_dxcc": "378",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"HZ"
+]
+},
+"248": {
+"id": "248",
+"name": "Italy",
+"adif_dxcc": "248",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"I"
+]
+},
+"903": {
+"id": "903",
+"name": "African Italy",
+"adif_dxcc": "248",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "33",
+"prefixes": [
+"IG9",
+"IH9"
+]
+},
+"225": {
+"id": "225",
+"name": "Sardinia",
+"adif_dxcc": "225",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"IS0",
+"IM0"
+]
+},
+"904": {
+"id": "904",
+"name": "Sicily",
+"adif_dxcc": "248",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"IT9"
+]
+},
+"382": {
+"id": "382",
+"name": "Djibouti",
+"adif_dxcc": "382",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"J2"
+]
+},
+"77": {
+"id": "77",
+"name": "Grenada",
+"adif_dxcc": "77",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"J3"
+]
+},
+"109": {
+"id": "109",
+"name": "Guinea-Bissau",
+"adif_dxcc": "109",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"J5"
+]
+},
+"97": {
+"id": "97",
+"name": "St. Lucia",
+"adif_dxcc": "97",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"J6"
+]
+},
+"95": {
+"id": "95",
+"name": "Dominica",
+"adif_dxcc": "95",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"J7"
+]
+},
+"98": {
+"id": "98",
+"name": "St. Vincent & the Grenadines",
+"adif_dxcc": "98",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"J8"
+]
+},
+"339": {
+"id": "339",
+"name": "Japan",
+"adif_dxcc": "339",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "25",
+"prefixes": [
+"JA",
+"JB",
+"JC",
+"JD",
+"JE",
+"JF",
+"JG",
+"JH",
+"JI",
+"JJ",
+"JK",
+"JL",
+"JM",
+"JN",
+"JO",
+"JP",
+"JQ",
+"JR",
+"JS",
+"7J",
+"7K",
+"7L",
+"7M",
+"7N"
+]
+},
+"177": {
+"id": "177",
+"name": "Minami-Tori-shima",
+"adif_dxcc": "177",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"JD1"
+]
+},
+"192": {
+"id": "192",
+"name": "Ogasawara Is.",
+"adif_dxcc": "192",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "27",
+"prefixes": [
+"JD1"
+]
+},
+"363": {
+"id": "363",
+"name": "Mongolia",
+"adif_dxcc": "363",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "23",
+"prefixes": [
+"JT",
+"JU",
+"JV"
+]
+},
+"259": {
+"id": "259",
+"name": "Svalbard",
+"adif_dxcc": "259",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "40",
+"prefixes": [
+"JW"
+]
+},
+"905": {
+"id": "905",
+"name": "Bear I.",
+"adif_dxcc": "259",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "40",
+"prefixes": [
+"JW/b"
+]
+},
+"118": {
+"id": "118",
+"name": "Jan Mayen",
+"adif_dxcc": "118",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "40",
+"prefixes": [
+"JX"
+]
+},
+"342": {
+"id": "342",
+"name": "Jordan",
+"adif_dxcc": "342",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"JY"
+]
+},
+"291": {
+"id": "291",
+"name": "United States",
+"adif_dxcc": "291",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "3, 4, 5",
+"prefixes": [
+"K",
+"W",
+"N",
+"AA",
+"AB",
+"AC",
+"AD",
+"AE",
+"AF",
+"AG",
+"AH",
+"AI",
+"AJ",
+"AK"
+]
+},
+"105": {
+"id": "105",
+"name": "Guantanamo Bay",
+"adif_dxcc": "105",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"KG4"
+]
+},
+"166": {
+"id": "166",
+"name": "Mariana Is.",
+"adif_dxcc": "166",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"KH0"
+]
+},
+"20": {
+"id": "20",
+"name": "Howland & Baker Is.",
+"adif_dxcc": "20",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH1"
+]
+},
+"103": {
+"id": "103",
+"name": "Guam",
+"adif_dxcc": "103",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"KH2"
+]
+},
+"123": {
+"id": "123",
+"name": "Johnston Atoll",
+"adif_dxcc": "123",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH3"
+]
+},
+"174": {
+"id": "174",
+"name": "Midway Atoll",
+"adif_dxcc": "174",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH4"
+]
+},
+"197": {
+"id": "197",
+"name": "Palmyra & Jarvis Is.",
+"adif_dxcc": "197",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH5"
+]
+},
+"110": {
+"id": "110",
+"name": "Hawaii",
+"adif_dxcc": "110",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH6",
+"KH7"
+]
+},
+"138": {
+"id": "138",
+"name": "Kure Atoll",
+"adif_dxcc": "138",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH7K"
+]
+},
+"9": {
+"id": "9",
+"name": "American Samoa",
+"adif_dxcc": "9",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"KH8"
+]
+},
+"515": {
+"id": "515",
+"name": "Swains I.",
+"adif_dxcc": "515",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"KH8"
+]
+},
+"297": {
+"id": "297",
+"name": "Wake I.",
+"adif_dxcc": "297",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"KH9"
+]
+},
+"6": {
+"id": "6",
+"name": "Alaska",
+"adif_dxcc": "6",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "1",
+"prefixes": [
+"KL",
+"AL",
+"NL",
+"WL"
+]
+},
+"182": {
+"id": "182",
+"name": "Navassa I.",
+"adif_dxcc": "182",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"KP1"
+]
+},
+"285": {
+"id": "285",
+"name": "US Virgin Is.",
+"adif_dxcc": "285",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"KP2"
+]
+},
+"202": {
+"id": "202",
+"name": "Puerto Rico",
+"adif_dxcc": "202",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"KP3",
+"KP4"
+]
+},
+"43": {
+"id": "43",
+"name": "Desecheo I.",
+"adif_dxcc": "43",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"KP5"
+]
+},
+"266": {
+"id": "266",
+"name": "Norway",
+"adif_dxcc": "266",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"LA",
+"LB",
+"LC",
+"LD",
+"LE",
+"LF",
+"LG",
+"LH",
+"LI",
+"LJ",
+"LK",
+"LL",
+"LM",
+"LN"
+]
+},
+"100": {
+"id": "100",
+"name": "Argentina",
+"adif_dxcc": "100",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"LO",
+"LP",
+"LQ",
+"LR",
+"LS",
+"LT",
+"LU",
+"LV",
+"LW"
+]
+},
+"254": {
+"id": "254",
+"name": "Luxembourg",
+"adif_dxcc": "254",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"LX"
+]
+},
+"146": {
+"id": "146",
+"name": "Lithuania",
+"adif_dxcc": "146",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"LY"
+]
+},
+"212": {
+"id": "212",
+"name": "Bulgaria",
+"adif_dxcc": "212",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"LZ"
+]
+},
+"136": {
+"id": "136",
+"name": "Perú",
+"adif_dxcc": "136",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "10",
+"prefixes": [
+"OA",
+"OB",
+"OC"
+]
+},
+"354": {
+"id": "354",
+"name": "Lebanon",
+"adif_dxcc": "354",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"OD"
+]
+},
+"206": {
+"id": "206",
+"name": "Austria",
+"adif_dxcc": "206",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OE"
+]
+},
+"224": {
+"id": "224",
+"name": "Finland",
+"adif_dxcc": "224",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OF",
+"OG",
+"OH",
+"OI"
+]
+},
+"5": {
+"id": "5",
+"name": "Åland Is.",
+"adif_dxcc": "5",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OH0"
+]
+},
+"167": {
+"id": "167",
+"name": "Märket I.",
+"adif_dxcc": "167",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OJ0"
+]
+},
+"503": {
+"id": "503",
+"name": "Czechia",
+"adif_dxcc": "503",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OK",
+"OL"
+]
+},
+"504": {
+"id": "504",
+"name": "Slovakia",
+"adif_dxcc": "504",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"OM"
+]
+},
+"209": {
+"id": "209",
+"name": "Belgium",
+"adif_dxcc": "209",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"ON",
+"OO",
+"OP",
+"OQ",
+"OR",
+"OS",
+"OT"
+]
+},
+"237": {
+"id": "237",
+"name": "Greenland",
+"adif_dxcc": "237",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "40",
+"prefixes": [
+"OX"
+]
+},
+"222": {
+"id": "222",
+"name": "Faroe Is.",
+"adif_dxcc": "222",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"OY"
+]
+},
+"221": {
+"id": "221",
+"name": "Denmark",
+"adif_dxcc": "221",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"OU",
+"OV",
+"OW",
+"OZ"
+]
+},
+"163": {
+"id": "163",
+"name": "Papua New Guinea",
+"adif_dxcc": "163",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"P2"
+]
+},
+"91": {
+"id": "91",
+"name": "Aruba",
+"adif_dxcc": "91",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"P4"
+]
+},
+"344": {
+"id": "344",
+"name": "North Korea",
+"adif_dxcc": "344",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "25",
+"prefixes": [
+"P5"
+]
+},
+"263": {
+"id": "263",
+"name": "Netherlands",
+"adif_dxcc": "263",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"PA",
+"PB",
+"PC",
+"PD",
+"PE",
+"PF",
+"PG",
+"PH",
+"PI"
+]
+},
+"517": {
+"id": "517",
+"name": "Curaçao",
+"adif_dxcc": "517",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"PJ2"
+]
+},
+"520": {
+"id": "520",
+"name": "Bonaire",
+"adif_dxcc": "520",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"PJ4"
+]
+},
+"519": {
+"id": "519",
+"name": "Saba & Sint Eustatius",
+"adif_dxcc": "519",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"PJ5",
+"PJ6"
+]
+},
+"518": {
+"id": "518",
+"name": "Sint Maarten",
+"adif_dxcc": "518",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"PJ7"
+]
+},
+"108": {
+"id": "108",
+"name": "Brazil",
+"adif_dxcc": "108",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "11",
+"prefixes": [
+"PP",
+"PQ",
+"PR",
+"PS",
+"PT",
+"PU",
+"PV",
+"PW",
+"PX",
+"PY",
+"ZV",
+"ZW",
+"ZX",
+"ZY",
+"ZZ"
+]
+},
+"56": {
+"id": "56",
+"name": "Fernando de Noronha",
+"adif_dxcc": "56",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "11",
+"prefixes": [
+"PP0F",
+"PQ0F",
+"PR0F",
+"PS0F",
+"PT0F",
+"PU0F",
+"PV0F",
+"PW0F",
+"PX0F",
+"PY0F"
+]
+},
+"253": {
+"id": "253",
+"name": "St. Peter and St. Paul Is",
+"adif_dxcc": "253",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "11",
+"prefixes": [
+"PP0S",
+"PQ0S",
+"PR0S",
+"PS0S",
+"PT0S",
+"PU0S",
+"PV0S",
+"PW0S",
+"PX0S",
+"PY0S"
+]
+},
+"273": {
+"id": "273",
+"name": "Trindade & Martin Vaz",
+"adif_dxcc": "273",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "11",
+"prefixes": [
+"PP0T",
+"PQ0T",
+"PR0T",
+"PS0T",
+"PT0T",
+"PU0T",
+"PV0T",
+"PW0T",
+"PX0T",
+"PY0T"
+]
+},
+"140": {
+"id": "140",
+"name": "Suriname",
+"adif_dxcc": "140",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"PZ"
+]
+},
+"61": {
+"id": "61",
+"name": "Franz Josef Land",
+"adif_dxcc": "61",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "40",
+"prefixes": [
+"R1/F"
+]
+},
+"302": {
+"id": "302",
+"name": "Western Sahara",
+"adif_dxcc": "302",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "33",
+"prefixes": [
+"S0"
+]
+},
+"305": {
+"id": "305",
+"name": "Bangladesh",
+"adif_dxcc": "305",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"S2"
+]
+},
+"499": {
+"id": "499",
+"name": "Slovenia",
+"adif_dxcc": "499",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"S5"
+]
+},
+"379": {
+"id": "379",
+"name": "Seychelles",
+"adif_dxcc": "379",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"S7"
+]
+},
+"219": {
+"id": "219",
+"name": "Sao Tome & Principe",
+"adif_dxcc": "219",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"S9"
+]
+},
+"284": {
+"id": "284",
+"name": "Sweden",
+"adif_dxcc": "284",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"SA",
+"SB",
+"SC",
+"SD",
+"SE",
+"SF",
+"SG",
+"SH",
+"SI",
+"SJ",
+"SK",
+"SL",
+"SM",
+"7S",
+"8S"
+]
+},
+"269": {
+"id": "269",
+"name": "Poland",
+"adif_dxcc": "269",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"SN",
+"SO",
+"SP",
+"SQ",
+"SR"
+]
+},
+"466": {
+"id": "466",
+"name": "Sudan",
+"adif_dxcc": "466",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "34",
+"prefixes": [
+"ST"
+]
+},
+"478": {
+"id": "478",
+"name": "Egypt",
+"adif_dxcc": "478",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "34",
+"prefixes": [
+"SU"
+]
+},
+"236": {
+"id": "236",
+"name": "Greece",
+"adif_dxcc": "236",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"SV",
+"SW",
+"SX",
+"SY",
+"SZ",
+"J4"
+]
+},
+"180": {
+"id": "180",
+"name": "Mount Athos",
+"adif_dxcc": "180",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"SV/A"
+]
+},
+"45": {
+"id": "45",
+"name": "Dodecanese",
+"adif_dxcc": "45",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"SV5",
+"J45"
+]
+},
+"40": {
+"id": "40",
+"name": "Crete",
+"adif_dxcc": "40",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"SV9",
+"J49"
+]
+},
+"282": {
+"id": "282",
+"name": "Tuvalu",
+"adif_dxcc": "282",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"T2"
+]
+},
+"301": {
+"id": "301",
+"name": "W. Kiribati",
+"adif_dxcc": "301",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"T30"
+]
+},
+"31": {
+"id": "31",
+"name": "C. Kiribati",
+"adif_dxcc": "31",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"T31"
+]
+},
+"48": {
+"id": "48",
+"name": "E. Kiribati",
+"adif_dxcc": "48",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"T32"
+]
+},
+"490": {
+"id": "490",
+"name": "Banaba I.",
+"adif_dxcc": "490",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"T33"
+]
+},
+"232": {
+"id": "232",
+"name": "Somalia",
+"adif_dxcc": "232",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "37",
+"prefixes": [
+"T5",
+"6O"
+]
+},
+"278": {
+"id": "278",
+"name": "San Marino",
+"adif_dxcc": "278",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"T7"
+]
+},
+"22": {
+"id": "22",
+"name": "Palau",
+"adif_dxcc": "22",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"T8"
+]
+},
+"390": {
+"id": "390",
+"name": "Turkey",
+"adif_dxcc": "390",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"TA",
+"TB",
+"TC"
+]
+},
+"906": {
+"id": "906",
+"name": "European Turkey",
+"adif_dxcc": "390",
+"source": "WAE",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"TA1"
+]
+},
+"242": {
+"id": "242",
+"name": "Iceland",
+"adif_dxcc": "242",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "40",
+"prefixes": [
+"TF"
+]
+},
+"76": {
+"id": "76",
+"name": "Guatemala",
+"adif_dxcc": "76",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"TG",
+"TD"
+]
+},
+"308": {
+"id": "308",
+"name": "Costa Rica",
+"adif_dxcc": "308",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"TI",
+"TE"
+]
+},
+"37": {
+"id": "37",
+"name": "Cocos I.",
+"adif_dxcc": "37",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"TI9"
+]
+},
+"406": {
+"id": "406",
+"name": "Cameroon",
+"adif_dxcc": "406",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"TJ"
+]
+},
+"214": {
+"id": "214",
+"name": "Corsica",
+"adif_dxcc": "214",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"TK"
+]
+},
+"408": {
+"id": "408",
+"name": "C. African Republic",
+"adif_dxcc": "408",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"TL"
+]
+},
+"412": {
+"id": "412",
+"name": "Congo-Brazzaville",
+"adif_dxcc": "412",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"TN"
+]
+},
+"420": {
+"id": "420",
+"name": "Gabon",
+"adif_dxcc": "420",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"TR"
+]
+},
+"410": {
+"id": "410",
+"name": "Chad",
+"adif_dxcc": "410",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"TT"
+]
+},
+"428": {
+"id": "428",
+"name": "Côte d'Ivoire",
+"adif_dxcc": "428",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"TU"
+]
+},
+"416": {
+"id": "416",
+"name": "Benin",
+"adif_dxcc": "416",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"TY"
+]
+},
+"442": {
+"id": "442",
+"name": "Mali",
+"adif_dxcc": "442",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"TZ"
+]
+},
+"54": {
+"id": "54",
+"name": "European Russia",
+"adif_dxcc": "54",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "16",
+"prefixes": [
+"UA1",
+"UA2",
+"UA3",
+"UA4",
+"UA5",
+"UA6",
+"UA7",
+"UB1",
+"UB2",
+"UB3",
+"UB4",
+"UB5",
+"UB6",
+"UB7",
+"UC1",
+"UC2",
+"UC3",
+"UC4",
+"UC5",
+"UC6",
+"UC7",
+"UD1",
+"UD2",
+"UD3",
+"UD4",
+"UD5",
+"UD6",
+"UD7",
+"UE1",
+"UE2",
+"UE3",
+"UE4",
+"UE5",
+"UE6",
+"UE7",
+"UF1",
+"UF2",
+"UF3",
+"UF4",
+"UF5",
+"UF6",
+"UF7",
+"UG1",
+"UG2",
+"UG3",
+"UG4",
+"UG5",
+"UG6",
+"UG7",
+"UH1",
+"UH2",
+"UH3",
+"UH4",
+"UH5",
+"UH6",
+"UH7",
+"UI1",
+"UI2",
+"UI3",
+"UI4",
+"UI5",
+"UI6",
+"UI7",
+"RA",
+"RB",
+"RC",
+"RD",
+"RE",
+"RF",
+"RG",
+"RH",
+"RI",
+"RJ",
+"RK",
+"RL",
+"RM",
+"RN",
+"RO",
+"RP",
+"RQ",
+"RR",
+"RS",
+"RT",
+"RU",
+"RV",
+"RW",
+"RX",
+"RY",
+"RZ"
+]
+},
+"126": {
+"id": "126",
+"name": "Kaliningrad",
+"adif_dxcc": "126",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"UA2",
+"RA2"
+]
+},
+"15": {
+"id": "15",
+"name": "Asiatic Russia",
+"adif_dxcc": "15",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "16, 17, 18, 19, 23",
+"prefixes": [
+"UA0",
+"UA8",
+"UA9",
+"UB0",
+"UB8",
+"UB9",
+"UC0",
+"UC8",
+"UC9",
+"UD0",
+"UD8",
+"UD9",
+"UE0",
+"UE8",
+"UE9",
+"UF0",
+"UF8",
+"UF9",
+"UG0",
+"UG8",
+"UG9",
+"UH0",
+"UH8",
+"UH9",
+"UI0",
+"UI8",
+"UI9",
+"RA",
+"RB",
+"RC",
+"RD",
+"RE",
+"RF",
+"RG",
+"RH",
+"RI",
+"RJ",
+"RK",
+"RL",
+"RM",
+"RN",
+"RO",
+"RP",
+"RQ",
+"RR",
+"RS",
+"RT",
+"RU",
+"RV",
+"RW",
+"RX",
+"RY",
+"RZ"
+]
+},
+"292": {
+"id": "292",
+"name": "Uzbekistan",
+"adif_dxcc": "292",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "17",
+"prefixes": [
+"UJ",
+"UK",
+"UL",
+"UM"
+]
+},
+"130": {
+"id": "130",
+"name": "Kazakhstan",
+"adif_dxcc": "130",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "17",
+"prefixes": [
+"UN",
+"UO",
+"UP",
+"UQ"
+]
+},
+"288": {
+"id": "288",
+"name": "Ukraine",
+"adif_dxcc": "288",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "16",
+"prefixes": [
+"UR",
+"US",
+"UT",
+"UU",
+"UV",
+"UW",
+"UX",
+"UY",
+"UZ",
+"EM",
+"EN",
+"EO"
+]
+},
+"94": {
+"id": "94",
+"name": "Antigua & Barbuda",
+"adif_dxcc": "94",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"V2"
+]
+},
+"66": {
+"id": "66",
+"name": "Belize",
+"adif_dxcc": "66",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"V3"
+]
+},
+"249": {
+"id": "249",
+"name": "St. Kitts & Nevis",
+"adif_dxcc": "249",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"V4"
+]
+},
+"464": {
+"id": "464",
+"name": "Namibia",
+"adif_dxcc": "464",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"V5"
+]
+},
+"173": {
+"id": "173",
+"name": "Micronesia",
+"adif_dxcc": "173",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "27",
+"prefixes": [
+"V6"
+]
+},
+"168": {
+"id": "168",
+"name": "Marshall Is.",
+"adif_dxcc": "168",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"V7"
+]
+},
+"345": {
+"id": "345",
+"name": "Brunei Darussalam",
+"adif_dxcc": "345",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"V8"
+]
+},
+"1": {
+"id": "1",
+"name": "Canada",
+"adif_dxcc": "1",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "1, 2, 3, 4, 5",
+"prefixes": [
+"VA",
+"VB",
+"VC",
+"VD",
+"VE",
+"VF",
+"VG",
+"VO",
+"VY"
+]
+},
+"150": {
+"id": "150",
+"name": "Australia",
+"adif_dxcc": "150",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "29, 30",
+"prefixes": [
+"VK",
+"AX"
+]
+},
+"111": {
+"id": "111",
+"name": "Heard I. & McDonald Is.",
+"adif_dxcc": "111",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"VK0"
+]
+},
+"153": {
+"id": "153",
+"name": "Macquarie I.",
+"adif_dxcc": "153",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "30",
+"prefixes": [
+"VK0"
+]
+},
+"38": {
+"id": "38",
+"name": "Cocos (Keeling) Is.",
+"adif_dxcc": "38",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "29",
+"prefixes": [
+"VK9C"
+]
+},
+"147": {
+"id": "147",
+"name": "Lord Howe I.",
+"adif_dxcc": "147",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "30",
+"prefixes": [
+"VK9L"
+]
+},
+"171": {
+"id": "171",
+"name": "Mellish Reef",
+"adif_dxcc": "171",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "30",
+"prefixes": [
+"VK9M"
+]
+},
+"189": {
+"id": "189",
+"name": "Norfolk I.",
+"adif_dxcc": "189",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"VK9N"
+]
+},
+"303": {
+"id": "303",
+"name": "Willis I.",
+"adif_dxcc": "303",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "30",
+"prefixes": [
+"VK9W"
+]
+},
+"35": {
+"id": "35",
+"name": "Christmas I.",
+"adif_dxcc": "35",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "29",
+"prefixes": [
+"VK9X"
+]
+},
+"12": {
+"id": "12",
+"name": "Anguilla",
+"adif_dxcc": "12",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"VP2E"
+]
+},
+"96": {
+"id": "96",
+"name": "Montserrat",
+"adif_dxcc": "96",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"VP2M"
+]
+},
+"65": {
+"id": "65",
+"name": "British Virgin Is.",
+"adif_dxcc": "65",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"VP2V"
+]
+},
+"89": {
+"id": "89",
+"name": "Turks & Caicos Is.",
+"adif_dxcc": "89",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"VP5"
+]
+},
+"172": {
+"id": "172",
+"name": "Pitcairn Is.",
+"adif_dxcc": "172",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"VP6"
+]
+},
+"513": {
+"id": "513",
+"name": "Ducie I.",
+"adif_dxcc": "513",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"VP6"
+]
+},
+"141": {
+"id": "141",
+"name": "Falkland Is.",
+"adif_dxcc": "141",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"VP8"
+]
+},
+"235": {
+"id": "235",
+"name": "South Georgia I.",
+"adif_dxcc": "235",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"VP8",
+"LU"
+]
+},
+"241": {
+"id": "241",
+"name": "South Shetland Is.",
+"adif_dxcc": "241",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"VP8",
+"LU",
+"CE9",
+"HF0",
+"4K1"
+]
+},
+"238": {
+"id": "238",
+"name": "South Orkney Is.",
+"adif_dxcc": "238",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"VP8",
+"LU"
+]
+},
+"240": {
+"id": "240",
+"name": "South Sandwich Is.",
+"adif_dxcc": "240",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "13",
+"prefixes": [
+"VP8",
+"LU"
+]
+},
+"64": {
+"id": "64",
+"name": "Bermuda",
+"adif_dxcc": "64",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "5",
+"prefixes": [
+"VP9"
+]
+},
+"33": {
+"id": "33",
+"name": "Chagos Is.",
+"adif_dxcc": "33",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "39",
+"prefixes": [
+"VQ9"
+]
+},
+"321": {
+"id": "321",
+"name": "Hong Kong",
+"adif_dxcc": "321",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "24",
+"prefixes": [
+"VR"
+]
+},
+"324": {
+"id": "324",
+"name": "India",
+"adif_dxcc": "324",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"VU"
+]
+},
+"11": {
+"id": "11",
+"name": "Andaman & Nicobar Is.",
+"adif_dxcc": "11",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"VU4"
+]
+},
+"142": {
+"id": "142",
+"name": "Lakshadweep",
+"adif_dxcc": "142",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "22",
+"prefixes": [
+"VU7"
+]
+},
+"50": {
+"id": "50",
+"name": "México",
+"adif_dxcc": "50",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "6",
+"prefixes": [
+"XA",
+"XB",
+"XC",
+"XD",
+"XE",
+"XF",
+"XG",
+"XH",
+"XI"
+]
+},
+"204": {
+"id": "204",
+"name": "Revillagigedo Is.",
+"adif_dxcc": "204",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "6",
+"prefixes": [
+"XA4",
+"XB4",
+"XC4",
+"XD4",
+"XE4",
+"XF4",
+"XG4",
+"XH4",
+"XI4"
+]
+},
+"480": {
+"id": "480",
+"name": "Burkina Faso",
+"adif_dxcc": "480",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "35",
+"prefixes": [
+"XT"
+]
+},
+"312": {
+"id": "312",
+"name": "Cambodia",
+"adif_dxcc": "312",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"XU"
+]
+},
+"143": {
+"id": "143",
+"name": "Laos",
+"adif_dxcc": "143",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"XW"
+]
+},
+"152": {
+"id": "152",
+"name": "Macao",
+"adif_dxcc": "152",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "24",
+"prefixes": [
+"XX9"
+]
+},
+"309": {
+"id": "309",
+"name": "Myanmar",
+"adif_dxcc": "309",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "26",
+"prefixes": [
+"XY",
+"XZ"
+]
+},
+"3": {
+"id": "3",
+"name": "Afghanistan",
+"adif_dxcc": "3",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"YA",
+"T6"
+]
+},
+"327": {
+"id": "327",
+"name": "Indonesia",
+"adif_dxcc": "327",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "28",
+"prefixes": [
+"YB",
+"YC",
+"YD",
+"YE",
+"YF",
+"YG",
+"YH"
+]
+},
+"333": {
+"id": "333",
+"name": "Iraq",
+"adif_dxcc": "333",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "21",
+"prefixes": [
+"YI"
+]
+},
+"158": {
+"id": "158",
+"name": "Vanuatu",
+"adif_dxcc": "158",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"YJ"
+]
+},
+"384": {
+"id": "384",
+"name": "Syria",
+"adif_dxcc": "384",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"YK"
+]
+},
+"145": {
+"id": "145",
+"name": "Latvia",
+"adif_dxcc": "145",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"YL"
+]
+},
+"86": {
+"id": "86",
+"name": "Nicaragua",
+"adif_dxcc": "86",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"YN",
+"H6",
+"H7",
+"HT"
+]
+},
+"275": {
+"id": "275",
+"name": "Romania",
+"adif_dxcc": "275",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "20",
+"prefixes": [
+"YO",
+"YP",
+"YQ",
+"YR"
+]
+},
+"74": {
+"id": "74",
+"name": "El Salvador",
+"adif_dxcc": "74",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "7",
+"prefixes": [
+"YS",
+"HU"
+]
+},
+"296": {
+"id": "296",
+"name": "Serbia",
+"adif_dxcc": "296",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"YT",
+"YU"
+]
+},
+"148": {
+"id": "148",
+"name": "Venezuela",
+"adif_dxcc": "148",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "9",
+"prefixes": [
+"YV",
+"YW",
+"YX",
+"YY",
+"4M"
+]
+},
+"17": {
+"id": "17",
+"name": "Aves I.",
+"adif_dxcc": "17",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"YV0"
+]
+},
+"452": {
+"id": "452",
+"name": "Zimbabwe",
+"adif_dxcc": "452",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"Z2"
+]
+},
+"502": {
+"id": "502",
+"name": "N. Macedonia",
+"adif_dxcc": "502",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"Z3"
+]
+},
+"522": {
+"id": "522",
+"name": "Kosovo",
+"adif_dxcc": "522",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"Z6"
+]
+},
+"521": {
+"id": "521",
+"name": "South Sudan",
+"adif_dxcc": "521",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "34",
+"prefixes": [
+"Z8"
+]
+},
+"7": {
+"id": "7",
+"name": "Albania",
+"adif_dxcc": "7",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "15",
+"prefixes": [
+"ZA"
+]
+},
+"233": {
+"id": "233",
+"name": "Gibraltar",
+"adif_dxcc": "233",
+"source": "DXCC",
+"continent": "EU",
+"cq_zones": "14",
+"prefixes": [
+"ZB2"
+]
+},
+"283": {
+"id": "283",
+"name": "UK Bases on Cyprus",
+"adif_dxcc": "283",
+"source": "DXCC",
+"continent": "AS",
+"cq_zones": "20",
+"prefixes": [
+"ZC4"
+]
+},
+"250": {
+"id": "250",
+"name": "St. Helena",
+"adif_dxcc": "250",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"ZD7"
+]
+},
+"205": {
+"id": "205",
+"name": "Ascension I.",
+"adif_dxcc": "205",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "36",
+"prefixes": [
+"ZD8"
+]
+},
+"274": {
+"id": "274",
+"name": "Tristan da Cunha & Gough Is.",
+"adif_dxcc": "274",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"ZD9"
+]
+},
+"69": {
+"id": "69",
+"name": "Cayman Is.",
+"adif_dxcc": "69",
+"source": "DXCC",
+"continent": "NA",
+"cq_zones": "8",
+"prefixes": [
+"ZF"
+]
+},
+"270": {
+"id": "270",
+"name": "Tokelau",
+"adif_dxcc": "270",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "31",
+"prefixes": [
+"ZK3"
+]
+},
+"170": {
+"id": "170",
+"name": "New Zealand",
+"adif_dxcc": "170",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"ZL",
+"ZM"
+]
+},
+"34": {
+"id": "34",
+"name": "Chatham Is.",
+"adif_dxcc": "34",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"ZL7"
+]
+},
+"133": {
+"id": "133",
+"name": "Kermadec Is.",
+"adif_dxcc": "133",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"ZL8"
+]
+},
+"16": {
+"id": "16",
+"name": "NZ Subantarctic Is.",
+"adif_dxcc": "16",
+"source": "DXCC",
+"continent": "OC",
+"cq_zones": "32",
+"prefixes": [
+"ZL9"
+]
+},
+"132": {
+"id": "132",
+"name": "Paraguay",
+"adif_dxcc": "132",
+"source": "DXCC",
+"continent": "SA",
+"cq_zones": "11",
+"prefixes": [
+"ZP"
+]
+},
+"462": {
+"id": "462",
+"name": "South Africa",
+"adif_dxcc": "462",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"ZR",
+"ZS",
+"ZT",
+"ZU"
+]
+},
+"201": {
+"id": "201",
+"name": "Prince Edward & Marion Is.",
+"adif_dxcc": "201",
+"source": "DXCC",
+"continent": "AF",
+"cq_zones": "38",
+"prefixes": [
+"ZS8"
+]
+}
+}

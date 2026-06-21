@@ -1,0 +1,162 @@
+{
+"1": {
+"name": "Northwestern North America",
+"likely": "KL7,VE8, VY1"
+},
+"2": {
+"name": "Northeastern North America",
+"likely": "VO2,VE2(>50ºN)"
+},
+"3": {
+"name": "Western North America",
+"likely": "W6-7; VE7"
+},
+"4": {
+"name": "Central North America",
+"likely": "W5,8,9,0; VE3-6"
+},
+"5": {
+"name": "Eastern North America",
+"likely": "W1-4;VE1,2,9,VO1,VY2"
+},
+"6": {
+"name": "Southern North America",
+"likely": "XE"
+},
+"7": {
+"name": "Central America",
+"likely": "HP,HR,TG,TI,V3,YN,YS"
+},
+"8": {
+"name": "Western Indies",
+"likely": ""
+},
+"9": {
+"name": "Northern South America",
+"likely": "FY,HK,P4,PJ,PZ,YV,8R,9Y"
+},
+"10": {
+"name": "Western South America",
+"likely": "CP,HC,HC8,OA"
+},
+"11": {
+"name": "Central South America",
+"likely": "PY,ZP"
+},
+"12": {
+"name": "Southwestern South America",
+"likely": "CE"
+},
+"13": {
+"name": "Southeastern South America",
+"likely": "CX,LU,VP8"
+},
+"14": {
+"name": "Western Europe",
+"likely": ""
+},
+"15": {
+"name": "Central Europe",
+"likely": ""
+},
+"16": {
+"name": "Eastern Europe",
+"likely": ""
+},
+"17": {
+"name": "Western Siberia",
+"likely": "EZ,EY,EX,UA9,UN,UJ"
+},
+"18": {
+"name": "Central Siberia",
+"likely": "UA9,0"
+},
+"19": {
+"name": "Eastern Siberia",
+"likely": "UA0"
+},
+"20": {
+"name": "Balkans Zone",
+"likely": "JY,LZ,OD,SV,TA,YK,YO,4X,5B"
+},
+"21": {
+"name": "Southwestern Asia",
+"likely": ""
+},
+"22": {
+"name": "Southern Asia",
+"likely": "A5,S2,VU,4S,8Q,9N"
+},
+"23": {
+"name": "Central Asia",
+"likely": "JT,UA0Y,BY0"
+},
+"24": {
+"name": "Eastern Asia",
+"likely": "BV,BY,VR2,XX"
+},
+"25": {
+"name": "Japan Zone",
+"likely": "HL,JA"
+},
+"26": {
+"name": "Southeastern Asia",
+"likely": "HS,3W,XU,XW,XZ"
+},
+"27": {
+"name": "Philippines Zone",
+"likely": "DU,T8,KH2,KH0,V6"
+},
+"28": {
+"name": "Indonesia Zone",
+"likely": "H4,P2,V8,YB,9M,9V,4W"
+},
+"29": {
+"name": "Western Australia",
+"likely": "VK6,VK8"
+},
+"30": {
+"name": "Eastern Australia",
+"likely": "VK1-5,VK7"
+},
+"31": {
+"name": "Central Pacific",
+"likely": "C2,KH1,KH3-7,KH9,T2-3,V7,ZK3"
+},
+"32": {
+"name": "New Zealand Zone",
+"likely": "A3,E5-6,FK,FO,FW,KH8,YJ,ZL,5W"
+},
+"33": {
+"name": "Northwestern Africa",
+"likely": ""
+},
+"34": {
+"name": "Northeastern Africa",
+"likely": "5A,ST,SU,Z8"
+},
+"35": {
+"name": "Central Africa",
+"likely": ""
+},
+"36": {
+"name": "Equatorial Africa",
+"likely": ""
+},
+"37": {
+"name": "Eastern Africa",
+"likely": "C9,ET,E3,J2,T5,5H,5X,5Z,7O,7Q"
+},
+"38": {
+"name": "South Africa",
+"likely": "A2,V5,ZS,ZD9,3DA,7P"
+},
+"39": {
+"name": "Madagascar Zone",
+"likely": "D6,FH,FR,S7,VQ9,3B6-9,5R8"
+},
+"40": {
+"name": "North Atlantic",
+"likely": "JW,JX,OX,TF"
+}
+}

@@ -1,0 +1,41 @@
+Prefix,Id,Name,Likely Prefixes
+Zone 1,1001,Northwestern North America,"KL7,VE8, VY1"
+Zone 2,1002,Northeastern North America,"VO2,VE2(>50ºN)"
+Zone 3,1003,Western North America,W6-7; VE7
+Zone 4,1004,Central North America,"W5,8,9,0; VE3-6"
+Zone 5,1005,Eastern North America,"W1-4;VE1,2,9,VO1,VY2"
+Zone 6,1006,Southern North America,XE
+Zone 7,1007,Central America,"HP,HR,TG,TI,V3,YN,YS"
+Zone 8,1008,Western Indies,
+Zone 9,1009,Northern South America,"FY,HK,P4,PJ,PZ,YV,8R,9Y"
+Zone 10,1010,Western South America,"CP,HC,HC8,OA"
+Zone 11,1011,Central South America,"PY,ZP"
+Zone 12,1012,Southwestern South America,CE
+Zone 13,1013,Southeastern South America,"CX,LU,VP8"
+Zone 14,1014,Western Europe,
+Zone 15,1015,Central Europe,
+Zone 16,1016,Eastern Europe,
+Zone 17,1017,Western Siberia,"EZ,EY,EX,UA9,UN,UJ"
+Zone 18,1018,Central Siberia,"UA9,0"
+Zone 19,1019,Eastern Siberia,UA0
+Zone 20,1020,Balkans Zone,"JY,LZ,OD,SV,TA,YK,YO,4X,5B"
+Zone 21,1021,Southwestern Asia,
+Zone 22,1022,Southern Asia,"A5,S2,VU,4S,8Q,9N"
+Zone 23,1023,Central Asia,"JT,UA0Y,BY0"
+Zone 24,1024,Eastern Asia,"BV,BY,VR2,XX"
+Zone 25,1025,Japan Zone,"HL,JA"
+Zone 26,1026,Southeastern Asia,"HS,3W,XU,XW,XZ"
+Zone 27,1027,Philippines Zone,"DU,T8,KH2,KH0,V6"
+Zone 28,1028,Indonesia Zone,"H4,P2,V8,YB,9M,9V,4W"
+Zone 29,1029,Western Australia,"VK6,VK8"
+Zone 30,1030,Eastern Australia,"VK1-5,VK7"
+Zone 31,1031,Central Pacific,"C2,KH1,KH3-7,KH9,T2-3,V7,ZK3"
+Zone 32,1032,New Zealand Zone,"A3,E5-6,FK,FO,FW,KH8,YJ,ZL,5W"
+Zone 33,1033,Northwestern Africa,
+Zone 34,1034,Northeastern Africa,"5A,ST,SU,Z8"
+Zone 35,1035,Central Africa,
+Zone 36,1036,Equatorial Africa,
+Zone 37,1037,Eastern Africa,"C9,ET,E3,J2,T5,5H,5X,5Z,7O,7Q"
+Zone 38,1038,South Africa,"A2,V5,ZS,ZD9,3DA,7P"
+Zone 39,1039,Madagascar Zone,"D6,FH,FR,S7,VQ9,3B6-9,5R8"
+Zone 40,1040,North Atlantic,"JW,JX,OX,TF"

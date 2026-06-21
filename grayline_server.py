@@ -29,6 +29,7 @@ import flexradio
 import logbook_uploads
 import lotw_fetch
 import lotw_activity
+import dxmarathon
 import telnet_server
 from ctydat import CtyDat
 from worked_state import WorkedState, mode_class, resolve_prefecture
@@ -1169,6 +1170,9 @@ def _refresh_cache_worked_status():
                 s["grid_band_status"] = _worked.grid_band_status(grid, band)
             if s.get("waja_pref"):
                 s["waja_status"] = _worked.prefecture_status(s["waja_pref"])
+            if _cty:
+                s["marathon"] = _marathon_status(dxmarathon.entity_id(s["dx_call"], _cty),
+                                                 dxmarathon.zone(s["dx_call"], _cty))
 
 
 def _build_adif_record(parsed: dict, country: str = "", dxcc: str = "", band: str = "") -> str:
@@ -1782,6 +1786,49 @@ def _telnet_feed_radius_mi(band: str) -> int:
             else TELNET_FEED_RADIUS_HF_MI)
 
 
+# ---- CQ DX Marathon (annual, worked-based: entities + CQ zones for the current
+# UTC year, against the OFFICIAL 346/40 list via the WAE-aware resolver). Built
+# from _worked.qsos so it stays in lockstep with the logbook; rebuilt on reload.
+_MARATHON_ENT: set[str] = set()    # Combined-ADIF-Code entity ids worked this year
+_MARATHON_ZONE: set[str] = set()   # CQ zones ("1".."40") worked this year
+_MARATHON_YEAR: str = ""           # the UTC year these sets cover (for display)
+
+
+def _rebuild_marathon():
+    """Rebuild the current-year Marathon worked sets from the logbook. Auto-resets
+    Jan 1 UTC because the year filter changes. Resolves each QSO's call through the
+    WAE-aware dxmarathon resolver so the 6 WAE entities (Sicily, etc.) count right."""
+    global _MARATHON_ENT, _MARATHON_ZONE, _MARATHON_YEAR
+    if not (_worked and _cty):
+        return
+    year = time.strftime("%Y", time.gmtime())
+    ents, zones = set(), set()
+    for q in getattr(_worked, "qsos", []):
+        if (q.get("qso_date", "") or "")[:4] != year:
+            continue
+        call = q.get("call", "")
+        mid = dxmarathon.entity_id(call, _cty)
+        if mid:
+            ents.add(mid)
+        z = dxmarathon.zone(call, _cty)
+        if z:
+            zones.add(z)
+    _MARATHON_ENT, _MARATHON_ZONE, _MARATHON_YEAR = ents, zones, year
+
+
+def _marathon_status(entity_id, zone):
+    """Per-spot Marathon need: 'DXCC' | 'CQz' | 'DX+CQz' | None (nothing needed)."""
+    need_e = entity_id is not None and entity_id not in _MARATHON_ENT
+    need_z = zone is not None and zone not in _MARATHON_ZONE
+    if need_e and need_z:
+        return "DX+CQz"
+    if need_e:
+        return "DXCC"
+    if need_z:
+        return "CQz"
+    return None
+
+
 def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
@@ -1872,6 +1919,10 @@ def add_spot(spot, cluster_name, calling_me=False):
             itu_zone = str(e.itu_zone) if e.itu_zone is not None else ""
             dxcc_num = str(e.dxcc) if e.dxcc else ""
 
+    # CQ DX Marathon need (WAE-aware entity + zone vs this year's worked sets)
+    marathon = _marathon_status(dxmarathon.entity_id(spot.dx_call, _cty) if _cty else None,
+                                dxmarathon.zone(spot.dx_call, _cty) if _cty else None)
+
     # Effective grid — never REGRESS to blank. FT8 carries the grid only in a
     # CQ / grid-reply; mid-QSO messages (reports, R-15, RR73, 73) have none, so a
     # later decode of the same station (same cache key) would otherwise wipe the
@@ -1950,6 +2001,7 @@ def add_spot(spot, cluster_name, calling_me=False):
             "dxcc_rank": (_DXCC_RARITY.get(dxcc_num) if dxcc_num else None),  # Club Log Most Wanted rank (lower=rarer) or None
             "lotw_days": lotw_activity.days_since_upload(spot.dx_call),  # days since last LoTW upload, or None if not a LoTW user
             "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
+            "marathon": marathon,                           # CQ DX Marathon need this year: 'DXCC'|'CQz'|'DX+CQz'|None
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
@@ -2332,6 +2384,11 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; }
 .lotw-fresh { background: #2f81f7; color: #fff; }                  /* uploaded within threshold — work it */
 .lotw-stale { background: #2a3f55; color: #8fb3d9; opacity: 0.85; } /* LoTW user but quiet for a while */
+/* CQ DX Marathon badge — needed entity/zone this year. Purple: a free hue, distinct
+   from rarity-red, CQ-green, LoTW-blue, award-orange. */
+.mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
+  border: 1px solid transparent; background: #7d3cc9; color: #fff;
+  font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
 /* "Calling you" — a station transmitting MY callsign right now. Red row, white
    text, floated to the top of the roster. The whole point is to not miss it. */
 tr.calling-me td { background: #d11 !important; color: #fff !important; }
@@ -2641,6 +2698,7 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-section active" id="view_live">
   <div class="controls">
     <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
+    <label style="margin-left:1em" title="CQ DX Marathon — annual, worked-based: entities + CQ zones not yet worked this year. Official 346-entity / 40-zone list."><input type="checkbox" id="marathon_on"> DX Marathon needed (official 346/40)</label>
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
@@ -2786,6 +2844,14 @@ const showWantedCB = document.getElementById("show_wanted");
 showWantedCB.checked = localStorage.getItem("grayline_show_wanted") === "1";
 showWantedCB.addEventListener("change", () => {
   localStorage.setItem("grayline_show_wanted", showWantedCB.checked ? "1" : "0");
+  refresh();
+});
+
+// DX Marathon (opt-in, CQ award — off by default like the other non-ARRL extras).
+const marathonCB = document.getElementById("marathon_on");
+marathonCB.checked = localStorage.getItem("grayline_marathon") === "1";
+marathonCB.addEventListener("change", () => {
+  localStorage.setItem("grayline_marathon", marathonCB.checked ? "1" : "0");
   refresh();
 });
 
@@ -3032,6 +3098,18 @@ function rarityBadge(s) {
 // will confirm; stale user => dimmed. Non-user => no badge. Threshold is injected
 // from config so a recency slider can drive it later.
 const LOTW_FRESH_DAYS = parseInt("__LOTW_FRESH_DAYS__", 10) || 365;
+// CQ DX Marathon badge — shows only when the Marathon toggle is on AND this spot
+// is a new entity and/or new zone for the current year. s.marathon is computed
+// server-side against the official 346/40 list (WAE-aware).  'DXCC' | 'CQz' | 'DX+CQz'
+function marathonBadge(s) {
+  if (!marathonCB.checked || !s.marathon) return "";
+  const label = s.marathon === "DX+CQz" ? "MARA DX+Z" : (s.marathon === "CQz" ? "MARA Z" : "MARA");
+  const title = s.marathon === "DX+CQz" ? "DX Marathon: new entity AND new zone this year"
+              : (s.marathon === "CQz" ? "DX Marathon: new CQ zone this year"
+              : "DX Marathon: new entity this year");
+  return ` <span class="mara" title="${title}">${label}</span>`;
+}
+
 function lotwBadge(s) {
   const d = s.lotw_days;
   if (d == null) return "";   // not a LoTW user
@@ -3519,7 +3597,7 @@ async function refresh() {
       const callTag = s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "";
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
-      ).join("");
+      ).join("") + marathonBadge(s);   // Marathon lives with the other award pills
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}</td>
@@ -4612,6 +4690,7 @@ async def main():
     except Exception as e:
         log.warning("cty.dat load failed (DXCC enrichment disabled): %s", e)
     try:
+        dxmarathon.load()   # official CQ DX Marathon 346-entity / 40-zone list
         _worked = WorkedState(str(LOGBOOK_PATH))
         # Share Grayline's QRZ-derived JA prefecture cache so the WAJA scores grid
         # can resolve prefecture for FT8 QSOs that carry no ADIF STATE (e.g. JH0RNN
@@ -4619,6 +4698,7 @@ async def main():
         # already ran one reload(), so rebuild now that the cache is attached.
         _worked.ja_pref_lookup = _ja_pref_cache
         _worked.force_reload()
+        _rebuild_marathon()   # current-year Marathon worked sets from the logbook
     except Exception as e:
         log.warning("worked_state load failed (worked-status disabled): %s", e)
 
@@ -4639,6 +4719,7 @@ async def main():
                     # Otherwise stale dxcc_band_status etc. baked in at
                     # ingest time would persist until each spot ages out.
                     _refresh_cache_worked_status()
+                    _rebuild_marathon()   # keep Marathon year-sets in lockstep
                     log.info("worked_state reloaded — cache statuses refreshed")
 
     def lotw_fetch_loop():
