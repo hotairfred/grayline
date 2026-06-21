@@ -30,6 +30,7 @@ import logbook_uploads
 import lotw_fetch
 import lotw_activity
 import dxmarathon
+import psk_heard
 import telnet_server
 from ctydat import CtyDat
 from worked_state import WorkedState, mode_class, resolve_prefecture
@@ -1988,6 +1989,7 @@ def add_spot(spot, cluster_name, calling_me=False):
                 return
         # FFMA grid rarity (Tier 0, global): only meaningful on 6m (FFMA is a 6m award).
         ffma_rarity = _FFMA_RARITY.get(eff_grid[:4].upper()) if (band == "6m" and eff_grid) else None
+        heard_me = psk_heard.heard(spot.dx_call)   # this station reported decoding ME to PSKReporter
         _cache[key] = {
             "ts": time.time(),
             "band": band,
@@ -2005,6 +2007,7 @@ def add_spot(spot, cluster_name, calling_me=False):
             "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
             "marathon": marathon,                           # CQ DX Marathon need this year: 'DXCC'|'CQz'|'DX+CQz'|None
             "ffma_rarity": ffma_rarity,                     # FFMA grid rarity (6m only): {pct_needed,leaders_needing,tier} or None
+            "heard_me": heard_me,                           # this station reported decoding ME to PSKReporter (eye badge) or None
             "continent": continent,
             "cq_zone": cq_zone,
             "itu_zone": itu_zone,
@@ -2058,6 +2061,20 @@ def purge_loop():
                 del _cache[k]
 
 
+def psk_heard_loop():
+    """Poll PSKReporter for 'who heard MY_CALL' every ~5 min and refresh the eye on
+    every cached spot. Only lights up while you've been transmitting and decoded."""
+    while True:
+        try:
+            psk_heard.refresh(CALLSIGN)
+            with _lock:
+                for s in _cache.values():
+                    s["heard_me"] = psk_heard.heard(s["dx_call"])
+        except Exception as e:
+            log.warning("psk_heard_loop error: %s", e)
+        time.sleep(psk_heard.POLL_SEC)
+
+
 def snapshot():
     with _lock:
         rows = list(_cache.values())
@@ -2097,6 +2114,43 @@ log.info("FFMA rarity loaded: %d grids (%d rare, %d uncommon)",
          len(_FFMA_RARITY),
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "rare"),
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "uncommon"))
+
+
+def _es_reach(distance_mi):
+    """6m Es reachability for a distance from HOME_GRID -> (band, factor).
+    Single-hop Es is the easy bread-and-butter (~450-1400mi); too-close grids the
+    Es SKIPS (need scatter -> harder); far needs double/multi-hop (rarer geometry).
+    factor <1 = easier than the global number for your QTH, >1 = harder."""
+    d = distance_mi
+    if d < 450:    return ("scatter (too close)", 1.4)   # Es overshoots; scatter only
+    if d <= 1400:  return ("single-hop Es", 0.7)          # the sweet spot
+    if d <= 1700:  return ("single-hop edge", 1.0)
+    if d <= 2600:  return ("double-hop Es", 1.4)
+    return ("multi-hop", 1.8)
+
+
+def _augment_ffma_reachability():
+    """Tier 1: overlay HOME_GRID reachability onto the global rarity. Computed from
+    CONFIG['home_grid'] (NOT hardcoded) so it personalizes for any user. Adds
+    distance_mi / es_band / personal_pct / personal_tier to each grid's record."""
+    if not HOME_LATLON:
+        return
+    hlat, hlon = HOME_LATLON
+    for grid, rec in _FFMA_RARITY.items():
+        c = maidenhead_to_latlon(grid)
+        if not c:
+            continue
+        d = round(haversine_miles(hlat, hlon, c[0], c[1]))
+        band, factor = _es_reach(d)
+        pp = min(100.0, round((rec.get("pct_needed") or 0) * factor, 1))
+        rec["distance_mi"] = d
+        rec["es_band"] = band
+        rec["personal_pct"] = pp
+        rec["personal_tier"] = "rare" if pp >= 30 else ("uncommon" if pp >= 10 else "common")
+
+
+_augment_ffma_reachability()
+log.info("FFMA reachability overlay computed from %s", HOME_GRID or "(no home grid)")
 
 
 def _load_dxcc_rarity() -> dict:
@@ -2411,6 +2465,10 @@ details[open] > summary::before { transform: rotate(90deg); }
    from rarity-red, CQ-green, LoTW-blue, award-orange. */
 /* FFMA grid-rarity badge — gold = grail (FFMA's the gold award). In the grid cell,
    so it reads against grid-need color, not the country-cell rarity. */
+/* "They can hear you" eye — PSKReporter reported this station decoding you. Cyan
+   glow so it reads as a live signal-intel cue, not just an emoji. */
+.heard-eye { margin-left: 0.3em; font-size: 0.92em; vertical-align: middle; cursor: help;
+  filter: drop-shadow(0 0 2px #3ff) drop-shadow(0 0 4px #1cf); }
 .ffr { display: inline-block; padding: 0 0.3em; margin-left: 0.3em; border-radius: 3px;
   font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
 .ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
@@ -2728,6 +2786,7 @@ details[open] .gear-icon { color: #fff; }
   <div class="controls">
     <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
     <label style="margin-left:1em" title="CQ DX Marathon — annual, worked-based: entities + CQ zones not yet worked this year. Official 346-entity / 40-zone list."><input type="checkbox" id="marathon_on"> DX Marathon needed (official 346/40)</label>
+    <label style="margin-left:1em" title="Re-weight FFMA grid rarity by reachability from your QTH (HOME_GRID): globally-rare grids in your single-hop Es sweet spot get discounted; far/double-hop ones amplified. Adds the Es-hop band (1H/2H) to the badge."><input type="checkbox" id="ffma_qth"> FFMA: rare for my QTH</label>
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
@@ -2881,6 +2940,14 @@ const marathonCB = document.getElementById("marathon_on");
 marathonCB.checked = localStorage.getItem("grayline_marathon") === "1";
 marathonCB.addEventListener("change", () => {
   localStorage.setItem("grayline_marathon", marathonCB.checked ? "1" : "0");
+  refresh();
+});
+
+// FFMA Tier 1: personalize grid rarity to HOME_GRID reachability (opt-in overlay).
+const ffmaQthCB = document.getElementById("ffma_qth");
+ffmaQthCB.checked = localStorage.getItem("grayline_ffma_qth") === "1";
+ffmaQthCB.addEventListener("change", () => {
+  localStorage.setItem("grayline_ffma_qth", ffmaQthCB.checked ? "1" : "0");
   refresh();
 });
 
@@ -3142,14 +3209,38 @@ function marathonBadge(s) {
 // FFMA grid-rarity badge (Tier 0, global) — % of FFMA leaders who still need this
 // grid, from N7PHY's Leader Board. Only badges uncommon+rare (the 369 common grids
 // stay quiet). 6m only (set server-side). The grail tier when it's also a needed grid.
+// "Eye" — this station reported decoding YOU to PSKReporter (heard_me set server-side
+// from the who-heard-me poll). Means the path is open both ways: worth calling.
+function heardEye(s) {
+  const h = s.heard_me;
+  if (!h) return "";
+  const ago = (h.age != null) ? (h.age < 90 ? h.age + "s" : Math.round(h.age / 60) + "m") : "";
+  const title = `${escapeHTML(s.dx_call)} decoded YOU and reported it to PSKReporter`
+              + (ago ? ` ${ago} ago` : "") + (h.grid ? ` (from ${escapeHTML(h.grid)})` : "")
+              + " — path is open both ways, worth calling.";
+  return ` <span class="heard-eye" title="${title}">\u{1F441}</span>`;
+}
+
 function ffmaRarityBadge(s) {
   const r = s.ffma_rarity;
-  if (!r || r.tier === "common") return "";
+  if (!r) return "";
+  // Tier 1 overlay: when "rare for my QTH" is on, color by the reachability-adjusted
+  // personal tier and append the Es-hop band; otherwise the global Tier-0 view.
+  const personal = ffmaQthCB.checked && r.personal_tier;
+  const tier = personal ? r.personal_tier : r.tier;
+  if (tier === "common") return "";
   const pct = (r.pct_needed != null) ? Math.round(r.pct_needed) + "%" : "";
-  const cls = r.tier === "rare" ? "ffr ffr-rare" : "ffr ffr-unc";
-  const title = `FFMA: ${r.pct_needed}% of leaders still need this grid (${r.leaders_needing})`
-              + (r.tier === "rare" ? " — top-tier rare" : "");
-  return ` <span class="${cls}" title="${title}">${pct}</span>`;
+  const cls = tier === "rare" ? "ffr ffr-rare" : "ffr ffr-unc";
+  let label = pct;
+  let title = `FFMA: ${r.pct_needed}% of leaders still need this grid (${r.leaders_needing})`;
+  if (personal && r.distance_mi != null) {
+    const code = {"single-hop Es":"1H","single-hop edge":"1H","double-hop Es":"2H","multi-hop":"3H+","scatter (too close)":"SC"}[r.es_band] || "";
+    label = pct + (code ? " " + code : "");
+    title += ` · ${r.distance_mi} mi from you — ${r.es_band}`;
+  } else if (tier === "rare") {
+    title += " — top-tier rare";
+  }
+  return ` <span class="${cls}" title="${title}">${label}</span>`;
 }
 
 function lotwBadge(s) {
@@ -3642,7 +3733,7 @@ async function refresh() {
       ).join("") + marathonBadge(s);   // Marathon lives with the other award pills
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
-        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}</td>
+        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}${ffmaRarityBadge(s)}</td>
@@ -4801,6 +4892,7 @@ async def main():
     threading.Thread(target=qrz_cache_reload_loop, daemon=True).start()
     threading.Thread(target=qrz_lookup_worker, daemon=True).start()
     threading.Thread(target=worked_state_reload_loop, daemon=True).start()
+    threading.Thread(target=psk_heard_loop, daemon=True).start()   # PSKReporter "who heard me" eye
     threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
     threading.Thread(target=clublog_matches_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:
