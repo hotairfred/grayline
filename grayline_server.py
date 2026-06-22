@@ -783,6 +783,41 @@ VUCC_BANDS = ("6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm",
 WAS_TARGET = 50
 WAJA_TARGET = 47   # JARL Worked All Japan prefectures
 WAZ_TARGET = 40
+WPX_TARGET = 400   # CQ WPX Award (Mixed) basic level
+
+
+# CQ WPX prefix designators that DON'T count as a prefix on their own (treated
+# as droppable suffixes): portable/mobile/QRP etc.
+_WPX_SUFFIX = {"P", "M", "MM", "AM", "A", "E", "J", "QRP", "R", "B", "LH", "N", "T", "Y"}
+
+
+def _wpx_prefix(call: str) -> str:
+    """CQ WPX prefix for a callsign. Handles the common case (letters/numerals
+    up to and including the last digit) plus portable designators per the WPX
+    rules: a portable region-digit (W3GRF/4 -> W4), a portable prefix
+    (KH6XX/W0 -> W0, N8BJQ/KP2 -> KP2), and a no-digit portable prefix
+    (PA/N8BJQ -> PA0). Non-counting suffixes (/P, /M, /QRP, bare letters) are
+    dropped. Exotic interior-subdivision designators aren't special-cased —
+    fine for a worked-prefix tally, where the vast majority of calls are plain."""
+    call = (call or "").strip().upper()
+    if not call:
+        return ""
+    parts = [p for p in call.split("/") if p]
+    # drop trailing non-counting suffix designators (/P, /M, /QRP, single letters)
+    while len(parts) > 1 and (parts[-1] in _WPX_SUFFIX
+                              or (len(parts[-1]) == 1 and parts[-1].isalpha())):
+        parts.pop()
+    if len(parts) >= 2:
+        a, b = parts[0], parts[1]
+        desig, base = (a, b) if len(a) <= len(b) else (b, a)   # shorter = designator
+        if desig.isdigit():                       # region change: home letters + new digit
+            m = re.match(r"([A-Z]+)", base)
+            return (m.group(1) if m else base[:1]) + desig[-1]
+        if re.search(r"\d", desig):               # designator carries a digit
+            return re.match(r".*\d", desig).group(0)
+        return desig + "0"                         # no-digit designator -> append 0
+    m = re.search(r".*\d", parts[0])               # plain call: through the last digit
+    return m.group(0) if m else parts[0] + "0"
 
 
 def _build_ffma_chase(grid_qsos: dict) -> dict:
@@ -936,6 +971,20 @@ def _build_scores_payload() -> dict:
                 (q.get("call") or "").strip().upper(), confirmed))
 
     ffma_chase = _build_ffma_chase(ffma_grid_qsos)
+
+    # CQ WPX — unique worked prefixes (Mixed). Own pass: WPX counts every QSO
+    # (grid not required), so it can't piggyback the grid-gated FFMA/VUCC loop.
+    wpx_worked: set[str] = set()
+    wpx_confirmed: set[str] = set()
+    for q in _worked.qsos:
+        px = _wpx_prefix(q.get("call"))
+        if not px:
+            continue
+        wpx_worked.add(px)
+        if ((q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
+                or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
+                or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")):
+            wpx_confirmed.add(px)
 
     # WAS-by-band (5BWAS uses the 5 contest bands; we report all bands present)
     was_by_band: dict[str, int] = {}
@@ -1155,6 +1204,11 @@ def _build_scores_payload() -> dict:
             "worked": len(_worked.worked_cq_zones),
             "confirmed": len(_worked.confirmed_cq_zones),
             "target": WAZ_TARGET,
+        },
+        "wpx": {
+            "worked": len(wpx_worked),
+            "confirmed": len(wpx_confirmed),
+            "target": WPX_TARGET,
         },
         "vucc": vucc,
         "vucc_satellite": {
@@ -3174,6 +3228,7 @@ const AWARD_DEFS = [
   ["vucc",           "VUCC by band",     "ARRL",  true],
   ["vucc_satellite", "VUCC Satellite",   "ARRL",  true],
   ["waz",            "WAZ",              "CQ",    false],
+  ["wpx",            "WPX (prefixes)",   "CQ",    false],
   ["waja",           "WAJA (Japan)",     "JARL",  false],
 ];
 const AWARD_DEFAULT = Object.fromEntries(AWARD_DEFS.map(d => [d[0], d[3]]));
@@ -4095,6 +4150,7 @@ function renderScores(j) {
       rows.push(awardRow("WAJA (JARL)", j.waja.worked, j.waja.confirmed, j.waja.target));
     }
     if (awardOn("waz")) rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
+    if (j.wpx && awardOn("wpx")) rows.push(awardRow("WPX", j.wpx.worked, j.wpx.confirmed, j.wpx.target));
     if (j.ffma && awardOn("ffma")) {
       rows.push(awardRow("FFMA (6m)", j.ffma.worked, j.ffma.confirmed, j.ffma.target));
     }
