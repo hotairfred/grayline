@@ -865,6 +865,36 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
             "recent_atnos": recent_atnos}
 
 
+def _wae_key(e):
+    """WAE country key for a cty.dat entity. The five WAE split entities
+    (cty.dat '*' prefix — Sicily, Shetland, Bear Island, European Turkey,
+    Vienna Intl Ctr) share a DXCC id with their parent, so they key by prefix;
+    every other WAE country keys by its DXCC id."""
+    if e is None:
+        return None
+    return e.prefix if e.prefix.startswith("*") else e.dxcc
+
+
+_WAE_ENTITIES_CACHE = None
+
+
+def _wae_entity_keys() -> dict:
+    """WAE country key -> name, built from cty.dat continent==EU entities.
+    Validated exact-match (73 entities, zero diff) against DARC's official
+    Worked All Europe Country List, so this is the governing-body set, not a
+    continent approximation that happens to be close."""
+    global _WAE_ENTITIES_CACHE
+    if _WAE_ENTITIES_CACHE is None:
+        out: dict = {}
+        if _cty:
+            for store in (_cty._prefixes, _cty._entities):
+                for e in store.values():
+                    if e.continent == "EU":
+                        out.setdefault(_wae_key(e), e.entity)
+        _WAE_ENTITIES_CACHE = out
+    return _WAE_ENTITIES_CACHE
+
+
 def _build_scores_payload() -> dict:
     """ARRL-default award rollup. Per the per-band-scope memory rule, this
     surfaces only ARRL-tracked awards by default (DXCC variants, Challenge,
@@ -985,6 +1015,36 @@ def _build_scores_payload() -> dict:
                 or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
                 or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")):
             wpx_confirmed.add(px)
+
+    # WAE (Worked All Europe, DARC) — worked/confirmed WAE countries + per band.
+    # Resolves dxcc=False so the WAE split entities (Sicily, Shetland, ...) count
+    # separately from their DXCC parent.
+    wae_keys = _wae_entity_keys()
+    wae_target = len(wae_keys) or 73
+    wae_worked: set = set()
+    wae_confirmed: set = set()
+    wae_conf_by_band: dict[str, set] = {}
+    if _cty:
+        for q in _worked.qsos:
+            k = _wae_key(_cty.lookup(q.get("call") or "", dxcc=False))
+            if k is None or k not in wae_keys:
+                continue
+            wae_worked.add(k)
+            if ((q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
+                    or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
+                    or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")):
+                wae_confirmed.add(k)
+                b = (q.get("band") or "").strip().lower()
+                if b:
+                    wae_conf_by_band.setdefault(b, set()).add(k)
+    wae_by_band_detail = {}
+    for b, ks in wae_conf_by_band.items():
+        missing = sorted(name for k, name in wae_keys.items() if k not in ks)
+        wae_by_band_detail[b] = {"confirmed": len(ks),
+                                 "missing": missing if len(missing) <= 10 else []}
+    # overall (Mixed) chase lists — the actionable cut
+    wae_missing = sorted(name for k, name in wae_keys.items() if k not in wae_confirmed)
+    wae_unworked = sorted(name for k, name in wae_keys.items() if k not in wae_worked)
 
     # WAS-by-band: confirmed states per band + the missing-state list, so the UI
     # can surface single-band WAS endorsements (e.g. 160m / 6m WAS) and show
@@ -1218,6 +1278,14 @@ def _build_scores_payload() -> dict:
             "worked": len(wpx_worked),
             "confirmed": len(wpx_confirmed),
             "target": WPX_TARGET,
+        },
+        "wae": {
+            "worked": len(wae_worked),
+            "confirmed": len(wae_confirmed),
+            "target": wae_target,
+            "by_band_detail": wae_by_band_detail,
+            "missing": wae_missing,      # WAE countries not yet confirmed (Mixed)
+            "unworked": wae_unworked,    # not even worked — the true needs
         },
         "vucc": vucc,
         "vucc_satellite": {
@@ -2640,6 +2708,8 @@ table.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; tex
 tr.wasb-done .wasb-band { color: #5c5; }
 tr.wasb-close td { background: rgba(224,168,60,0.08); }
 tr.wasb-close .wasb-band { color: #e0a83c; }
+.wae-unworked { color: #e0a83c; }
+.wae-leg { color: #666; font-size: 0.92em; }
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
@@ -3247,6 +3317,7 @@ const AWARD_DEFS = [
   ["vucc_satellite", "VUCC Satellite",   "ARRL",  true],
   ["waz",            "WAZ",              "CQ",    false],
   ["wpx",            "WPX (prefixes)",   "CQ",    false],
+  ["wae",            "WAE (Europe)",     "DARC",  false],
   ["waja",           "WAJA (Japan)",     "JARL",  false],
 ];
 const AWARD_DEFAULT = Object.fromEntries(AWARD_DEFS.map(d => [d[0], d[3]]));
@@ -4169,6 +4240,7 @@ function renderScores(j) {
     }
     if (awardOn("waz")) rows.push(awardRow("WAZ", j.waz.worked, j.waz.confirmed, j.waz.target));
     if (j.wpx && awardOn("wpx")) rows.push(awardRow("WPX", j.wpx.worked, j.wpx.confirmed, j.wpx.target));
+    if (j.wae && awardOn("wae")) rows.push(awardRow("WAE (Eu)", j.wae.worked, j.wae.confirmed, j.wae.target));
     if (j.ffma && awardOn("ffma")) {
       rows.push(awardRow("FFMA (6m)", j.ffma.worked, j.ffma.confirmed, j.ffma.target));
     }
@@ -4296,6 +4368,40 @@ function renderScores(j) {
     </div>`);
   }
 
+  // WAE by Band — single-band Worked All Europe (73 WAE countries). 6m/160m WAE
+  // are the grail-tier chases; bands within reach list the missing countries.
+  if (j.wae && j.wae.by_band_detail && awardOn("wae")) {
+    const tgt = j.wae.target || 73;
+    const detail = j.wae.by_band_detail;
+    const order = ["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m","2m","1.25m","70cm","33cm","23cm"];
+    const present = order.filter(b => detail[b])
+      .concat(Object.keys(detail).filter(b => !order.includes(b)).sort());
+    const rows = present.map(b => {
+      const d = detail[b];
+      const togo = tgt - d.confirmed;
+      let status, cls;
+      if (togo <= 0) { status = `<span class="ff-conf">&#x2705; WAE</span>`; cls = "wasb-done"; }
+      else if (d.missing.length && d.missing.length <= 10) {
+        status = `<span class="wasb-need"><b>${togo} to go:</b> ${d.missing.join(", ")}</span>`;
+        cls = (togo <= 5) ? "wasb-close" : "";
+      } else { status = `<span class="wasb-need">${togo} to go</span>`; cls = ""; }
+      return `<tr class="${cls}"><td class="wasb-band">${b}</td><td class="wasb-cnt">${d.confirmed}/${tgt}</td><td>${status}</td></tr>`;
+    }).join("");
+    const doneN = present.filter(b => detail[b].confirmed >= tgt).length;
+    const mixConf = j.wae.confirmed, miss = j.wae.missing || [], unw = new Set(j.wae.unworked || []);
+    const mixLine = (mixConf >= tgt)
+      ? `<div class="mode-hint"><span class="ff-conf">&#x2705; WAE Mixed complete (${mixConf}/${tgt})</span></div>`
+      : `<div class="mode-hint"><b>WAE Mixed: ${mixConf}/${tgt}</b> &mdash; need ${tgt - mixConf}: `
+        + miss.map(n => unw.has(n) ? `<b class="wae-unworked">${n}</b>` : n).join(", ")
+        + ` <span class="wae-leg">(bold = not yet worked; plain = worked, awaiting QSL)</span></div>`;
+    cards.push(`<div class="score-card was-band">
+      <h3>WAE by Band <span class="ff-count">${doneN} earned</span></h3>
+      ${mixLine}
+      <table class="ff-table"><tr><th>band</th><th>countries</th><th>status</th></tr>${rows}</table>
+      <div class="mode-hint">Single-band Worked All Europe (DARC, ${tgt} WAE countries). 6m &amp; 160m WAE are the grail-tier ones. &#x2705; = earned.</div>
+    </div>`);
+  }
+
   // VHF/UHF — VUCC by band + Satellite
   {
     const rows = [];
@@ -4349,10 +4455,10 @@ function renderScores(j) {
 
   // Scores setup — per-award visibility. ARRL on by default; CQ / JARL opt-in.
   {
-    const CAT_LABEL = {ARRL:"ARRL", CQ:"CQ", JARL:"JARL (Japan)"};
+    const CAT_LABEL = {ARRL:"ARRL", CQ:"CQ", DARC:"DARC (Europe)", JARL:"JARL (Japan)"};
     const byCat = {};
     for (const [key, label, cat] of AWARD_DEFS) (byCat[cat] = byCat[cat] || []).push([key, label]);
-    const sections = ["ARRL", "CQ", "JARL"].filter(c => byCat[c]).map(cat => {
+    const sections = ["ARRL", "CQ", "DARC", "JARL"].filter(c => byCat[c]).map(cat => {
       const boxes = byCat[cat].map(([key, label]) =>
         `<label class="awtoggle"><input type="checkbox" data-awardtoggle="${key}" ${awardOn(key) ? "checked" : ""}>${label}</label>`
       ).join("");
