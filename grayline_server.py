@@ -33,7 +33,7 @@ import dxmarathon
 import psk_heard
 import telnet_server
 from ctydat import CtyDat
-from worked_state import WorkedState, mode_class, resolve_prefecture
+from worked_state import WorkedState, mode_class, resolve_prefecture, _US_STATES_50
 
 log = logging.getLogger("grayline")
 
@@ -986,10 +986,18 @@ def _build_scores_payload() -> dict:
                 or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")):
             wpx_confirmed.add(px)
 
-    # WAS-by-band (5BWAS uses the 5 contest bands; we report all bands present)
-    was_by_band: dict[str, int] = {}
+    # WAS-by-band: confirmed states per band + the missing-state list, so the UI
+    # can surface single-band WAS endorsements (e.g. 160m / 6m WAS) and show
+    # exactly which states remain. 5BWAS uses the 5 contest bands separately.
+    was_states_by_band: dict[str, set] = {}
     for (_st, b) in _worked.confirmed_state_band:
-        was_by_band[b] = was_by_band.get(b, 0) + 1
+        if _st in _US_STATES_50:
+            was_states_by_band.setdefault(b, set()).add(_st)
+    was_by_band = {b: len(s) for b, s in was_states_by_band.items()}
+    was_by_band_detail = {
+        b: {"confirmed": len(s), "missing": sorted(_US_STATES_50 - s)}
+        for b, s in was_states_by_band.items()
+    }
 
     # VUCC — confirmed grid count per VHF/UHF band, terrestrial only
     # (computed above into vucc_band_c with the SAT filter applied).
@@ -1192,6 +1200,7 @@ def _build_scores_payload() -> dict:
             "confirmed": len(_worked.confirmed_states),
             "target": WAS_TARGET,
             "by_band": was_by_band,
+            "by_band_detail": was_by_band_detail,
         },
         "waja": {
             "worked": len(_worked.worked_prefectures),
@@ -2623,6 +2632,14 @@ table.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; tex
 .ff-odds-good { color: #4caf50; font-size: 0.8em; font-weight: 700; cursor: help; }
 .ff-odds-one  { color: #888; font-size: 0.8em; cursor: help; }
 .ff-empty { color: #6a8d6a; padding: 0.4em 0; font-size: 0.9em; }
+/* WAS by band card */
+.wasb-band { font-weight: 700; color: #ccc; }
+.wasb-cnt { color: #888; font-variant-numeric: tabular-nums; }
+.wasb-need { color: #aaa; font-size: 0.9em; }
+.wasb-need b { color: #e0a83c; }
+tr.wasb-done .wasb-band { color: #5c5; }
+tr.wasb-close td { background: rgba(224,168,60,0.08); }
+tr.wasb-close .wasb-band { color: #e0a83c; }
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
@@ -3222,6 +3239,7 @@ const AWARD_DEFS = [
   ["was_cw",         "WAS CW",           "ARRL",  true],
   ["was_phone",      "WAS Phone",        "ARRL",  true],
   ["was_digital",    "WAS Digital",      "ARRL",  true],
+  ["was_band",       "WAS by Band",      "ARRL",  true],
   ["triple_play",    "Triple Play",      "ARRL",  true],
   ["wac",            "WAC",              "ARRL",  true],
   ["ffma",           "FFMA (6m)",        "ARRL",  true],
@@ -4250,6 +4268,32 @@ function renderScores(j) {
         + `<table><tr><th>Award</th><th>W</th><th>C</th><th>Goal</th></tr>${rows.join("")}</table>`
         + hints.join("") + `</div>`);
     }
+  }
+
+  // WAS by Band — single-band WAS endorsements (160m..70cm). Bands within reach
+  // of completion list the exact missing states so the finish line is visible.
+  if (j.was && j.was.by_band_detail && awardOn("was_band")) {
+    const detail = j.was.by_band_detail;
+    const order = ["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m","2m","1.25m","70cm","33cm","23cm","13cm","6cm","3cm"];
+    const present = order.filter(b => detail[b])
+      .concat(Object.keys(detail).filter(b => !order.includes(b)).sort());
+    const rows = present.map(b => {
+      const d = detail[b];
+      const togo = 50 - d.confirmed;
+      let status, cls;
+      if (togo <= 0) { status = `<span class="ff-conf">&#x2705; WAS</span>`; cls = "wasb-done"; }
+      else if (d.missing.length <= 6) {
+        status = `<span class="wasb-need"><b>${togo} to go:</b> ${d.missing.join(" ")}</span>`;
+        cls = (togo <= 3) ? "wasb-close" : "";
+      } else { status = `<span class="wasb-need">${togo} to go</span>`; cls = ""; }
+      return `<tr class="${cls}"><td class="wasb-band">${b}</td><td class="wasb-cnt">${d.confirmed}/50</td><td>${status}</td></tr>`;
+    }).join("");
+    const doneN = present.filter(b => detail[b].confirmed >= 50).length;
+    cards.push(`<div class="score-card was-band">
+      <h3>WAS by Band <span class="ff-count">${doneN} earned</span></h3>
+      <table class="ff-table"><tr><th>band</th><th>states</th><th>status</th></tr>${rows}</table>
+      <div class="mode-hint">Single-band WAS endorsements. Bands within 6 of completion list the missing states; within 3 are highlighted. &#x2705; = earned.</div>
+    </div>`);
   }
 
   // VHF/UHF — VUCC by band + Satellite
