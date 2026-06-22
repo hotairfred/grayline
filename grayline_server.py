@@ -800,8 +800,7 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
         return (info.get("tier", "common"), float(info.get("pct_needed", 0.0)),
                 int(info.get("leaders_needing", 0)))
 
-    pending, rares, atno = [], [], None
-    atno_key = ("", "")
+    pending, rares, atno_list = [], [], []
     for g, recs in grid_qsos.items():
         confirmed = any(r[3] for r in recs)
         tier, pct, leaders = tier_of(g)
@@ -811,6 +810,7 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
             if c and c not in calls:
                 calls.append(c)
         fd, ft = min((r[0], r[1]) for r in recs)   # first-ever QSO for this grid
+        first_call = sorted(recs)[0][2]            # the call that opened the grid
         if not confirmed:
             pending.append({"grid": g, "date": fd, "calls": calls,
                             "multi_op": len(calls) > 1, "tier": tier, "pct": pct})
@@ -818,14 +818,16 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
             rep = sorted([r for r in recs if r[3]] or recs)[0]   # prefer a confirmed QSO
             rares.append({"grid": g, "tier": tier, "pct": pct, "leaders": leaders,
                           "confirmed": confirmed, "call": rep[2], "date": rep[0]})
-        if (fd, ft) > atno_key:
-            atno_key = (fd, ft)
-            atno = {"grid": g, "date": fd, "time": ft, "call": sorted(recs)[0][2],
-                    "confirmed": confirmed, "tier": tier, "pct": pct}
+        atno_list.append({"grid": g, "date": fd, "time": ft, "call": first_call,
+                          "confirmed": confirmed, "tier": tier, "pct": pct})
 
     pending.sort(key=lambda p: (p["pct"], p["date"]), reverse=True)   # rarest, then newest
     rares.sort(key=lambda r: (-r["pct"], r["grid"]))                  # rarest first
-    return {"pending": pending, "rares_worked": rares, "recent_atno": atno}
+    atno_list.sort(key=lambda a: (a["date"], a["time"]), reverse=True)  # newest grids first
+    recent_atnos = atno_list[:5]
+    return {"pending": pending, "rares_worked": rares,
+            "recent_atno": recent_atnos[0] if recent_atnos else None,  # back-comat
+            "recent_atnos": recent_atnos}
 
 
 def _build_scores_payload() -> dict:
@@ -2541,6 +2543,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 .ff-atno-row { display: flex; align-items: center; gap: 0.8em; }
 .ff-atno-grid { font-size: 2em; font-weight: 800; color: #d4af37; font-variant-numeric: tabular-nums; }
 .ff-atno-meta { font-size: 0.9em; color: #bbb; line-height: 1.5; }
+.ff-newest { color: #d4af37; font-weight: 700; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.04em; }
+table.ff-atno-tbl { margin-top: 0.55em; }
 .ff-tier { display: inline-block; padding: 0 0.35em; border-radius: 3px;
   font-size: 0.72em; font-weight: 800; vertical-align: middle; }
 .ff-rare { background: #d4af37; color: #1a1a1a; }
@@ -4330,21 +4334,35 @@ function renderFfma(j) {
     <div class="ff-pctlabel">${pct}% of the grail &middot; FFMA = all 488 CONUS grids on 6 m</div>
   </div>`);
 
-  // most recent ATNO
-  if (ch.recent_atno) {
-    const a = ch.recent_atno;
+  // recent ATNOs — newest featured big, then the previous few
+  const atnos = ch.recent_atnos || (ch.recent_atno ? [ch.recent_atno] : []);
+  if (atnos.length) {
+    const a = atnos[0];
     const st = a.confirmed
       ? `<span class="ff-conf">CONFIRMED &#x2705;</span>`
       : `<span class="ff-pend">awaiting confirmation</span>`;
+    const rest = atnos.slice(1).map(x => {
+      const xs = x.confirmed ? `<span class="ff-conf">&#x2705;</span>` : `<span class="ff-pend">pending</span>`;
+      return `<tr>
+        <td class="ff-g">${x.grid}</td>
+        <td>${ffmaTierBadge(x.tier,x.pct)}</td>
+        <td class="ff-who">${x.call||"?"}${ffmaRover(x.call)}</td>
+        <td class="ff-when">${ffmaFmtDate(x.date)}</td>
+        <td>${xs}</td>
+      </tr>`;
+    }).join("");
     cards.push(`<div class="score-card ff-atno">
-      <h3>&#x1F195; Most recent ATNO</h3>
+      <h3>&#x1F195; Recent ATNOs <span class="ff-count">last ${atnos.length}</span></h3>
       <div class="ff-atno-row">
         <div class="ff-atno-grid">${a.grid}</div>
         <div class="ff-atno-meta">
-          <div>via <b>${a.call||"?"}</b>${ffmaRover(a.call)} &middot; ${ffmaFmtDate(a.date)}</div>
+          <div><span class="ff-newest">newest</span> &middot; via <b>${a.call||"?"}</b>${ffmaRover(a.call)} &middot; ${ffmaFmtDate(a.date)}</div>
           <div>${ffmaTierBadge(a.tier,a.pct)} ${st}</div>
         </div>
       </div>
+      ${rest ? `<table class="ff-table ff-atno-tbl">
+        <tr><th>grid</th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>
+        ${rest}</table>` : ""}
     </div>`);
   }
 
