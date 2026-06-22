@@ -884,15 +884,14 @@ def _wae_entity_keys() -> dict:
     Worked All Europe Country List, so this is the governing-body set, not a
     continent approximation that happens to be close."""
     global _WAE_ENTITIES_CACHE
-    if _WAE_ENTITIES_CACHE is None:
+    if _WAE_ENTITIES_CACHE is None and _cty:   # don't cache empty before cty loads
         out: dict = {}
-        if _cty:
-            for store in (_cty._prefixes, _cty._entities):
-                for e in store.values():
-                    if e.continent == "EU":
-                        out.setdefault(_wae_key(e), e.entity)
+        for store in (_cty._prefixes, _cty._entities):
+            for e in store.values():
+                if e.continent == "EU":
+                    out.setdefault(_wae_key(e), e.entity)
         _WAE_ENTITIES_CACHE = out
-    return _WAE_ENTITIES_CACHE
+    return _WAE_ENTITIES_CACHE or {}
 
 
 def _build_scores_payload() -> dict:
@@ -1359,6 +1358,7 @@ def _refresh_cache_worked_status():
             if _cty:
                 s["marathon"] = _marathon_status(dxmarathon.entity_id(s["dx_call"], _cty),
                                                  dxmarathon.zone(s["dx_call"], _cty))
+                s["wae_status"], s["wae_name"] = _wae_spot_status(s["dx_call"])
 
 
 def _build_adif_record(parsed: dict, country: str = "", dxcc: str = "", band: str = "") -> str:
@@ -2015,6 +2015,48 @@ def _marathon_status(entity_id, zone):
     return None
 
 
+_WAE_WORKED: set = set()      # WAE country keys ever worked (lifetime)
+_WAE_CONFIRMED: set = set()   # WAE country keys confirmed
+
+
+def _rebuild_wae():
+    """Rebuild lifetime WAE worked/confirmed country-key sets from the logbook,
+    so the roster WAE pill stays in lockstep with the Scores-tab WAE standing.
+    Resolves dxcc=False so the WAE split entities (Sicily, Shetland, ...) count."""
+    global _WAE_WORKED, _WAE_CONFIRMED
+    if not (_worked and _cty):
+        return
+    keys = _wae_entity_keys()
+    worked, confirmed = set(), set()
+    for q in getattr(_worked, "qsos", []):
+        k = _wae_key(_cty.lookup(q.get("call", "") or "", dxcc=False))
+        if k is None or k not in keys:
+            continue
+        worked.add(k)
+        if ((q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
+                or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
+                or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")):
+            confirmed.add(k)
+    _WAE_WORKED, _WAE_CONFIRMED = worked, confirmed
+
+
+def _wae_spot_status(call):
+    """WAE status for a spotted call: ('new'|'worked'|'confirmed', country_name),
+    or (None, None) if the call isn't a WAE country. dxcc=False so splits resolve."""
+    if not _cty:
+        return None, None
+    k = _wae_key(_cty.lookup(call or "", dxcc=False))
+    keys = _wae_entity_keys()
+    if k is None or k not in keys:
+        return None, None
+    name = keys.get(k, "")
+    if k in _WAE_CONFIRMED:
+        return "confirmed", name
+    if k in _WAE_WORKED:
+        return "worked", name
+    return "new", name
+
+
 def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
@@ -2109,6 +2151,9 @@ def add_spot(spot, cluster_name, calling_me=False):
     marathon = _marathon_status(dxmarathon.entity_id(spot.dx_call, _cty) if _cty else None,
                                 dxmarathon.zone(spot.dx_call, _cty) if _cty else None)
 
+    # WAE (Worked All Europe) need — only pills when NOT yet confirmed (high-signal).
+    wae_status, wae_name = _wae_spot_status(spot.dx_call)
+
     # Effective grid — never REGRESS to blank. FT8 carries the grid only in a
     # CQ / grid-reply; mid-QSO messages (reports, R-15, RR73, 73) have none, so a
     # later decode of the same station (same cache key) would otherwise wipe the
@@ -2191,6 +2236,8 @@ def add_spot(spot, cluster_name, calling_me=False):
             "lotw_days": lotw_activity.days_since_upload(spot.dx_call),  # days since last LoTW upload, or None if not a LoTW user
             "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
             "marathon": marathon,                           # CQ DX Marathon need this year: 'DXCC'|'CQz'|'DX+CQz'|None
+            "wae_status": wae_status,                        # WAE need: 'new'|'worked'|'confirmed'|None
+            "wae_name": wae_name,                            # WAE country name (pill tooltip)
             "ffma_rarity": ffma_rarity,                     # FFMA grid rarity (6m only): {pct_needed,leaders_needing,tier} or None
             "heard_me": heard_me,                           # this station reported decoding ME to PSKReporter (eye badge) or None
             "continent": continent,
@@ -2713,6 +2760,12 @@ tr.wasb-close .wasb-band { color: #e0a83c; }
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
+/* WAE pill — distinct sea-green so it reads apart from MARA (purple) / LoTW
+   (blue). Filled = needed (not worked); outline = worked, awaiting QSL. */
+.wae-pill { display: inline-block; padding: 0px 4px; margin-left: 3px; border-radius: 3px;
+  font-weight: 700; font-size: 0.92em; letter-spacing: 0.02em; vertical-align: middle; }
+.wae-new    { background: #2e8b57; color: #fff; }                   /* needed — solid green */
+.wae-worked { background: transparent; color: #5cc98c; border: 1px solid #2e8b57; }  /* worked, unconfirmed */
 /* "Calling you" — a station transmitting MY callsign right now. Red row, white
    text, floated to the top of the roster. The whole point is to not miss it. */
 tr.calling-me td { background: #d11 !important; color: #fff !important; }
@@ -3024,6 +3077,7 @@ details[open] .gear-icon { color: #fff; }
   <div class="controls">
     <label><input type="checkbox" id="show_wanted"> Show wanted only</label>
     <label style="margin-left:1em" title="CQ DX Marathon — annual, worked-based: entities + CQ zones not yet worked this year. Official 346-entity / 40-zone list."><input type="checkbox" id="marathon_on"> DX Marathon needed (official 346/40)</label>
+    <label style="margin-left:1em" title="WAE (Worked All Europe, DARC) — pill only when a spotted station is a WAE country you still NEED (unconfirmed). Silent on WAE countries you've already confirmed."><input type="checkbox" id="wae_on"> WAE needed</label>
     <label style="margin-left:1em" title="Re-weight FFMA grid rarity by reachability from your QTH (HOME_GRID): globally-rare grids in your single-hop Es sweet spot get discounted; far/double-hop ones amplified. Adds the Es-hop band (1H/2H) to the badge."><input type="checkbox" id="ffma_qth"> FFMA: rare for my QTH</label>
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <span class="legend">
@@ -3181,6 +3235,13 @@ const marathonCB = document.getElementById("marathon_on");
 marathonCB.checked = localStorage.getItem("grayline_marathon") === "1";
 marathonCB.addEventListener("change", () => {
   localStorage.setItem("grayline_marathon", marathonCB.checked ? "1" : "0");
+  refresh();
+});
+
+const waeCB = document.getElementById("wae_on");
+waeCB.checked = localStorage.getItem("grayline_wae") === "1";
+waeCB.addEventListener("change", () => {
+  localStorage.setItem("grayline_wae", waeCB.checked ? "1" : "0");
   refresh();
 });
 
@@ -3448,6 +3509,20 @@ function marathonBadge(s) {
               : (s.marathon === "CQz" ? "DX Marathon: new CQ zone this year"
               : "DX Marathon: new entity this year");
   return ` <span class="mara" title="${title}">${label}</span>`;
+}
+
+// WAE (Worked All Europe) pill — HIGH-SIGNAL: shows only when a spotted station
+// is a WAE country you still NEED (not confirmed). Silent on confirmed WAE
+// countries (most EU spots), so when it lights up it actually means something.
+// s.wae_status is 'new'|'worked'|'confirmed'|null (server-side, dxcc=False).
+function waeBadge(s) {
+  if (!waeCB.checked || !s.wae_status || s.wae_status === "confirmed") return "";
+  const needNew = s.wae_status === "new";
+  const label = needNew ? "WAE" : "WAE?";
+  const title = needNew
+    ? `WAE country you still NEED: ${s.wae_name || ""} (not worked)`
+    : `WAE country worked but NOT confirmed: ${s.wae_name || ""} — chase the QSL`;
+  return ` <span class="wae-pill ${needNew ? "wae-new" : "wae-worked"}" title="${title}">${label}</span>`;
 }
 
 // FFMA grid-rarity badge (Tier 0, global) — % of FFMA leaders who still need this
@@ -3974,7 +4049,7 @@ async function refresh() {
       const callTag = s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "";
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
-      ).join("") + marathonBadge(s);   // Marathon lives with the other award pills
+      ).join("") + marathonBadge(s) + waeBadge(s);   // Marathon + WAE live with the other award pills
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}</td>
@@ -5255,6 +5330,7 @@ async def main():
         _worked.ja_pref_lookup = _ja_pref_cache
         _worked.force_reload()
         _rebuild_marathon()   # current-year Marathon worked sets from the logbook
+        _rebuild_wae()        # lifetime WAE worked/confirmed sets for the roster pill
     except Exception as e:
         log.warning("worked_state load failed (worked-status disabled): %s", e)
 
@@ -5274,8 +5350,9 @@ async def main():
                     # award pills reflect the freshest worked/confirmed data.
                     # Otherwise stale dxcc_band_status etc. baked in at
                     # ingest time would persist until each spot ages out.
-                    _refresh_cache_worked_status()
                     _rebuild_marathon()   # keep Marathon year-sets in lockstep
+                    _rebuild_wae()        # keep WAE sets in lockstep (before cache refresh uses them)
+                    _refresh_cache_worked_status()
                     log.info("worked_state reloaded — cache statuses refreshed")
 
     def lotw_fetch_loop():
