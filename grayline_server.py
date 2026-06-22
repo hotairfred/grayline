@@ -1972,6 +1972,116 @@ def _telnet_feed_radius_mi(band: str) -> int:
             else TELNET_FEED_RADIUS_HF_MI)
 
 
+# Contest bands for the standalone Band Activity page (FD/HF set, 160m..2m).
+CONTEST_BANDS = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m"]
+
+
+def _band_activity_payload() -> dict:
+    """Local-filtered spot counts per contest band x mode-class (CW/Phone/Digital)
+    for the standalone Band Activity page. 'Local' = within the same tiered
+    spotter radius as the roster's local filter, so the bars reflect *workable*
+    activity — where the stations you can actually reach are, not the firehose.
+    Deliberately dumb: just the numbers, no current-band awareness; you decide."""
+    counts = {b: {"CW": 0, "Phone": 0, "Digital": 0} for b in CONTEST_BANDS}
+    with _lock:
+        spots = list(_cache.values())
+    for s in spots:
+        b = s.get("band")
+        if b not in counts:
+            continue
+        d = s.get("distance_mi")
+        if d is None or d > _telnet_feed_radius_mi(b):
+            continue
+        cls = mode_class(s.get("mode") or "")
+        if cls in counts[b]:
+            counts[b][cls] += 1
+    return {"bands": CONTEST_BANDS, "counts": counts, "ts": time.time()}
+
+
+# Standalone Band Activity page — deliberately separate from the main roster UI
+# (a contest tool you pop open, not main-page clutter). Horizontal stacked bars,
+# one per contest band, split CW/SSB/Digital, scaled to the hottest band. Polls
+# /api/band_activity. Big/glanceable for a second monitor across the trailer.
+_BAND_ACTIVITY_PAGE = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Band Activity</title>
+<style>
+  :root { --cw:#e0a83c; --ssb:#4caf50; --dig:#3fc7e0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#0a0a0a; color:#ddd; font-family:system-ui,Arial,sans-serif;
+         font-variant-numeric:tabular-nums; padding:1.2em 1.4em; }
+  h1 { margin:0 0 .1em; font-size:1.5em; letter-spacing:.06em; color:#fff; font-weight:700; }
+  .sub { color:#777; font-size:.85em; margin-bottom:1em; }
+  .legend { display:flex; gap:1.3em; margin-bottom:1.2em; font-size:.95em; }
+  .legend span { display:inline-flex; align-items:center; gap:.4em; }
+  .sw { width:1em; height:1em; border-radius:2px; display:inline-block; }
+  .rows { display:flex; flex-direction:column; gap:.55em; }
+  .row { display:grid; grid-template-columns:3.4em 1fr 3.2em; align-items:center; gap:.8em; }
+  .band { font-weight:700; color:#aaa; text-align:right; font-size:1.15em; }
+  .bar { height:2.1em; background:#141414; border-radius:4px; display:flex; overflow:hidden; }
+  .seg { height:100%; display:flex; align-items:center; justify-content:center;
+         font-size:.82em; font-weight:800; color:#0a0a0a; overflow:hidden; white-space:nowrap; min-width:0; }
+  .seg.cw  { background:var(--cw); }
+  .seg.ssb { background:var(--ssb); }
+  .seg.dig { background:var(--dig); }
+  .total { text-align:right; color:#888; font-size:1.15em; font-weight:700; }
+  .row.hot .band { color:#fff; }
+  .row.hot .total { color:#fff; }
+  .empty { color:#444; font-size:.85em; padding-left:.3em; align-self:center; }
+</style></head>
+<body>
+  <h1>BAND ACTIVITY</h1>
+  <div class="sub" id="sub">local-filtered spots &middot; loading&hellip;</div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--cw)"></i>CW</span>
+    <span><i class="sw" style="background:var(--ssb)"></i>SSB</span>
+    <span><i class="sw" style="background:var(--dig)"></i>Digital</span>
+  </div>
+  <div class="rows" id="rows"></div>
+<script>
+const MODES = [["CW","cw","CW"],["Phone","ssb","SSB"],["Digital","dig","Digital"]];
+async function refresh() {
+  let j;
+  try { j = await (await fetch("/api/band_activity",{cache:"no-store"})).json(); }
+  catch(e) { document.getElementById("sub").textContent = "fetch failed \\u2014 retrying…"; return; }
+  const counts = j.counts || {};
+  let maxTotal = 1;
+  for (const b of j.bands) {
+    const c = counts[b] || {};
+    const t = (c.CW||0)+(c.Phone||0)+(c.Digital||0);
+    if (t > maxTotal) maxTotal = t;
+  }
+  const html = j.bands.map(b => {
+    const c = counts[b] || {};
+    const t = (c.CW||0)+(c.Phone||0)+(c.Digital||0);
+    const hot = (t === maxTotal && t > 0) ? " hot" : "";
+    let inner;
+    if (t === 0) {
+      inner = '<span class="empty">—</span>';
+    } else {
+      const frac = (t / maxTotal) * 100;
+      const segs = MODES.map(([k,cls,lbl]) => {
+        const n = c[k]||0;
+        if (!n) return "";
+        const w = (n/t)*100;
+        return `<div class="seg ${cls}" style="width:${w}%" title="${b} ${lbl}: ${n}">${n}</div>`;
+      }).join("");
+      inner = `<div style="display:flex;width:${frac}%;height:100%">${segs}</div>`;
+    }
+    return `<div class="row${hot}"><div class="band">${b}</div><div class="bar">${inner}</div><div class="total">${t||""}</div></div>`;
+  }).join("");
+  document.getElementById("rows").innerHTML = html;
+  document.getElementById("sub").textContent =
+    `local-filtered spots · ${j.bands.length} contest bands · updated ` + new Date().toLocaleTimeString();
+}
+refresh();
+setInterval(refresh, 20000);
+</script>
+</body></html>"""
+
+
 # ---- CQ DX Marathon (annual, worked-based: entities + CQ zones for the current
 # UTC year, against the OFFICIAL 346/40 list via the WAE-aware resolver). Built
 # from _worked.qsos so it stays in lockstep with the logbook; rebuilt on reload.
@@ -2757,6 +2867,9 @@ tr.wasb-close td { background: rgba(224,168,60,0.08); }
 tr.wasb-close .wasb-band { color: #e0a83c; }
 .wae-unworked { color: #e0a83c; }
 .wae-leg { color: #666; font-size: 0.92em; }
+.band-activity-link { margin-left: 1em; color: #3fc7e0; text-decoration: none; font-size: 0.9em;
+  border: 1px solid #1f4a55; border-radius: 4px; padding: 0.1em 0.5em; white-space: nowrap; }
+.band-activity-link:hover { background: #0f2a30; color: #7fe0f5; }
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
@@ -3080,6 +3193,7 @@ details[open] .gear-icon { color: #fff; }
     <label style="margin-left:1em" title="WAE (Worked All Europe, DARC) — pill only when a spotted station is a WAE country you still NEED (unconfirmed). Silent on WAE countries you've already confirmed."><input type="checkbox" id="wae_on"> WAE needed</label>
     <label style="margin-left:1em" title="Re-weight FFMA grid rarity by reachability from your QTH (HOME_GRID): globally-rare grids in your single-hop Es sweet spot get discounted; far/double-hop ones amplified. Adds the Es-hop band (1H/2H) to the badge."><input type="checkbox" id="ffma_qth"> FFMA: rare for my QTH</label>
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
+    <a href="/bands" target="_blank" rel="noopener" class="band-activity-link" title="Open the Band Activity bar graph (CW/SSB/Digital × contest bands, local-filtered) in a new tab — a contest 'which band is hot' tool, kept off the main page">&#x1F4CA; Band Activity &#x2197;</a>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
@@ -5019,6 +5133,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps(payload, default=str).encode(), "application/json")
         elif self.path == "/api/scores":
             self._send(json.dumps(_build_scores_payload()).encode(), "application/json")
+        elif self.path == "/api/band_activity":
+            self._send(json.dumps(_band_activity_payload()).encode(), "application/json")
+        elif self.path in ("/bands", "/bands.html", "/band_activity"):
+            self._send(_BAND_ACTIVITY_PAGE.encode(), "text/html; charset=utf-8")
         elif self.path == "/api/sync/status":
             self._send(json.dumps(_sync_status()).encode(), "application/json")
         elif self.path.startswith("/api/log/search"):
