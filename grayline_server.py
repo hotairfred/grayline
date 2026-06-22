@@ -785,6 +785,49 @@ WAJA_TARGET = 47   # JARL Worked All Japan prefectures
 WAZ_TARGET = 40
 
 
+def _build_ffma_chase(grid_qsos: dict) -> dict:
+    """FFMA chase intel for the dedicated FFMA tab, all derived LIVE from the
+    6m FFMA QSO detail so entries self-clear as confirmations arrive:
+      - pending: worked-but-unconfirmed grids + who-to-nudge (multi-op grids
+        confirm easier; flagged). Sorted rarest-first, then most recent.
+      - recent_atno: the grid whose first-ever 6m QSO is the most recent
+        (your latest All-Time-New-One), with confirm status.
+      - rares_worked: rare/uncommon-tier grids already in the log (the
+        trophies — the ones usually only a rover/portable puts on the air).
+    """
+    def tier_of(g):
+        info = _FFMA_RARITY.get(g) or {}
+        return (info.get("tier", "common"), float(info.get("pct_needed", 0.0)),
+                int(info.get("leaders_needing", 0)))
+
+    pending, rares, atno = [], [], None
+    atno_key = ("", "")
+    for g, recs in grid_qsos.items():
+        confirmed = any(r[3] for r in recs)
+        tier, pct, leaders = tier_of(g)
+        # unique calls that could confirm this grid, most-recent QSO first
+        calls = []
+        for d, t, c, cf in sorted(recs, reverse=True):
+            if c and c not in calls:
+                calls.append(c)
+        fd, ft = min((r[0], r[1]) for r in recs)   # first-ever QSO for this grid
+        if not confirmed:
+            pending.append({"grid": g, "date": fd, "calls": calls,
+                            "multi_op": len(calls) > 1, "tier": tier, "pct": pct})
+        if tier in ("rare", "uncommon"):
+            rep = sorted([r for r in recs if r[3]] or recs)[0]   # prefer a confirmed QSO
+            rares.append({"grid": g, "tier": tier, "pct": pct, "leaders": leaders,
+                          "confirmed": confirmed, "call": rep[2], "date": rep[0]})
+        if (fd, ft) > atno_key:
+            atno_key = (fd, ft)
+            atno = {"grid": g, "date": fd, "time": ft, "call": sorted(recs)[0][2],
+                    "confirmed": confirmed, "tier": tier, "pct": pct}
+
+    pending.sort(key=lambda p: (p["pct"], p["date"]), reverse=True)   # rarest, then newest
+    rares.sort(key=lambda r: (-r["pct"], r["grid"]))                  # rarest first
+    return {"pending": pending, "rares_worked": rares, "recent_atno": atno}
+
+
 def _build_scores_payload() -> dict:
     """ARRL-default award rollup. Per the per-band-scope memory rule, this
     surfaces only ARRL-tracked awards by default (DXCC variants, Challenge,
@@ -862,6 +905,9 @@ def _build_scores_payload() -> dict:
     vucc_band_c: dict[str, set[str]] = {}
     ffma_worked_set: set[str] = set()
     ffma_confirmed_set: set[str] = set()
+    # Per-grid 6m FFMA QSO detail, for the chase panel (pending list / ATNO /
+    # rares worked). grid4 -> list of (qso_date, time_on, call, confirmed, exch_grid)
+    ffma_grid_qsos: dict[str, list] = {}
     for q in _worked.qsos:
         pm = (q.get("prop_mode") or "").strip().upper()
         if pm == "SAT":
@@ -883,6 +929,11 @@ def _build_scores_payload() -> dict:
             ffma_worked_set.add(g)
             if confirmed:
                 ffma_confirmed_set.add(g)
+            ffma_grid_qsos.setdefault(g, []).append((
+                q.get("qso_date", ""), (q.get("time_on") or "").zfill(6),
+                (q.get("call") or "").strip().upper(), confirmed))
+
+    ffma_chase = _build_ffma_chase(ffma_grid_qsos)
 
     # WAS-by-band (5BWAS uses the 5 contest bands; we report all bands present)
     was_by_band: dict[str, int] = {}
@@ -1114,6 +1165,7 @@ def _build_scores_payload() -> dict:
             "confirmed": len(ffma_confirmed_set),
             "target": ffma_target,
         },
+        "ffma_chase": ffma_chase,
         "five_band_dxcc": {
             "by_band": five_dxcc_by_band,
             "bands_complete": five_dxcc_complete,
@@ -2473,6 +2525,42 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
 .ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
 .ffr-unc  { background: #6b5a1a; color: #f5d76e; }   /* uncommon — muted gold */
+/* ===== FFMA tab ===== */
+#view_ffma { max-width: 56em; }
+.ff-standing { text-align: center; padding: 0.8em 0 1.1em; }
+.ff-big { font-size: 3.4em; font-weight: 800; color: #d4af37; line-height: 1;
+  font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(212,175,55,0.35); }
+.ff-of { font-size: 0.4em; color: #888; font-weight: 600; }
+.ff-sub { color: #aaa; font-size: 0.95em; margin-top: 0.3em; }
+.ff-sub b { color: #f5d76e; }
+.ff-bar { height: 8px; background: #1a1a1a; border-radius: 4px; margin: 0.7em auto 0.3em;
+  max-width: 34em; overflow: hidden; }
+.ff-fill { height: 100%; background: linear-gradient(90deg, #6b5a1a, #d4af37); border-radius: 4px; }
+.ff-pctlabel { color: #777; font-size: 0.75em; }
+.ff-atno { border-color: #4a3d10; }
+.ff-atno-row { display: flex; align-items: center; gap: 0.8em; }
+.ff-atno-grid { font-size: 2em; font-weight: 800; color: #d4af37; font-variant-numeric: tabular-nums; }
+.ff-atno-meta { font-size: 0.9em; color: #bbb; line-height: 1.5; }
+.ff-tier { display: inline-block; padding: 0 0.35em; border-radius: 3px;
+  font-size: 0.72em; font-weight: 800; vertical-align: middle; }
+.ff-rare { background: #d4af37; color: #1a1a1a; }
+.ff-unc  { background: #6b5a1a; color: #f5d76e; }
+.ff-common { background: #1f1f1f; color: #777; }
+.ff-conf { color: #4caf50; font-weight: 700; font-size: 0.82em; }
+.ff-pend { color: #e0a83c; font-weight: 700; font-size: 0.82em; }
+.ff-rover { font-size: 0.9em; }
+.ff-count { float: right; color: #888; font-weight: 400; }
+.ff-table { width: 100%; border-collapse: collapse; font-size: 0.95em;
+  font-variant-numeric: tabular-nums; }
+.ff-table th { font-weight: normal; color: #888; font-size: 0.78em; text-align: left;
+  border-bottom: 1px solid #222; padding: 0.15em 0.4em; }
+.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; }
+.ff-g { font-weight: 700; color: #d4af37; }
+.ff-when { color: #888; }
+.ff-who { color: #ccc; }
+.ff-odds-good { color: #4caf50; font-size: 0.8em; font-weight: 700; cursor: help; }
+.ff-odds-one  { color: #888; font-size: 0.8em; cursor: help; }
+.ff-empty { color: #6a8d6a; padding: 0.4em 0; font-size: 0.9em; }
 .mara { display: inline-block; padding: 0px 4px; margin-right: 2px; border-radius: 3px;
   border: 1px solid transparent; background: #7d3cc9; color: #fff;
   font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
@@ -2779,6 +2867,7 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-tabs">
   <button data-view="live" class="active">Live</button>
   <button data-view="scores">Scores</button>
+  <button data-view="ffma">FFMA</button>
   <button data-view="rares">Most Wanted</button>
   <button data-view="log">Log search</button>
 </div>
@@ -2802,6 +2891,9 @@ details[open] .gear-icon { color: #fff; }
 <div class="view-section" id="view_scores">
   <div class="scores-grid" id="scores_grid">Loading…</div>
   <div class="scores-totals" id="scores_totals"></div>
+</div>
+<div class="view-section" id="view_ffma">
+  <div id="ffma_panel">Loading…</div>
 </div>
 <div class="view-section" id="view_rares">
   <div id="rare_matrix">Loading…</div>
@@ -4194,10 +4286,113 @@ function renderScores(j) {
     });
   });
   renderRareMatrix(j);
+  renderFfma(j);
   const t = j.totals || {};
   document.getElementById("scores_totals").textContent =
     `${(t.qsos||0).toLocaleString()} QSOs · ${(t.unique_calls||0).toLocaleString()} unique calls · ` +
     `${(t.confirmed_qsos||0).toLocaleString()} confirmed records`;
+}
+// ============== FFMA tab ==============
+function ffmaFmtDate(d) {
+  if (!d || d.length < 8) return d || "";
+  return d.slice(0,4) + "-" + d.slice(4,6) + "-" + d.slice(6,8);
+}
+function ffmaRover(call) {
+  if (!call) return "";
+  if (call.endsWith("/R")) return ` <span class="ff-rover" title="rover">🚐</span>`;
+  if (call.endsWith("/P")) return ` <span class="ff-rover" title="portable">🥾</span>`;
+  return "";
+}
+function ffmaTierBadge(tier, pct) {
+  if (tier === "rare") return `<span class="ff-tier ff-rare">rare ${pct}%</span>`;
+  if (tier === "uncommon") return `<span class="ff-tier ff-unc">unc ${pct}%</span>`;
+  return `<span class="ff-tier ff-common">common</span>`;
+}
+function renderFfma(j) {
+  const el = document.getElementById("ffma_panel");
+  if (!el) return;
+  const f = j.ffma, ch = j.ffma_chase;
+  if (!f || !ch) { el.innerHTML = `<span style="color:#888">FFMA data unavailable (6m award not tracked).</span>`; return; }
+  const target = f.target || 488;
+  const togo = Math.max(0, target - (f.confirmed||0));
+  const pct = ((f.confirmed||0) / target * 100).toFixed(1);
+  const cards = [];
+
+  // standing header — the grail at a glance
+  cards.push(`<div class="ff-standing">
+    <div class="ff-big">${f.confirmed}<span class="ff-of"> / ${target}</span></div>
+    <div class="ff-sub">grids confirmed &middot; ${f.worked} worked &middot; <b>${togo} to go</b></div>
+    <div class="ff-bar"><div class="ff-fill" style="width:${pct}%"></div></div>
+    <div class="ff-pctlabel">${pct}% of the grail &middot; FFMA = all 488 CONUS grids on 6 m</div>
+  </div>`);
+
+  // most recent ATNO
+  if (ch.recent_atno) {
+    const a = ch.recent_atno;
+    const st = a.confirmed
+      ? `<span class="ff-conf">CONFIRMED &#x2705;</span>`
+      : `<span class="ff-pend">awaiting confirmation</span>`;
+    cards.push(`<div class="score-card ff-atno">
+      <h3>&#x1F195; Most recent ATNO</h3>
+      <div class="ff-atno-row">
+        <div class="ff-atno-grid">${a.grid}</div>
+        <div class="ff-atno-meta">
+          <div>via <b>${a.call||"?"}</b>${ffmaRover(a.call)} &middot; ${ffmaFmtDate(a.date)}</div>
+          <div>${ffmaTierBadge(a.tier,a.pct)} ${st}</div>
+        </div>
+      </div>
+    </div>`);
+  }
+
+  // pending confirmation — the chase list
+  {
+    const rows = ch.pending.map(p => {
+      const who = p.calls.map(c => `${c}${ffmaRover(c)}`).join(", ");
+      const odds = p.multi_op
+        ? `<span class="ff-odds-good" title="more than one op worked this grid — any one uploading to LoTW confirms it">${p.calls.length} ops &#x2713;</span>`
+        : `<span class="ff-odds-one" title="only one op worked it — hinges on their LoTW upload">1 op</span>`;
+      return `<tr>
+        <td class="ff-g">${p.grid}</td>
+        <td>${ffmaTierBadge(p.tier,p.pct)}</td>
+        <td class="ff-when">${ffmaFmtDate(p.date)}</td>
+        <td class="ff-who">${who}</td>
+        <td>${odds}</td>
+      </tr>`;
+    }).join("");
+    cards.push(`<div class="score-card ff-pending">
+      <h3>&#x23F3; Worked &mdash; awaiting confirmation <span class="ff-count">${ch.pending.length}</span></h3>
+      ${ch.pending.length ? `<table class="ff-table">
+        <tr><th>grid</th><th>rarity</th><th>worked</th><th>who to nudge</th><th>odds</th></tr>
+        ${rows}</table>
+        <div class="mode-hint">Rarest first. Multi-op grids confirm easier &mdash; any one of them uploading to LoTW credits it. Rows clear themselves as confirmations arrive.</div>`
+        : `<div class="ff-empty">Nothing pending &mdash; every worked grid is confirmed. &#x1F389;</div>`}
+    </div>`);
+  }
+
+  // rare/uncommon grids worked — the trophies (rover catches)
+  {
+    const rows = ch.rares_worked.map(r => {
+      const st = r.confirmed ? `<span class="ff-conf">&#x2705;</span>` : `<span class="ff-pend">pending</span>`;
+      return `<tr>
+        <td class="ff-g">${r.grid}</td>
+        <td>${ffmaTierBadge(r.tier, r.pct)}</td>
+        <td class="ff-who">${r.call}${ffmaRover(r.call)}</td>
+        <td class="ff-when">${ffmaFmtDate(r.date)}</td>
+        <td>${st}</td>
+      </tr>`;
+    }).join("");
+    const nRovers = ch.rares_worked.filter(r => r.call && (r.call.endsWith("/R")||r.call.endsWith("/P"))).length;
+    cards.push(`<div class="score-card ff-rares">
+      <h3>&#x1F3C6; Rare &amp; uncommon grids worked <span class="ff-count">${ch.rares_worked.length}</span></h3>
+      ${ch.rares_worked.length ? `<table class="ff-table">
+        <tr><th>grid</th><th>rarity</th><th>via</th><th>date</th><th></th></tr>
+        ${rows}</table>
+        <div class="mode-hint">The hard ones &mdash; usually only a rover (&#x1F690;) or portable (&#x1F97E;) puts these on 6 m.${nRovers ? ` ${nRovers} of these came from rovers/portables.` : ""}</div>`
+        : `<div class="ff-empty">No rare/uncommon grids worked yet &mdash; the western grails are still ahead.</div>`}
+    </div>`);
+  }
+
+  el.innerHTML = cards.join("");
 }
 function fetchScores() {
   fetch("/api/scores").then(r => r.json()).then(renderScores)
