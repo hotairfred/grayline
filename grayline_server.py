@@ -2016,6 +2016,10 @@ _BAND_ACTIVITY_PAGE = """<!doctype html>
   .sub { color:#777; font-size:.85em; margin-bottom:1em; }
   .legend { display:flex; gap:1.3em; margin-bottom:1.2em; font-size:.95em; }
   .legend span { display:inline-flex; align-items:center; gap:.4em; }
+  .leg { cursor:pointer; user-select:none; padding:.15em .35em; border-radius:3px; }
+  .leg:hover { background:#1a1a1a; }
+  .leg.off { opacity:.32; text-decoration:line-through; }
+  .sub2 { color:#666; font-size:.78em; margin:-.7em 0 1.2em; }
   .sw { width:1em; height:1em; border-radius:2px; display:inline-block; }
   .rows { display:flex; flex-direction:column; gap:.55em; }
   .row { display:grid; grid-template-columns:3.4em 1fr 3.2em; align-items:center; gap:.8em; }
@@ -2034,48 +2038,59 @@ _BAND_ACTIVITY_PAGE = """<!doctype html>
 <body>
   <h1>BAND ACTIVITY</h1>
   <div class="sub" id="sub">local-filtered spots &middot; loading&hellip;</div>
-  <div class="legend">
-    <span><i class="sw" style="background:var(--cw)"></i>CW</span>
-    <span><i class="sw" style="background:var(--ssb)"></i>SSB</span>
-    <span><i class="sw" style="background:var(--dig)"></i>Digital</span>
+  <div class="legend" id="legend">
+    <span class="leg" data-mode="CW"><i class="sw" style="background:var(--cw)"></i>CW</span>
+    <span class="leg" data-mode="Phone"><i class="sw" style="background:var(--ssb)"></i>SSB</span>
+    <span class="leg" data-mode="Digital"><i class="sw" style="background:var(--dig)"></i>Digital</span>
   </div>
+  <div class="sub2">click a mode to show/hide it &middot; bars rescale to the shown modes</div>
   <div class="rows" id="rows"></div>
 <script>
 const MODES = [["CW","cw","CW"],["Phone","ssb","SSB"],["Digital","dig","Digital"]];
-async function refresh() {
-  let j;
-  try { j = await (await fetch("/api/band_activity",{cache:"no-store"})).json(); }
-  catch(e) { document.getElementById("sub").textContent = "fetch failed \\u2014 retrying…"; return; }
-  const counts = j.counts || {};
+const LS = "grayline_bands_modes";
+function loadSel(){ try{ const r=localStorage.getItem(LS); if(r) return new Set(JSON.parse(r)); }catch(e){} return new Set(["CW","Phone","Digital"]); }
+let sel = loadSel(), lastData = null;
+function saveSel(){ try{ localStorage.setItem(LS, JSON.stringify([...sel])); }catch(e){} }
+function syncLegend(){ document.querySelectorAll("#legend .leg").forEach(el => el.classList.toggle("off", !sel.has(el.dataset.mode))); }
+function render(){
+  if (!lastData) return;
+  const j = lastData, counts = j.counts || {};
+  const active = MODES.filter(m => sel.has(m[0]));
+  const bandTotal = b => { const c = counts[b]||{}; return active.reduce((s,[k]) => s+(c[k]||0), 0); };
   let maxTotal = 1;
-  for (const b of j.bands) {
-    const c = counts[b] || {};
-    const t = (c.CW||0)+(c.Phone||0)+(c.Digital||0);
-    if (t > maxTotal) maxTotal = t;
-  }
+  for (const b of j.bands){ const t = bandTotal(b); if (t > maxTotal) maxTotal = t; }
   const html = j.bands.map(b => {
-    const c = counts[b] || {};
-    const t = (c.CW||0)+(c.Phone||0)+(c.Digital||0);
+    const c = counts[b]||{}, t = bandTotal(b);
     const hot = (t === maxTotal && t > 0) ? " hot" : "";
     let inner;
-    if (t === 0) {
-      inner = '<span class="empty">—</span>';
-    } else {
-      const frac = (t / maxTotal) * 100;
-      const segs = MODES.map(([k,cls,lbl]) => {
-        const n = c[k]||0;
-        if (!n) return "";
-        const w = (n/t)*100;
-        return `<div class="seg ${cls}" style="width:${w}%" title="${b} ${lbl}: ${n}">${n}</div>`;
+    if (t === 0) { inner = '<span class="empty">—</span>'; }
+    else {
+      const frac = (t/maxTotal)*100;
+      const segs = active.map(([k,cls,lbl]) => {
+        const n = c[k]||0; if (!n) return "";
+        return `<div class="seg ${cls}" style="width:${(n/t)*100}%" title="${b} ${lbl}: ${n}">${n}</div>`;
       }).join("");
       inner = `<div style="display:flex;width:${frac}%;height:100%">${segs}</div>`;
     }
     return `<div class="row${hot}"><div class="band">${b}</div><div class="bar">${inner}</div><div class="total">${t||""}</div></div>`;
   }).join("");
   document.getElementById("rows").innerHTML = html;
+  const modeStr = [...sel].map(m => m==="Phone"?"SSB":m).join("/") || "no modes";
   document.getElementById("sub").textContent =
-    `local-filtered spots · ${j.bands.length} contest bands · updated ` + new Date().toLocaleTimeString();
+    `local-filtered spots · ${modeStr} · updated ` + new Date().toLocaleTimeString();
 }
+async function refresh(){
+  try { lastData = await (await fetch("/api/band_activity",{cache:"no-store"})).json(); }
+  catch(e) { document.getElementById("sub").textContent = "fetch failed — retrying…"; return; }
+  render();
+}
+document.getElementById("legend").addEventListener("click", e => {
+  const el = e.target.closest(".leg"); if (!el) return;
+  const m = el.dataset.mode;
+  sel.has(m) ? sel.delete(m) : sel.add(m);
+  saveSel(); syncLegend(); render();
+});
+syncLegend();
 refresh();
 setInterval(refresh, 20000);
 </script>
