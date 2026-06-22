@@ -2550,11 +2550,15 @@ details[open] > summary::before { transform: rotate(90deg); }
 .ff-pend { color: #e0a83c; font-weight: 700; font-size: 0.82em; }
 .ff-rover { font-size: 0.9em; }
 .ff-count { float: right; color: #888; font-weight: 400; }
-.ff-table { width: 100%; border-collapse: collapse; font-size: 0.95em;
+/* selector qualified with `table.` so it outranks the later `.score-card th`
+   rule (right-aligned, for Scores' numeric columns) — else headers right-align
+   while data cells left-align and the columns don't line up. */
+table.ff-table { width: 100%; border-collapse: collapse; font-size: 0.95em;
   font-variant-numeric: tabular-nums; }
-.ff-table th { font-weight: normal; color: #888; font-size: 0.78em; text-align: left;
+table.ff-table th { font-weight: normal; color: #888; font-size: 0.78em; text-align: left;
   border-bottom: 1px solid #222; padding: 0.15em 0.4em; }
-.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; }
+table.ff-table th:first-child { text-align: left; }
+table.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; text-align: left; }
 .ff-g { font-weight: 700; color: #d4af37; }
 .ff-when { color: #888; }
 .ff-who { color: #ccc; }
