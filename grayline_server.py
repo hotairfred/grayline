@@ -3276,6 +3276,15 @@ details[open] .gear-icon { color: #fff; }
   .legend { flex-wrap: wrap; gap: 0.5em 1em; margin-top: 0.6em; }
   /* score cards: single full-width column */
   .scores-grid { columns: 1; column-width: auto; }
+  /* log search: fixed-width inputs -> fill the row; pager wraps; results scroll */
+  .log-search-input, .log-search-select {
+    width: auto; flex: 1 1 8em; font-size: 1em; padding: 0.45em 0.5em;
+  }
+  .log-search-input.wide { flex: 1 1 100%; }      /* entity field = its own row */
+  .log-search-meta { flex: 1 1 100%; margin-left: 0; }
+  .log-search-pager { flex-wrap: wrap; gap: 0.45em; }
+  .log-search-pager button { padding: 0.45em 0.8em; font-size: 0.95em; }
+  .log-search-results { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 </style>
 </head><body>
