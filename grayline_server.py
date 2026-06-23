@@ -2802,6 +2802,7 @@ def dxcc_rarity_refresh_loop():
 # ---------------- HTML ----------------
 HTML_PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Grayline — live spots</title>
 <style>
 :root { color-scheme: dark; }
@@ -3253,6 +3254,29 @@ details[open] .gear-icon { color: #fff; }
   padding: 0.2em 0.5em;
 }
 .log-search-clear:hover { color: #ff0; }
+
+/* ---- Mobile / narrow screens (iPhone over Tailscale, couch tablet) ---- */
+@media (max-width: 640px) {
+  body { margin: 0.45em; }
+  h1 { font-size: 1.25em; }
+  /* bump the dense desktop table sizes up to something readable on a phone */
+  table { font-size: 0.92em; }
+  th { font-size: 0.82em; }
+  /* the wide spots table scrolls inside its own box instead of blowing out
+     the page width (which otherwise makes the whole layout pan/zoom) */
+  .band-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* view tabs wrap to multiple rows with finger-sized targets */
+  .view-tabs { flex-wrap: wrap; gap: 0.3em; }
+  .view-tabs button { flex: 1 0 auto; padding: 0.6em 0.5em; font-size: 1em; }
+  .tab-strip button { padding: 0.5em 0.7em; font-size: 0.95em; }
+  /* controls: stack the checkboxes (kill the inline margin-left) + bigger boxes */
+  .controls label { display: block; margin: 0.7em 0 0 !important; line-height: 1.6; }
+  .controls input[type="checkbox"] { transform: scale(1.3); margin-right: 0.5em; vertical-align: middle; }
+  .band-activity-link { display: inline-block; margin: 0.7em 0 0 !important; padding: 0.4em 0; }
+  .legend { flex-wrap: wrap; gap: 0.5em 1em; margin-top: 0.6em; }
+  /* score cards: single full-width column */
+  .scores-grid { columns: 1; column-width: auto; }
+}
 </style>
 </head><body>
 <div class="header-row">
