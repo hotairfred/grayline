@@ -1,2453 +1,2455 @@
 {
-"_source": "FFMA Leader Board V7.ods (Ed N7PHY) \u2014 GridData most-needed ranking",
-"_fetched": "2026-06-21",
-"_metric": "pct_needed = % of FFMA leaders (400+ confirmed) still needing the grid",
-"_count": 488,
-"_tiers": {
-"rare": 16,
-"uncommon": 103,
-"common": 369
-},
-"grids": {
-"CM93": {
-"pct_needed": 50.5,
-"leaders_needing": 112,
-"tier": "rare"
-},
-"CN75": {
-"pct_needed": 44.1,
-"leaders_needing": 98,
-"tier": "rare"
-},
-"CM79": {
-"pct_needed": 42.8,
-"leaders_needing": 95,
-"tier": "rare"
-},
-"CN71": {
-"pct_needed": 42.3,
-"leaders_needing": 94,
-"tier": "rare"
-},
-"DM27": {
-"pct_needed": 39.6,
-"leaders_needing": 88,
-"tier": "rare"
-},
-"DN25": {
-"pct_needed": 36.5,
-"leaders_needing": 81,
-"tier": "rare"
-},
-"DN20": {
-"pct_needed": 34.2,
-"leaders_needing": 76,
-"tier": "rare"
-},
-"DN01": {
-"pct_needed": 33.8,
-"leaders_needing": 75,
-"tier": "rare"
-},
-"CN70": {
-"pct_needed": 33.3,
-"leaders_needing": 74,
-"tier": "rare"
-},
-"DN12": {
-"pct_needed": 33.3,
-"leaders_needing": 74,
-"tier": "rare"
-},
-"EL84": {
-"pct_needed": 32.0,
-"leaders_needing": 71,
-"tier": "rare"
-},
-"DN02": {
-"pct_needed": 31.5,
-"leaders_needing": 70,
-"tier": "rare"
-},
-"DL88": {
-"pct_needed": 31.1,
-"leaders_needing": 69,
-"tier": "rare"
-},
-"DN38": {
-"pct_needed": 31.1,
-"leaders_needing": 69,
-"tier": "rare"
-},
-"DN48": {
-"pct_needed": 31.1,
-"leaders_needing": 69,
-"tier": "rare"
-},
-"DN66": {
-"pct_needed": 30.2,
-"leaders_needing": 67,
-"tier": "rare"
-},
-"CN93": {
-"pct_needed": 29.7,
-"leaders_needing": 66,
-"tier": "uncommon"
-},
-"DN00": {
-"pct_needed": 29.7,
-"leaders_needing": 66,
-"tier": "uncommon"
-},
-"DM87": {
-"pct_needed": 28.8,
-"leaders_needing": 64,
-"tier": "uncommon"
-},
-"DN68": {
-"pct_needed": 28.8,
-"leaders_needing": 64,
-"tier": "uncommon"
-},
-"DM77": {
-"pct_needed": 28.4,
-"leaders_needing": 63,
-"tier": "uncommon"
-},
-"DM28": {
-"pct_needed": 27.9,
-"leaders_needing": 62,
-"tier": "uncommon"
-},
-"DN78": {
-"pct_needed": 27.9,
-"leaders_needing": 62,
-"tier": "uncommon"
-},
-"DN98": {
-"pct_needed": 27.9,
-"leaders_needing": 62,
-"tier": "uncommon"
-},
-"DM39": {
-"pct_needed": 27.5,
-"leaders_needing": 61,
-"tier": "uncommon"
-},
-"DM29": {
-"pct_needed": 27.0,
-"leaders_needing": 60,
-"tier": "uncommon"
-},
-"DN05": {
-"pct_needed": 26.6,
-"leaders_needing": 59,
-"tier": "uncommon"
-},
-"DN24": {
-"pct_needed": 26.6,
-"leaders_needing": 59,
-"tier": "uncommon"
-},
-"DM46": {
-"pct_needed": 26.1,
-"leaders_needing": 58,
-"tier": "uncommon"
-},
-"DN21": {
-"pct_needed": 26.1,
-"leaders_needing": 58,
-"tier": "uncommon"
-},
-"DN53": {
-"pct_needed": 26.1,
-"leaders_needing": 58,
-"tier": "uncommon"
-},
-"DN64": {
-"pct_needed": 26.1,
-"leaders_needing": 58,
-"tier": "uncommon"
-},
-"EL58": {
-"pct_needed": 26.1,
-"leaders_needing": 58,
-"tier": "uncommon"
-},
-"DM86": {
-"pct_needed": 25.7,
-"leaders_needing": 57,
-"tier": "uncommon"
-},
-"DM19": {
-"pct_needed": 25.2,
-"leaders_needing": 56,
-"tier": "uncommon"
-},
-"DN52": {
-"pct_needed": 25.2,
-"leaders_needing": 56,
-"tier": "uncommon"
-},
-"DN63": {
-"pct_needed": 25.2,
-"leaders_needing": 56,
-"tier": "uncommon"
-},
-"CN72": {
-"pct_needed": 24.8,
-"leaders_needing": 55,
-"tier": "uncommon"
-},
-"DM31": {
-"pct_needed": 24.8,
-"leaders_needing": 55,
-"tier": "uncommon"
-},
-"DM55": {
-"pct_needed": 24.8,
-"leaders_needing": 55,
-"tier": "uncommon"
-},
-"DN03": {
-"pct_needed": 24.8,
-"leaders_needing": 55,
-"tier": "uncommon"
-},
-"DM18": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"DM47": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"DM71": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"DM83": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"DN67": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"FN56": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"FN57": {
-"pct_needed": 24.3,
-"leaders_needing": 54,
-"tier": "uncommon"
-},
-"DN42": {
-"pct_needed": 23.9,
-"leaders_needing": 53,
-"tier": "uncommon"
-},
-"DN75": {
-"pct_needed": 23.9,
-"leaders_needing": 53,
-"tier": "uncommon"
-},
-"DN87": {
-"pct_needed": 23.9,
-"leaders_needing": 53,
-"tier": "uncommon"
-},
-"DM23": {
-"pct_needed": 23.4,
-"leaders_needing": 52,
-"tier": "uncommon"
-},
-"FN45": {
-"pct_needed": 23.0,
-"leaders_needing": 51,
-"tier": "uncommon"
-},
-"DN82": {
-"pct_needed": 22.5,
-"leaders_needing": 50,
-"tier": "uncommon"
-},
-"DN73": {
-"pct_needed": 21.6,
-"leaders_needing": 48,
-"tier": "uncommon"
-},
-"CN78": {
-"pct_needed": 21.2,
-"leaders_needing": 47,
-"tier": "uncommon"
-},
-"DN08": {
-"pct_needed": 21.2,
-"leaders_needing": 47,
-"tier": "uncommon"
-},
-"DM36": {
-"pct_needed": 20.7,
-"leaders_needing": 46,
-"tier": "uncommon"
-},
-"DN10": {
-"pct_needed": 20.7,
-"leaders_needing": 46,
-"tier": "uncommon"
-},
-"DM53": {
-"pct_needed": 20.3,
-"leaders_needing": 45,
-"tier": "uncommon"
-},
-"EL39": {
-"pct_needed": 20.3,
-"leaders_needing": 45,
-"tier": "uncommon"
-},
-"EN48": {
-"pct_needed": 19.8,
-"leaders_needing": 44,
-"tier": "uncommon"
-},
-"DM07": {
-"pct_needed": 19.4,
-"leaders_needing": 43,
-"tier": "uncommon"
-},
-"DM56": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"DM70": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"DM90": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"DN15": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"DN54": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"EL07": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"EN28": {
-"pct_needed": 18.9,
-"leaders_needing": 42,
-"tier": "uncommon"
-},
-"DM02": {
-"pct_needed": 18.5,
-"leaders_needing": 41,
-"tier": "uncommon"
-},
-"DN77": {
-"pct_needed": 18.5,
-"leaders_needing": 41,
-"tier": "uncommon"
-},
-"EN38": {
-"pct_needed": 18.5,
-"leaders_needing": 41,
-"tier": "uncommon"
-},
-"DN04": {
-"pct_needed": 17.6,
-"leaders_needing": 39,
-"tier": "uncommon"
-},
-"EN67": {
-"pct_needed": 17.1,
-"leaders_needing": 38,
-"tier": "uncommon"
-},
-"CN98": {
-"pct_needed": 16.7,
-"leaders_needing": 37,
-"tier": "uncommon"
-},
-"DN32": {
-"pct_needed": 16.7,
-"leaders_needing": 37,
-"tier": "uncommon"
-},
-"DN34": {
-"pct_needed": 16.7,
-"leaders_needing": 37,
-"tier": "uncommon"
-},
-"DN93": {
-"pct_needed": 15.8,
-"leaders_needing": 35,
-"tier": "uncommon"
-},
-"DM74": {
-"pct_needed": 15.3,
-"leaders_needing": 34,
-"tier": "uncommon"
-},
-"DN72": {
-"pct_needed": 15.3,
-"leaders_needing": 34,
-"tier": "uncommon"
-},
-"DN76": {
-"pct_needed": 15.3,
-"leaders_needing": 34,
-"tier": "uncommon"
-},
-"EN86": {
-"pct_needed": 15.3,
-"leaders_needing": 34,
-"tier": "uncommon"
-},
-"DM66": {
-"pct_needed": 14.9,
-"leaders_needing": 33,
-"tier": "uncommon"
-},
-"DL89": {
-"pct_needed": 14.4,
-"leaders_needing": 32,
-"tier": "uncommon"
-},
-"CN74": {
-"pct_needed": 14.0,
-"leaders_needing": 31,
-"tier": "uncommon"
-},
-"DN23": {
-"pct_needed": 14.0,
-"leaders_needing": 31,
-"tier": "uncommon"
-},
-"FN66": {
-"pct_needed": 14.0,
-"leaders_needing": 31,
-"tier": "uncommon"
-},
-"DN37": {
-"pct_needed": 13.5,
-"leaders_needing": 30,
-"tier": "uncommon"
-},
-"DN57": {
-"pct_needed": 13.5,
-"leaders_needing": 30,
-"tier": "uncommon"
-},
-"DN58": {
-"pct_needed": 13.5,
-"leaders_needing": 30,
-"tier": "uncommon"
-},
-"CM86": {
-"pct_needed": 13.1,
-"leaders_needing": 29,
-"tier": "uncommon"
-},
-"DN47": {
-"pct_needed": 13.1,
-"leaders_needing": 29,
-"tier": "uncommon"
-},
-"DN88": {
-"pct_needed": 13.1,
-"leaders_needing": 29,
-"tier": "uncommon"
-},
-"EN15": {
-"pct_needed": 13.1,
-"leaders_needing": 29,
-"tier": "uncommon"
-},
-"FM25": {
-"pct_needed": 13.1,
-"leaders_needing": 29,
-"tier": "uncommon"
-},
-"CN76": {
-"pct_needed": 12.6,
-"leaders_needing": 28,
-"tier": "uncommon"
-},
-"DN11": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"EM05": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"EM43": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"EN03": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"EN20": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"EN24": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"FM13": {
-"pct_needed": 12.2,
-"leaders_needing": 27,
-"tier": "uncommon"
-},
-"DN44": {
-"pct_needed": 11.7,
-"leaders_needing": 26,
-"tier": "uncommon"
-},
-"DN85": {
-"pct_needed": 11.7,
-"leaders_needing": 26,
-"tier": "uncommon"
-},
-"EN05": {
-"pct_needed": 11.7,
-"leaders_needing": 26,
-"tier": "uncommon"
-},
-"DM08": {
-"pct_needed": 11.3,
-"leaders_needing": 25,
-"tier": "uncommon"
-},
-"DM17": {
-"pct_needed": 11.3,
-"leaders_needing": 25,
-"tier": "uncommon"
-},
-"DM85": {
-"pct_needed": 11.3,
-"leaders_needing": 25,
-"tier": "uncommon"
-},
-"DN86": {
-"pct_needed": 11.3,
-"leaders_needing": 25,
-"tier": "uncommon"
-},
-"CM89": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"DL79": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"DM63": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"DM76": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"EM06": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"EM07": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"EN57": {
-"pct_needed": 10.8,
-"leaders_needing": 24,
-"tier": "uncommon"
-},
-"EL08": {
-"pct_needed": 10.4,
-"leaders_needing": 23,
-"tier": "uncommon"
-},
-"CN97": {
-"pct_needed": 9.5,
-"leaders_needing": 21,
-"tier": "common"
-},
-"DM75": {
-"pct_needed": 9.5,
-"leaders_needing": 21,
-"tier": "common"
-},
-"DN83": {
-"pct_needed": 9.5,
-"leaders_needing": 21,
-"tier": "common"
-},
-"EL59": {
-"pct_needed": 9.5,
-"leaders_needing": 21,
-"tier": "common"
-},
-"FN67": {
-"pct_needed": 9.5,
-"leaders_needing": 21,
-"tier": "common"
-},
-"DN65": {
-"pct_needed": 9.0,
-"leaders_needing": 20,
-"tier": "common"
-},
-"DM72": {
-"pct_needed": 8.6,
-"leaders_needing": 19,
-"tier": "common"
-},
-"EN47": {
-"pct_needed": 8.6,
-"leaders_needing": 19,
-"tier": "common"
-},
-"DM67": {
-"pct_needed": 8.1,
-"leaders_needing": 18,
-"tier": "common"
-},
-"DN16": {
-"pct_needed": 8.1,
-"leaders_needing": 18,
-"tier": "common"
-},
-"EL17": {
-"pct_needed": 8.1,
-"leaders_needing": 18,
-"tier": "common"
-},
-"EN56": {
-"pct_needed": 8.1,
-"leaders_needing": 18,
-"tier": "common"
-},
-"EN85": {
-"pct_needed": 8.1,
-"leaders_needing": 18,
-"tier": "common"
-},
-"DM15": {
-"pct_needed": 7.7,
-"leaders_needing": 17,
-"tier": "common"
-},
-"DM89": {
-"pct_needed": 7.7,
-"leaders_needing": 17,
-"tier": "common"
-},
-"DN07": {
-"pct_needed": 7.7,
-"leaders_needing": 17,
-"tier": "common"
-},
-"EM24": {
-"pct_needed": 7.7,
-"leaders_needing": 17,
-"tier": "common"
-},
-"EN58": {
-"pct_needed": 7.7,
-"leaders_needing": 17,
-"tier": "common"
-},
-"DM81": {
-"pct_needed": 7.2,
-"leaders_needing": 16,
-"tier": "common"
-},
-"DM97": {
-"pct_needed": 7.2,
-"leaders_needing": 16,
-"tier": "common"
-},
-"DN35": {
-"pct_needed": 7.2,
-"leaders_needing": 16,
-"tier": "common"
-},
-"CN80": {
-"pct_needed": 6.8,
-"leaders_needing": 15,
-"tier": "common"
-},
-"CN83": {
-"pct_needed": 6.8,
-"leaders_needing": 15,
-"tier": "common"
-},
-"DM38": {
-"pct_needed": 6.8,
-"leaders_needing": 15,
-"tier": "common"
-},
-"EM41": {
-"pct_needed": 6.8,
-"leaders_needing": 15,
-"tier": "common"
-},
-"CN91": {
-"pct_needed": 6.3,
-"leaders_needing": 14,
-"tier": "common"
-},
-"DM16": {
-"pct_needed": 6.3,
-"leaders_needing": 14,
-"tier": "common"
-},
-"DN90": {
-"pct_needed": 6.3,
-"leaders_needing": 14,
-"tier": "common"
-},
-"EL94": {
-"pct_needed": 6.3,
-"leaders_needing": 14,
-"tier": "common"
-},
-"EN92": {
-"pct_needed": 6.3,
-"leaders_needing": 14,
-"tier": "common"
-},
-"EM61": {
-"pct_needed": 5.9,
-"leaders_needing": 13,
-"tier": "common"
-},
-"CN82": {
-"pct_needed": 5.4,
-"leaders_needing": 12,
-"tier": "common"
-},
-"DN92": {
-"pct_needed": 5.4,
-"leaders_needing": 12,
-"tier": "common"
-},
-"DN95": {
-"pct_needed": 5.4,
-"leaders_needing": 12,
-"tier": "common"
-},
-"EM21": {
-"pct_needed": 5.4,
-"leaders_needing": 12,
-"tier": "common"
-},
-"EN55": {
-"pct_needed": 5.4,
-"leaders_needing": 12,
-"tier": "common"
-},
-"DL99": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"DM51": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"DN51": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"DN91": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"DN96": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"DN97": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"EL28": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"EL79": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"EM67": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"EN02": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"EN76": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"FM26": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"FN51": {
-"pct_needed": 5.0,
-"leaders_needing": 11,
-"tier": "common"
-},
-"CN81": {
-"pct_needed": 4.5,
-"leaders_needing": 10,
-"tier": "common"
-},
-"DM73": {
-"pct_needed": 4.5,
-"leaders_needing": 10,
-"tier": "common"
-},
-"DM96": {
-"pct_needed": 4.5,
-"leaders_needing": 10,
-"tier": "common"
-},
-"EM33": {
-"pct_needed": 4.5,
-"leaders_needing": 10,
-"tier": "common"
-},
-"EN01": {
-"pct_needed": 4.5,
-"leaders_needing": 10,
-"tier": "common"
-},
-"DN50": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"DN80": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"DN84": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"EM27": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"EM30": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"EM46": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"EN27": {
-"pct_needed": 4.1,
-"leaders_needing": 9,
-"tier": "common"
-},
-"CM94": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"CN77": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"DM94": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"DN36": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"EL18": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"EM52": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"EN37": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"EN46": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"FN01": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"FN46": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"FN53": {
-"pct_needed": 3.6,
-"leaders_needing": 8,
-"tier": "common"
-},
-"DM69": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"DM80": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"DM84": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"DM98": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"DN46": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EL16": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EL86": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EM23": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EN06": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EN16": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"EN18": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"FN23": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"FN35": {
-"pct_needed": 3.2,
-"leaders_needing": 7,
-"tier": "common"
-},
-"CN96": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"DM24": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"DM49": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"DM57": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"DM68": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"DN56": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"EM01": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"EM91": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"EN25": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"EN74": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"FN14": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"FN55": {
-"pct_needed": 2.7,
-"leaders_needing": 6,
-"tier": "common"
-},
-"CN90": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"CN94": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"DM95": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EM18": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EM47": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EM51": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EN14": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EN23": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"EN64": {
-"pct_needed": 2.3,
-"leaders_needing": 5,
-"tier": "common"
-},
-"DM35": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"DM37": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"DM45": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"DM48": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"DM59": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EL19": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM08": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM14": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM31": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM76": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM82": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EM88": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EN29": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EN36": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EN66": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"EN84": {
-"pct_needed": 1.8,
-"leaders_needing": 4,
-"tier": "common"
-},
-"CM99": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"CN92": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"CN95": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DL98": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DM25": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DM61": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DM64": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DM93": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DN18": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DN28": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DN33": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DN61": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DN81": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM03": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM16": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM36": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM42": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM44": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EM87": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EN65": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"EN75": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"FM09": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"FM15": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"FN64": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"FN65": {
-"pct_needed": 1.4,
-"leaders_needing": 3,
-"tier": "common"
-},
-"DM05": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"DM12": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"DM82": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"DN26": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"DN45": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EL15": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM02": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM34": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM53": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM71": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM81": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM86": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM92": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM93": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM94": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM95": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM98": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EM99": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN04": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN08": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN26": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN30": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN33": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"EN45": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"FM02": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"FM03": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"FM14": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"FN00": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"FN22": {
-"pct_needed": 0.9,
-"leaders_needing": 2,
-"tier": "common"
-},
-"CN73": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM06": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM26": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM32": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM44": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM58": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DM92": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DN27": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DN60": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"DN62": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EL89": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM11": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM37": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM38": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM62": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM66": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM68": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM78": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EM97": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EN70": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EN73": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EN81": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"EN83": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FM08": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FM16": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FM28": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FN02": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FN11": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"FN24": {
-"pct_needed": 0.5,
-"leaders_needing": 1,
-"tier": "common"
-},
-"CM87": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CM88": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CM95": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CM96": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CM97": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CM98": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CN84": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CN85": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CN86": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CN87": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"CN88": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM03": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM04": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM09": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM13": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM14": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM22": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM33": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM34": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM41": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM42": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM43": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM52": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM54": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM62": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM65": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM78": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM79": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM88": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM91": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DM99": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN06": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN13": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN14": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN17": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN22": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN30": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN31": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN40": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN41": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN43": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN55": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN70": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN71": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN74": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"DN94": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL06": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL09": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL29": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL49": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL87": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL88": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL95": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL96": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL97": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL98": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EL99": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM00": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM04": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM09": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM10": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM12": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM13": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM15": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM17": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM19": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM20": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM22": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM25": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM26": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM28": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM29": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM32": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM35": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM39": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM40": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM45": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM48": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM49": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM50": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM54": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM55": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM56": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM57": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM58": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM59": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM60": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM63": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM64": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM65": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM69": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM70": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM72": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM73": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM74": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM75": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM77": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM79": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM80": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM83": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM84": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM85": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM89": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM90": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EM96": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN00": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN07": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN10": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN11": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN12": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN13": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN17": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN21": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN22": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN31": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN32": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN34": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN35": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN40": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN41": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN42": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN43": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN44": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN50": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN51": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN52": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN53": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN54": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN60": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN61": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN62": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN63": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN71": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN72": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN80": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN82": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN90": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"EN91": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM04": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM05": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM06": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM07": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM17": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM18": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM19": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM27": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FM29": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN03": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN10": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN12": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN13": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN20": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN21": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN25": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN30": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN31": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN32": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN33": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN34": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN41": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN42": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN43": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN44": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-},
-"FN54": {
-"pct_needed": 0.0,
-"leaders_needing": 0,
-"tier": "common"
-}
-}
+ "_source": "Gridzilla (gridzilla.us) /api/map/aggregates/ffma_most_needed \u2014 live FFMA Leader Board, leaders mode (>=400 confirmed), Ed N7PHY",
+ "_fetched": "2026-06-23",
+ "_generated_at_utc": "2026-06-23T17:38:03Z",
+ "_metric": "pct_needed = % of FFMA leaders (400+ confirmed) still needing the grid",
+ "_population": 225,
+ "_count": 488,
+ "_tiers": {
+  "rare": 20,
+  "uncommon": 103,
+  "common": 365
+ },
+ "grids": {
+  "CM79": {
+   "pct_needed": 46.2,
+   "leaders_needing": 104,
+   "tier": "rare"
+  },
+  "CM86": {
+   "pct_needed": 14.7,
+   "leaders_needing": 33,
+   "tier": "uncommon"
+  },
+  "CM87": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM88": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM89": {
+   "pct_needed": 13.3,
+   "leaders_needing": 30,
+   "tier": "uncommon"
+  },
+  "CM93": {
+   "pct_needed": 54.7,
+   "leaders_needing": 123,
+   "tier": "rare"
+  },
+  "CM94": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "CM95": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM96": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM97": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM98": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CM99": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "CN70": {
+   "pct_needed": 35.1,
+   "leaders_needing": 79,
+   "tier": "rare"
+  },
+  "CN71": {
+   "pct_needed": 46.2,
+   "leaders_needing": 104,
+   "tier": "rare"
+  },
+  "CN72": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "CN73": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "CN74": {
+   "pct_needed": 17.8,
+   "leaders_needing": 40,
+   "tier": "uncommon"
+  },
+  "CN75": {
+   "pct_needed": 48.0,
+   "leaders_needing": 108,
+   "tier": "rare"
+  },
+  "CN76": {
+   "pct_needed": 15.1,
+   "leaders_needing": 34,
+   "tier": "uncommon"
+  },
+  "CN77": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "CN78": {
+   "pct_needed": 24.9,
+   "leaders_needing": 56,
+   "tier": "uncommon"
+  },
+  "CN80": {
+   "pct_needed": 6.2,
+   "leaders_needing": 14,
+   "tier": "common"
+  },
+  "CN81": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "CN82": {
+   "pct_needed": 5.8,
+   "leaders_needing": 13,
+   "tier": "common"
+  },
+  "CN83": {
+   "pct_needed": 7.6,
+   "leaders_needing": 17,
+   "tier": "common"
+  },
+  "CN84": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CN85": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CN86": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CN87": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CN88": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "CN90": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "CN91": {
+   "pct_needed": 7.6,
+   "leaders_needing": 17,
+   "tier": "common"
+  },
+  "CN92": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "CN93": {
+   "pct_needed": 31.1,
+   "leaders_needing": 70,
+   "tier": "rare"
+  },
+  "CN94": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "CN95": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "CN96": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "CN97": {
+   "pct_needed": 11.1,
+   "leaders_needing": 25,
+   "tier": "uncommon"
+  },
+  "CN98": {
+   "pct_needed": 20.9,
+   "leaders_needing": 47,
+   "tier": "uncommon"
+  },
+  "DL79": {
+   "pct_needed": 12.4,
+   "leaders_needing": 28,
+   "tier": "uncommon"
+  },
+  "DL88": {
+   "pct_needed": 34.2,
+   "leaders_needing": 77,
+   "tier": "rare"
+  },
+  "DL89": {
+   "pct_needed": 16.9,
+   "leaders_needing": 38,
+   "tier": "uncommon"
+  },
+  "DL98": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DL99": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "DM02": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "DM03": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM04": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM05": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "DM06": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM07": {
+   "pct_needed": 20.9,
+   "leaders_needing": 47,
+   "tier": "uncommon"
+  },
+  "DM08": {
+   "pct_needed": 13.8,
+   "leaders_needing": 31,
+   "tier": "uncommon"
+  },
+  "DM09": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM12": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM13": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM14": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM15": {
+   "pct_needed": 8.9,
+   "leaders_needing": 20,
+   "tier": "common"
+  },
+  "DM16": {
+   "pct_needed": 8.9,
+   "leaders_needing": 20,
+   "tier": "common"
+  },
+  "DM17": {
+   "pct_needed": 14.2,
+   "leaders_needing": 32,
+   "tier": "uncommon"
+  },
+  "DM18": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DM19": {
+   "pct_needed": 26.2,
+   "leaders_needing": 59,
+   "tier": "uncommon"
+  },
+  "DM22": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM23": {
+   "pct_needed": 26.7,
+   "leaders_needing": 60,
+   "tier": "uncommon"
+  },
+  "DM24": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "DM25": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "DM26": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM27": {
+   "pct_needed": 39.6,
+   "leaders_needing": 89,
+   "tier": "rare"
+  },
+  "DM28": {
+   "pct_needed": 29.3,
+   "leaders_needing": 66,
+   "tier": "uncommon"
+  },
+  "DM29": {
+   "pct_needed": 28.4,
+   "leaders_needing": 64,
+   "tier": "uncommon"
+  },
+  "DM31": {
+   "pct_needed": 26.7,
+   "leaders_needing": 60,
+   "tier": "uncommon"
+  },
+  "DM32": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "DM33": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM34": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM35": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "DM36": {
+   "pct_needed": 24.9,
+   "leaders_needing": 56,
+   "tier": "uncommon"
+  },
+  "DM37": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "DM38": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "DM39": {
+   "pct_needed": 31.1,
+   "leaders_needing": 70,
+   "tier": "rare"
+  },
+  "DM41": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM42": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM43": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM44": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "DM45": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM46": {
+   "pct_needed": 29.8,
+   "leaders_needing": 67,
+   "tier": "uncommon"
+  },
+  "DM47": {
+   "pct_needed": 29.8,
+   "leaders_needing": 67,
+   "tier": "uncommon"
+  },
+  "DM48": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM49": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "DM51": {
+   "pct_needed": 5.8,
+   "leaders_needing": 13,
+   "tier": "common"
+  },
+  "DM52": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM53": {
+   "pct_needed": 23.6,
+   "leaders_needing": 53,
+   "tier": "uncommon"
+  },
+  "DM54": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM55": {
+   "pct_needed": 26.7,
+   "leaders_needing": 60,
+   "tier": "uncommon"
+  },
+  "DM56": {
+   "pct_needed": 23.1,
+   "leaders_needing": 52,
+   "tier": "uncommon"
+  },
+  "DM57": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "DM58": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM59": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM61": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "DM62": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM63": {
+   "pct_needed": 12.9,
+   "leaders_needing": 29,
+   "tier": "uncommon"
+  },
+  "DM64": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "DM65": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM66": {
+   "pct_needed": 16.9,
+   "leaders_needing": 38,
+   "tier": "uncommon"
+  },
+  "DM67": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  },
+  "DM68": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM69": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "DM70": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "DM71": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DM72": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  },
+  "DM73": {
+   "pct_needed": 5.8,
+   "leaders_needing": 13,
+   "tier": "common"
+  },
+  "DM74": {
+   "pct_needed": 16.4,
+   "leaders_needing": 37,
+   "tier": "uncommon"
+  },
+  "DM75": {
+   "pct_needed": 9.8,
+   "leaders_needing": 22,
+   "tier": "common"
+  },
+  "DM76": {
+   "pct_needed": 12.9,
+   "leaders_needing": 29,
+   "tier": "uncommon"
+  },
+  "DM77": {
+   "pct_needed": 30.2,
+   "leaders_needing": 68,
+   "tier": "rare"
+  },
+  "DM78": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM79": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM80": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "DM81": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "DM82": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "DM83": {
+   "pct_needed": 25.3,
+   "leaders_needing": 57,
+   "tier": "uncommon"
+  },
+  "DM84": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "DM85": {
+   "pct_needed": 12.0,
+   "leaders_needing": 27,
+   "tier": "uncommon"
+  },
+  "DM86": {
+   "pct_needed": 26.7,
+   "leaders_needing": 60,
+   "tier": "uncommon"
+  },
+  "DM87": {
+   "pct_needed": 29.3,
+   "leaders_needing": 66,
+   "tier": "uncommon"
+  },
+  "DM88": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM89": {
+   "pct_needed": 8.4,
+   "leaders_needing": 19,
+   "tier": "common"
+  },
+  "DM90": {
+   "pct_needed": 19.6,
+   "leaders_needing": 44,
+   "tier": "uncommon"
+  },
+  "DM91": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DM92": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DM93": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "DM94": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "DM95": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM96": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "DM97": {
+   "pct_needed": 7.1,
+   "leaders_needing": 16,
+   "tier": "common"
+  },
+  "DM98": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DM99": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DN00": {
+   "pct_needed": 32.4,
+   "leaders_needing": 73,
+   "tier": "rare"
+  },
+  "DN01": {
+   "pct_needed": 35.6,
+   "leaders_needing": 80,
+   "tier": "rare"
+  },
+  "DN02": {
+   "pct_needed": 34.2,
+   "leaders_needing": 77,
+   "tier": "rare"
+  },
+  "DN03": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DN04": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "DN05": {
+   "pct_needed": 29.3,
+   "leaders_needing": 66,
+   "tier": "uncommon"
+  },
+  "DN06": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN07": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  },
+  "DN08": {
+   "pct_needed": 22.7,
+   "leaders_needing": 51,
+   "tier": "uncommon"
+  },
+  "DN10": {
+   "pct_needed": 24.0,
+   "leaders_needing": 54,
+   "tier": "uncommon"
+  },
+  "DN11": {
+   "pct_needed": 12.4,
+   "leaders_needing": 28,
+   "tier": "uncommon"
+  },
+  "DN12": {
+   "pct_needed": 36.9,
+   "leaders_needing": 83,
+   "tier": "rare"
+  },
+  "DN13": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN14": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN15": {
+   "pct_needed": 20.0,
+   "leaders_needing": 45,
+   "tier": "uncommon"
+  },
+  "DN16": {
+   "pct_needed": 10.7,
+   "leaders_needing": 24,
+   "tier": "uncommon"
+  },
+  "DN17": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN18": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "DN20": {
+   "pct_needed": 35.6,
+   "leaders_needing": 80,
+   "tier": "rare"
+  },
+  "DN21": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DN22": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN23": {
+   "pct_needed": 16.4,
+   "leaders_needing": 37,
+   "tier": "uncommon"
+  },
+  "DN24": {
+   "pct_needed": 28.4,
+   "leaders_needing": 64,
+   "tier": "uncommon"
+  },
+  "DN25": {
+   "pct_needed": 40.4,
+   "leaders_needing": 91,
+   "tier": "rare"
+  },
+  "DN26": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "DN27": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DN28": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "DN30": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DN31": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN32": {
+   "pct_needed": 17.3,
+   "leaders_needing": 39,
+   "tier": "uncommon"
+  },
+  "DN33": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "DN34": {
+   "pct_needed": 18.2,
+   "leaders_needing": 41,
+   "tier": "uncommon"
+  },
+  "DN35": {
+   "pct_needed": 8.9,
+   "leaders_needing": 20,
+   "tier": "common"
+  },
+  "DN36": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "DN37": {
+   "pct_needed": 14.7,
+   "leaders_needing": 33,
+   "tier": "uncommon"
+  },
+  "DN38": {
+   "pct_needed": 34.7,
+   "leaders_needing": 78,
+   "tier": "rare"
+  },
+  "DN40": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN41": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN42": {
+   "pct_needed": 23.1,
+   "leaders_needing": 52,
+   "tier": "uncommon"
+  },
+  "DN43": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN44": {
+   "pct_needed": 13.8,
+   "leaders_needing": 31,
+   "tier": "uncommon"
+  },
+  "DN45": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DN46": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "DN47": {
+   "pct_needed": 13.8,
+   "leaders_needing": 31,
+   "tier": "uncommon"
+  },
+  "DN48": {
+   "pct_needed": 34.2,
+   "leaders_needing": 77,
+   "tier": "rare"
+  },
+  "DN50": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "DN51": {
+   "pct_needed": 6.2,
+   "leaders_needing": 14,
+   "tier": "common"
+  },
+  "DN52": {
+   "pct_needed": 28.4,
+   "leaders_needing": 64,
+   "tier": "uncommon"
+  },
+  "DN53": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DN54": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "DN55": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN56": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "DN57": {
+   "pct_needed": 15.1,
+   "leaders_needing": 34,
+   "tier": "uncommon"
+  },
+  "DN58": {
+   "pct_needed": 13.3,
+   "leaders_needing": 30,
+   "tier": "uncommon"
+  },
+  "DN60": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "DN61": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DN62": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "DN63": {
+   "pct_needed": 25.8,
+   "leaders_needing": 58,
+   "tier": "uncommon"
+  },
+  "DN64": {
+   "pct_needed": 26.2,
+   "leaders_needing": 59,
+   "tier": "uncommon"
+  },
+  "DN65": {
+   "pct_needed": 10.2,
+   "leaders_needing": 23,
+   "tier": "uncommon"
+  },
+  "DN66": {
+   "pct_needed": 33.3,
+   "leaders_needing": 75,
+   "tier": "rare"
+  },
+  "DN67": {
+   "pct_needed": 21.8,
+   "leaders_needing": 49,
+   "tier": "uncommon"
+  },
+  "DN68": {
+   "pct_needed": 27.6,
+   "leaders_needing": 62,
+   "tier": "uncommon"
+  },
+  "DN70": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN71": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN72": {
+   "pct_needed": 16.0,
+   "leaders_needing": 36,
+   "tier": "uncommon"
+  },
+  "DN73": {
+   "pct_needed": 23.6,
+   "leaders_needing": 53,
+   "tier": "uncommon"
+  },
+  "DN74": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN75": {
+   "pct_needed": 26.2,
+   "leaders_needing": 59,
+   "tier": "uncommon"
+  },
+  "DN76": {
+   "pct_needed": 16.4,
+   "leaders_needing": 37,
+   "tier": "uncommon"
+  },
+  "DN77": {
+   "pct_needed": 20.9,
+   "leaders_needing": 47,
+   "tier": "uncommon"
+  },
+  "DN78": {
+   "pct_needed": 31.6,
+   "leaders_needing": 71,
+   "tier": "rare"
+  },
+  "DN80": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "DN81": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "DN82": {
+   "pct_needed": 24.0,
+   "leaders_needing": 54,
+   "tier": "uncommon"
+  },
+  "DN83": {
+   "pct_needed": 11.6,
+   "leaders_needing": 26,
+   "tier": "uncommon"
+  },
+  "DN84": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "DN85": {
+   "pct_needed": 13.8,
+   "leaders_needing": 31,
+   "tier": "uncommon"
+  },
+  "DN86": {
+   "pct_needed": 12.0,
+   "leaders_needing": 27,
+   "tier": "uncommon"
+  },
+  "DN87": {
+   "pct_needed": 23.6,
+   "leaders_needing": 53,
+   "tier": "uncommon"
+  },
+  "DN88": {
+   "pct_needed": 13.3,
+   "leaders_needing": 30,
+   "tier": "uncommon"
+  },
+  "DN90": {
+   "pct_needed": 7.6,
+   "leaders_needing": 17,
+   "tier": "common"
+  },
+  "DN91": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "DN92": {
+   "pct_needed": 8.4,
+   "leaders_needing": 19,
+   "tier": "common"
+  },
+  "DN93": {
+   "pct_needed": 17.8,
+   "leaders_needing": 40,
+   "tier": "uncommon"
+  },
+  "DN94": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "DN95": {
+   "pct_needed": 6.7,
+   "leaders_needing": 15,
+   "tier": "common"
+  },
+  "DN96": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "DN97": {
+   "pct_needed": 6.7,
+   "leaders_needing": 15,
+   "tier": "common"
+  },
+  "DN98": {
+   "pct_needed": 28.4,
+   "leaders_needing": 64,
+   "tier": "uncommon"
+  },
+  "EL06": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL07": {
+   "pct_needed": 24.0,
+   "leaders_needing": 54,
+   "tier": "uncommon"
+  },
+  "EL08": {
+   "pct_needed": 10.7,
+   "leaders_needing": 24,
+   "tier": "uncommon"
+  },
+  "EL09": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL15": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EL16": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "EL17": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "EL18": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EL19": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "EL28": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "EL29": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL39": {
+   "pct_needed": 20.9,
+   "leaders_needing": 47,
+   "tier": "uncommon"
+  },
+  "EL49": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL58": {
+   "pct_needed": 27.1,
+   "leaders_needing": 61,
+   "tier": "uncommon"
+  },
+  "EL59": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  },
+  "EL79": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "EL84": {
+   "pct_needed": 29.8,
+   "leaders_needing": 67,
+   "tier": "uncommon"
+  },
+  "EL86": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EL87": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL88": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL89": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EL94": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "EL95": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL96": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL97": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL98": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EL99": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM00": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM01": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EM02": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM03": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM04": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM05": {
+   "pct_needed": 13.3,
+   "leaders_needing": 30,
+   "tier": "uncommon"
+  },
+  "EM06": {
+   "pct_needed": 10.7,
+   "leaders_needing": 24,
+   "tier": "uncommon"
+  },
+  "EM07": {
+   "pct_needed": 14.7,
+   "leaders_needing": 33,
+   "tier": "uncommon"
+  },
+  "EM08": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EM09": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM10": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM11": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM12": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM13": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM14": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EM15": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM16": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM17": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM18": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EM19": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM20": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM21": {
+   "pct_needed": 6.7,
+   "leaders_needing": 15,
+   "tier": "common"
+  },
+  "EM22": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM23": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "EM24": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "EM25": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM26": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM27": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EM28": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM29": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM30": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EM31": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "EM32": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM33": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "EM34": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM35": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM36": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM37": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM38": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM39": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM40": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM41": {
+   "pct_needed": 6.2,
+   "leaders_needing": 14,
+   "tier": "common"
+  },
+  "EM42": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM43": {
+   "pct_needed": 11.6,
+   "leaders_needing": 26,
+   "tier": "uncommon"
+  },
+  "EM44": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EM45": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM46": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "EM47": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EM48": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM49": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM50": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM51": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EM52": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "EM53": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM54": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM55": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM56": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM57": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM58": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM59": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM60": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM61": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "EM62": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM63": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM64": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM65": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM66": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM67": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EM68": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM69": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM70": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM71": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM72": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM73": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM74": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM75": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM76": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "EM77": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM78": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM79": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM80": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM81": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM82": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "EM83": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM84": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM85": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EM86": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "EM87": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "EM88": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EM89": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM90": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM91": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "EM92": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM93": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM94": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM95": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM96": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM97": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EM98": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EM99": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN00": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN01": {
+   "pct_needed": 6.7,
+   "leaders_needing": 15,
+   "tier": "common"
+  },
+  "EN02": {
+   "pct_needed": 5.3,
+   "leaders_needing": 12,
+   "tier": "common"
+  },
+  "EN03": {
+   "pct_needed": 13.3,
+   "leaders_needing": 30,
+   "tier": "uncommon"
+  },
+  "EN04": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EN05": {
+   "pct_needed": 14.2,
+   "leaders_needing": 32,
+   "tier": "uncommon"
+  },
+  "EN06": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "EN07": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN08": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN10": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN11": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN12": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN13": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN14": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "EN15": {
+   "pct_needed": 11.6,
+   "leaders_needing": 26,
+   "tier": "uncommon"
+  },
+  "EN16": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "EN17": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN18": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "EN20": {
+   "pct_needed": 11.6,
+   "leaders_needing": 26,
+   "tier": "uncommon"
+  },
+  "EN21": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN22": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN23": {
+   "pct_needed": 3.6,
+   "leaders_needing": 8,
+   "tier": "common"
+  },
+  "EN24": {
+   "pct_needed": 11.6,
+   "leaders_needing": 26,
+   "tier": "uncommon"
+  },
+  "EN25": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EN26": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN27": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EN28": {
+   "pct_needed": 23.1,
+   "leaders_needing": 52,
+   "tier": "uncommon"
+  },
+  "EN29": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EN30": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN31": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN32": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN33": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN34": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN35": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN36": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EN37": {
+   "pct_needed": 4.0,
+   "leaders_needing": 9,
+   "tier": "common"
+  },
+  "EN38": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "EN40": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN41": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN42": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN43": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN44": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN45": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN46": {
+   "pct_needed": 5.8,
+   "leaders_needing": 13,
+   "tier": "common"
+  },
+  "EN47": {
+   "pct_needed": 10.7,
+   "leaders_needing": 24,
+   "tier": "uncommon"
+  },
+  "EN48": {
+   "pct_needed": 23.6,
+   "leaders_needing": 53,
+   "tier": "uncommon"
+  },
+  "EN50": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN51": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN52": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN53": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN54": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN55": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "EN56": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  },
+  "EN57": {
+   "pct_needed": 8.9,
+   "leaders_needing": 20,
+   "tier": "common"
+  },
+  "EN58": {
+   "pct_needed": 9.8,
+   "leaders_needing": 22,
+   "tier": "common"
+  },
+  "EN60": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN61": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN62": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN63": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN64": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "EN65": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EN66": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "EN67": {
+   "pct_needed": 20.4,
+   "leaders_needing": 46,
+   "tier": "uncommon"
+  },
+  "EN70": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN71": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN72": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN73": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN74": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "EN75": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EN76": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "EN80": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN81": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "EN82": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN83": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "EN84": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "EN85": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "EN86": {
+   "pct_needed": 14.2,
+   "leaders_needing": 32,
+   "tier": "uncommon"
+  },
+  "EN90": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN91": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "EN92": {
+   "pct_needed": 8.0,
+   "leaders_needing": 18,
+   "tier": "common"
+  },
+  "FM02": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FM03": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "FM04": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM05": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM06": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM07": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM08": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FM09": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FM13": {
+   "pct_needed": 13.8,
+   "leaders_needing": 31,
+   "tier": "uncommon"
+  },
+  "FM14": {
+   "pct_needed": 1.8,
+   "leaders_needing": 4,
+   "tier": "common"
+  },
+  "FM15": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FM16": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FM17": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM18": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM19": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM25": {
+   "pct_needed": 12.0,
+   "leaders_needing": 27,
+   "tier": "uncommon"
+  },
+  "FM26": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "FM27": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FM28": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FM29": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FN00": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FN01": {
+   "pct_needed": 4.9,
+   "leaders_needing": 11,
+   "tier": "common"
+  },
+  "FN02": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FN03": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN10": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN11": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FN12": {
+   "pct_needed": 0.4,
+   "leaders_needing": 1,
+   "tier": "common"
+  },
+  "FN13": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN14": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "FN20": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN21": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN22": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FN23": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "FN24": {
+   "pct_needed": 0.9,
+   "leaders_needing": 2,
+   "tier": "common"
+  },
+  "FN25": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN30": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN31": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN32": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN33": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN34": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN35": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "FN41": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN42": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN43": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN44": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN45": {
+   "pct_needed": 21.3,
+   "leaders_needing": 48,
+   "tier": "uncommon"
+  },
+  "FN46": {
+   "pct_needed": 2.7,
+   "leaders_needing": 6,
+   "tier": "common"
+  },
+  "FN51": {
+   "pct_needed": 4.4,
+   "leaders_needing": 10,
+   "tier": "common"
+  },
+  "FN53": {
+   "pct_needed": 3.1,
+   "leaders_needing": 7,
+   "tier": "common"
+  },
+  "FN54": {
+   "pct_needed": 0.0,
+   "leaders_needing": 0,
+   "tier": "common"
+  },
+  "FN55": {
+   "pct_needed": 2.2,
+   "leaders_needing": 5,
+   "tier": "common"
+  },
+  "FN56": {
+   "pct_needed": 24.4,
+   "leaders_needing": 55,
+   "tier": "uncommon"
+  },
+  "FN57": {
+   "pct_needed": 24.9,
+   "leaders_needing": 56,
+   "tier": "uncommon"
+  },
+  "FN64": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FN65": {
+   "pct_needed": 1.3,
+   "leaders_needing": 3,
+   "tier": "common"
+  },
+  "FN66": {
+   "pct_needed": 14.7,
+   "leaders_needing": 33,
+   "tier": "uncommon"
+  },
+  "FN67": {
+   "pct_needed": 9.3,
+   "leaders_needing": 21,
+   "tier": "common"
+  }
+ }
 }

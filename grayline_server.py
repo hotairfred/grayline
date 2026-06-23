@@ -2472,6 +2472,35 @@ log.info("FFMA rarity loaded: %d grids (%d rare, %d uncommon)",
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "rare"),
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "uncommon"))
 
+# mtime of data/ffma_rarity.json when last loaded, so the reload loop can pick up
+# the daily gridzilla_ffma_fetch.py cron rewrite without a server restart.
+try:
+    _FFMA_RARITY_MTIME = (Path(__file__).parent / "data" / "ffma_rarity.json").stat().st_mtime
+except OSError:
+    _FFMA_RARITY_MTIME = 0.0
+
+
+def _maybe_reload_ffma_rarity() -> bool:
+    """If the daily cron (gridzilla_ffma_fetch.py) rewrote data/ffma_rarity.json,
+    reload the in-memory map and recompute the HOME_GRID reachability overlay.
+    mtime-gated, so a no-change tick is one stat() call. Returns True on reload."""
+    global _FFMA_RARITY, _FFMA_RARITY_MTIME
+    path = Path(__file__).parent / "data" / "ffma_rarity.json"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return False
+    if mtime == _FFMA_RARITY_MTIME:
+        return False
+    _FFMA_RARITY = {k.upper(): v for k, v in _load_ffma_rarity().items()}
+    _augment_ffma_reachability()   # re-overlay distance/es_band/personal_tier
+    _FFMA_RARITY_MTIME = mtime
+    log.info("FFMA rarity reloaded from disk: %d grids (%d rare, %d uncommon)",
+             len(_FFMA_RARITY),
+             sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "rare"),
+             sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "uncommon"))
+    return True
+
 
 def _es_reach(distance_mi):
     """6m Es reachability for a distance from HOME_GRID -> (band, factor).
@@ -5475,6 +5504,9 @@ async def main():
             # changes (a QSO logged, QRZ/LoTW pull). Keeps the searchable log /
             # award sets within ~30s of a fresh QSO instead of up to 5 min.
             time.sleep(30)
+            # Daily gridzilla_ffma_fetch.py cron rewrites data/ffma_rarity.json;
+            # pick it up here (mtime-gated, ~free when unchanged).
+            _maybe_reload_ffma_rarity()
             if _worked:
                 if _worked.reload():
                     # If anything actually reloaded (mtime changed on either
