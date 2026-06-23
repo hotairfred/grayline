@@ -1328,6 +1328,13 @@ def _build_scores_payload() -> dict:
     }
 
 
+# Bumped every time worked-state-derived fields are re-evaluated (a QSO logged,
+# LoTW/QRZ pull, N1MM/SDC mutation). Surfaced in /spots.json so the 5s spot poll
+# can tell the scorecard to re-fetch /api/scores immediately — keeps the FFMA /
+# award panels in lockstep with the liveview instead of lagging the 5-min timer.
+_WORKED_REV = 0
+
+
 def _refresh_cache_worked_status():
     """Re-evaluate worked-state-derived fields on every cached spot. Called
     after a fresh QSO is logged so the spot panel reflects the new worked /
@@ -1335,6 +1342,8 @@ def _refresh_cache_worked_status():
     Cheap: at most MAX_SPOTS=5000 entries, each lookup is O(1)."""
     if not _worked:
         return
+    global _WORKED_REV
+    _WORKED_REV += 1
     with _lock:
         for s in _cache.values():
             s["call_status"] = _worked.call_status(s["dx_call"])
@@ -3554,6 +3563,7 @@ function awardOn(key) {
   return AWARD_DEFAULT[key] !== false;                     // default (ARRL on, else off)
 }
 let lastScores = null;          // most recent /api/scores payload — for instant re-render on toggle
+let lastWorkedRev = null;       // server worked-state revision from /spots.json; change => re-fetch scores
 let scoresSetupOpen = false;    // keep the "Scores setup" panel open across re-renders
 let wajaGridOpen = false;       // keep the WAJA prefecture grid open across re-renders
 
@@ -4004,6 +4014,13 @@ async function refresh() {
     return;
   }
   let spots = data.spots, now = data.now;
+  // Worked-state changed server-side (QSO logged, LoTW/QRZ pull, N1MM mutation)?
+  // Pull fresh scores so the FFMA/award scorecard tracks the liveview instead of
+  // waiting on the 5-min timer. Skip the first poll — no baseline rev yet.
+  if (data.worked_rev !== undefined) {
+    if (lastWorkedRev !== null && data.worked_rev !== lastWorkedRev) fetchScores();
+    lastWorkedRev = data.worked_rev;
+  }
   const filterOn = filterCB.checked;
   const showWanted = showWantedCB.checked;
   let filteredOut = 0;
@@ -5165,7 +5182,7 @@ class Handler(BaseHTTPRequestHandler):
                     .replace("__LOTW_FRESH_DAYS__", str(LOTW_FRESH_DAYS)))
             self._send(page.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/spots.json":
-            payload = {"spots": snapshot(), "now": time.time()}
+            payload = {"spots": snapshot(), "now": time.time(), "worked_rev": _WORKED_REV}
             self._send(json.dumps(payload).encode(), "application/json")
         elif self.path == "/active_bands":
             payload = active_bands_snapshot()
