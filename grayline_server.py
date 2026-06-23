@@ -3185,6 +3185,14 @@ details[open] .gear-icon { color: #fff; }
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
   border-bottom: 1px solid #222; padding-bottom: 0.2em;
 }
+/* Collapsible FFMA-tab section headers — styled like .score-card h3 so the
+   look is unchanged, but the whole section folds away to anchor a long scroll. */
+.ff-collapse > summary {
+  margin: 0; font-size: 0.85em; color: #ff0; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer;
+  border-bottom: 1px solid #222; padding-bottom: 0.2em; list-style: none;
+}
+.ff-collapse[open] > summary { margin-bottom: 0.4em; }
 .score-card table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
 .score-card th {
   font-weight: normal; color: #888; font-size: 0.75em; text-align: right;
@@ -3635,6 +3643,10 @@ let lastScores = null;          // most recent /api/scores payload — for insta
 let lastWorkedRev = null;       // server worked-state revision from /spots.json; change => re-fetch scores
 let scoresSetupOpen = false;    // keep the "Scores setup" panel open across re-renders
 let wajaGridOpen = false;       // keep the WAJA prefecture grid open across re-renders
+let ffAtnoOpen = true;          // FFMA tab collapsible sections — default expanded,
+let ffPendOpen = true;          // collapse state persists across re-renders so the
+let ffRaresOpen = true;         // headers act as anchors on a long scroll
+let ffDiscOpen = true;
 
 // WAJA — the 47 Japanese prefectures by ADIF code → [kanji (with 都/道/府/県
 // suffix), romaji]. Codes are the ADIF Primary-Subdivision scheme (Tokyo=10),
@@ -4876,8 +4888,8 @@ function renderFfma(j) {
         <td>${xs}</td>
       </tr>`;
     }).join("");
-    cards.push(`<div class="score-card ff-atno">
-      <h3>&#x1F195; Recent ATNOs <span class="ff-count">last ${atnos.length}</span></h3>
+    cards.push(`<details class="score-card ff-atno ff-collapse" ${ffAtnoOpen ? "open" : ""}>
+      <summary>&#x1F195; Recent ATNOs <span class="ff-count">last ${atnos.length}</span></summary>
       <div class="ff-atno-row">
         <div class="ff-atno-grid">${a.grid}</div>
         <div class="ff-atno-meta">
@@ -4888,7 +4900,7 @@ function renderFfma(j) {
       ${rest ? `<table class="ff-table ff-atno-tbl">
         <tr><th>grid</th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>
         ${rest}</table>` : ""}
-    </div>`);
+    </details>`);
   }
 
   // pending confirmation — the chase list
@@ -4906,14 +4918,14 @@ function renderFfma(j) {
         <td>${odds}</td>
       </tr>`;
     }).join("");
-    cards.push(`<div class="score-card ff-pending">
-      <h3>&#x23F3; Worked &mdash; awaiting confirmation <span class="ff-count">${ch.pending.length}</span></h3>
+    cards.push(`<details class="score-card ff-pending ff-collapse" ${ffPendOpen ? "open" : ""}>
+      <summary>&#x23F3; Worked &mdash; awaiting confirmation <span class="ff-count">${ch.pending.length}</span></summary>
       ${ch.pending.length ? `<table class="ff-table">
         <tr><th>grid</th><th>rarity</th><th>worked</th><th>who to nudge</th><th>odds</th></tr>
         ${rows}</table>
         <div class="mode-hint">Rarest first. Multi-op grids confirm easier &mdash; any one of them uploading to LoTW credits it. Rows clear themselves as confirmations arrive.</div>`
         : `<div class="ff-empty">Nothing pending &mdash; every worked grid is confirmed. &#x1F389;</div>`}
-    </div>`);
+    </details>`);
   }
 
   // rare/uncommon grids worked — the trophies (rover catches)
@@ -4929,14 +4941,14 @@ function renderFfma(j) {
       </tr>`;
     }).join("");
     const nRovers = ch.rares_worked.filter(r => r.call && (r.call.endsWith("/R")||r.call.endsWith("/P"))).length;
-    cards.push(`<div class="score-card ff-rares">
-      <h3>&#x1F3C6; Rare &amp; uncommon grids worked <span class="ff-count">${ch.rares_worked.length}</span></h3>
+    cards.push(`<details class="score-card ff-rares ff-collapse" ${ffRaresOpen ? "open" : ""}>
+      <summary>&#x1F3C6; Rare &amp; uncommon grids worked <span class="ff-count">${ch.rares_worked.length}</span></summary>
       ${ch.rares_worked.length ? `<table class="ff-table">
         <tr><th>grid</th><th>rarity</th><th>via</th><th>date</th><th></th></tr>
         ${rows}</table>
         <div class="mode-hint">The hard ones &mdash; usually only a rover (&#x1F690;) or portable (&#x1F97E;) puts these on 6 m.${nRovers ? ` ${nRovers} of these came from rovers/portables.` : ""}</div>`
         : `<div class="ff-empty">No rare/uncommon grids worked yet &mdash; the western grails are still ahead.</div>`}
-    </div>`);
+    </details>`);
   }
 
   // grid log discrepancies — the grid the station ADVERTISED on the air (what
@@ -4960,15 +4972,24 @@ function renderFfma(j) {
         <td>${tag}</td>
       </tr>`;
     }).join("");
-    cards.push(`<div class="score-card ff-disc">
-      <h3>&#x26A0;&#xFE0F; Grid log discrepancies <span class="ff-count">${gd.count}</span></h3>
+    cards.push(`<details class="score-card ff-disc ff-collapse" ${ffDiscOpen ? "open" : ""}>
+      <summary>&#x26A0;&#xFE0F; Grid log discrepancies <span class="ff-count">${gd.count}</span></summary>
       <table class="ff-table">
         <tr><th>band</th><th>station</th><th>date</th><th>advertised</th><th>rarity</th><th>LoTW credits</th><th>cause</th></tr>
         ${rows}</table>
-    </div>`);
+    </details>`);
   }
 
   el.innerHTML = cards.join("");
+  // persist collapse state across re-renders (headers act as anchors on long scroll)
+  const bindFf = (cls, set) => {
+    const dt = el.querySelector("details." + cls);
+    if (dt) dt.addEventListener("toggle", () => set(dt.open));
+  };
+  bindFf("ff-atno",    o => ffAtnoOpen = o);
+  bindFf("ff-pending", o => ffPendOpen = o);
+  bindFf("ff-rares",   o => ffRaresOpen = o);
+  bindFf("ff-disc",    o => ffDiscOpen = o);
 }
 function fetchScores() {
   fetch("/api/scores").then(r => r.json()).then(renderScores)
