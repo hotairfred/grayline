@@ -33,6 +33,7 @@ import dxmarathon
 import psk_heard
 import telnet_server
 from ctydat import CtyDat
+import worked_state
 from worked_state import WorkedState, mode_class, resolve_prefecture, _US_STATES_50
 
 log = logging.getLogger("grayline")
@@ -865,6 +866,57 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
             "recent_atnos": recent_atnos}
 
 
+def _build_grid_discrepancies() -> dict:
+    """Grid-award QSOs where YOUR logged grid != the grid LoTW actually credited.
+    Rover/portable mismatches (the op's TQSL station location left on home), a
+    gridless LoTW upload, or your own mis-log — each silently costs FFMA/VUCC
+    credit (Grayline now counts only LoTW's grid, matching the award/Gridzilla).
+    6m+ only (grid matters there) and terrestrial only; matched by
+    (call, band, qso_date) against the authoritative LoTW download. This view
+    doesn't exist in Gridzilla — it's the actionable "who needs to re-upload" list."""
+    if not _worked:
+        return {"count": 0, "items": []}
+    try:
+        lotw_recs = worked_state._parse_adif_qsos(worked_state._LOTW_ADIF_PATH)
+    except Exception as e:
+        log.warning("grid-discrepancy: LoTW ADIF unavailable (%s)", e)
+        return {"count": 0, "items": []}
+    lotw_grid = {}
+    for r in lotw_recs:
+        key = ((r.get("call") or "").upper(),
+               (r.get("band") or "").lower(),
+               r.get("qso_date", ""))
+        lotw_grid[key] = (r.get("grid") or "").upper()[:4]
+    items, seen = [], set()
+    for q in _worked.qsos:
+        band = (q.get("band") or "").lower()
+        if band not in VUCC_BANDS:
+            continue
+        if (q.get("prop_mode") or "").upper() == "SAT":
+            continue
+        logged = (q.get("grid") or "").upper()[:4]
+        if not logged:
+            continue
+        call = (q.get("call") or "").upper()
+        date = q.get("qso_date", "")
+        credited = lotw_grid.get((call, band, date))
+        if credited is None or credited == logged:
+            continue   # QSO isn't LoTW-confirmed, or the grids agree — no issue
+        dk = (call, band, date, logged)
+        if dk in seen:
+            continue
+        seen.add(dk)
+        items.append({
+            "band": band, "call": call, "date": date,
+            "logged": logged, "credited": credited or None,
+            "ffma": band == "6m" and logged in _FFMA_GRID_SET,
+            "kind": "no_grid" if not credited else "mismatch",
+        })
+    # FFMA-relevant first, then by band/call/date
+    items.sort(key=lambda x: (not x["ffma"], x["band"], x["call"], x["date"]))
+    return {"count": len(items), "items": items}
+
+
 def _wae_key(e):
     """WAE country key for a cty.dat entity. The five WAE split entities
     (cty.dat '*' prefix — Sicily, Shetland, Bear Island, European Turkey,
@@ -982,11 +1034,15 @@ def _build_scores_payload() -> dict:
         g = (q.get("grid") or "").strip().upper()[:4]
         if not b or not g:
             continue
-        confirmed = (
-            (q.get("lotw_qsl_rcvd") or "").upper() in ("Y", "V")
-            or (q.get("qsl_rcvd") or "").upper() in ("Y", "V")
-            or (q.get("eqsl_qsl_rcvd") or "").upper() in ("Y", "V")
-        )
+        # Grid-award confirmation is LoTW-authoritative AND grid-specific. LoTW
+        # credits the grid on its OWN confirmation record, which can differ from
+        # the grid you logged on rover/portable mismatches (e.g. a rover whose
+        # TQSL station location was left set to home — the QSO confirms, but at
+        # the wrong grid). worked_state.confirmed_grid_band holds the LoTW grids
+        # (QRZ/eQSL flags are stripped at ingest), so a logged grid counts as
+        # confirmed only when LoTW actually confirmed THAT grid. This is what
+        # makes FFMA/VUCC match LoTW (= what Gridzilla's direct LoTW sync shows).
+        confirmed = (g, b) in _worked.confirmed_grid_band
         if b in VUCC_BANDS:
             vucc_band_w.setdefault(b, set()).add(g)
             if confirmed:
@@ -1298,6 +1354,7 @@ def _build_scores_payload() -> dict:
             "target": ffma_target,
         },
         "ffma_chase": ffma_chase,
+        "grid_discrepancies": _build_grid_discrepancies(),
         "five_band_dxcc": {
             "by_band": five_dxcc_by_band,
             "bands_complete": five_dxcc_complete,
@@ -4867,6 +4924,32 @@ function renderFfma(j) {
         ${rows}</table>
         <div class="mode-hint">The hard ones &mdash; usually only a rover (&#x1F690;) or portable (&#x1F97E;) puts these on 6 m.${nRovers ? ` ${nRovers} of these came from rovers/portables.` : ""}</div>`
         : `<div class="ff-empty">No rare/uncommon grids worked yet &mdash; the western grails are still ahead.</div>`}
+    </div>`);
+  }
+
+  // grid log discrepancies — your logged grid != the grid LoTW credited (6m+)
+  const gd = j.grid_discrepancies;
+  if (gd && gd.count) {
+    const rows = gd.items.map(x => {
+      const cr = x.credited ? `<span class="ff-g">${x.credited}</span>` : `<span class="ff-pend">no grid</span>`;
+      const tag = x.kind === "no_grid"
+        ? `<span class="ff-odds-one" title="the op uploaded to LoTW without a grid — no grid credit until they re-upload with one">op: no grid</span>`
+        : `<span class="ff-odds-good" title="LoTW credits a different grid — usually the op's TQSL station location was wrong (e.g. a rover left on home), or your logged grid is off">grid mismatch</span>`;
+      return `<tr>
+        <td>${x.band}</td>
+        <td class="ff-who">${x.call}${ffmaRover(x.call)}</td>
+        <td class="ff-when">${ffmaFmtDate(x.date)}</td>
+        <td class="ff-g">${x.logged}${x.ffma ? ` <span class="ff-tier ff-rare">FFMA</span>` : ""}</td>
+        <td>${cr}</td>
+        <td>${tag}</td>
+      </tr>`;
+    }).join("");
+    cards.push(`<div class="score-card ff-disc">
+      <h3>&#x26A0;&#xFE0F; Grid log discrepancies <span class="ff-count">${gd.count}</span></h3>
+      <table class="ff-table">
+        <tr><th>band</th><th>station</th><th>date</th><th>you logged</th><th>LoTW credits</th><th>cause</th></tr>
+        ${rows}</table>
+      <div class="mode-hint">QSOs where LoTW credited a <b>different grid</b> than you logged (6 m+ only, terrestrial). <b>Grid mismatch</b> = the op's TQSL station location was likely wrong (a rover left on home) &mdash; nudge them to re-upload. <b>No grid</b> = they uploaded without one. Either way these don't count toward FFMA/VUCC at your logged grid &mdash; this is the "who to chase to re-upload" list.</div>
     </div>`);
   }
 

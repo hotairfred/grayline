@@ -654,6 +654,22 @@ class WorkedState:
 
         qsos = list(data.get("qsos", []))
 
+        # --- LoTW is the SOLE confirmation ground truth (Fred 2026-06-23) ---
+        # QRZ's own QSL flags are unreliable: its lotw_qsl_rcvd reads "Y" on
+        # confirmations that aren't actually in LoTW (phantom confirmations —
+        # e.g. rover stations whose TQSL location was wrong, or since-deleted
+        # uploads), and its eQSL / paper-card flags aren't ARRL-valid for
+        # FFMA/DXCC/WAS/VUCC anyway. So QRZ QSOs contribute WORKED status only;
+        # confirmation comes EXCLUSIVELY from lotw_qsl.adi (the authoritative
+        # LoTW download). The dedup OR-merge below restores LoTW's "Y" onto any
+        # QSO that also has a real lotw_qsl.adi record. (Validated: this brought
+        # FFMA confirmed from a phantom-inflated 283 to the LoTW-true 279, the
+        # number Gridzilla's direct LoTW sync independently reports.)
+        for q in qsos:
+            q["lotw_qsl_rcvd"] = ""
+            q["qsl_rcvd"] = ""
+            q["eqsl_qsl_rcvd"] = ""
+
         # Merge in QSOs from the local Grayline ADIF (qso_logged.adi). These
         # are real-time WSJT-X-logged QSOs that haven't necessarily synced
         # to QRZ yet, so they wouldn't be in the JSON. set semantics in the
@@ -783,7 +799,11 @@ class WorkedState:
                     if confirmed:
                         confirmed_country_band_modeclass.add((country, band, cls))
 
-            if grid4 and band:
+            # Terrestrial grid×band only — satellite QSOs are a SEPARATE ARRL
+            # award (worked/confirmed_satellite_grids below), so they must not
+            # leak into terrestrial FFMA/VUCC. (Without this gate, a grid
+            # confirmed only via satellite would count toward terrestrial VUCC.)
+            if grid4 and band and (q.get("prop_mode") or "").strip().upper() != "SAT":
                 worked_grid_band.add((grid4, band))
                 if confirmed:
                     confirmed_grid_band.add((grid4, band))
