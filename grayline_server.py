@@ -906,15 +906,23 @@ def _build_grid_discrepancies() -> dict:
         if dk in seen:
             continue
         seen.add(dk)
+        # Does this actually cost an award? The advertised grid affects an award
+        # only if YOU don't already have it confirmed via some other QSO — i.e.
+        # the mismatch is the sole reason that grid isn't in the bank.
+        affects = (logged, band) not in _worked.confirmed_grid_band
         items.append({
             "band": band, "call": call, "date": date,
             "logged": logged, "credited": credited or None,
             "ffma": band == "6m" and logged in _FFMA_GRID_SET,
+            "affects_award": affects,
             "kind": "no_grid" if not credited else "mismatch",
         })
-    # FFMA-relevant first, then by band/call/date
-    items.sort(key=lambda x: (not x["ffma"], x["band"], x["call"], x["date"]))
-    return {"count": len(items), "items": items}
+    # Award-affecting first (the advertised grid is still NEEDED — the mismatch
+    # is the only thing between you and the credit), then FFMA, then band/call/date.
+    items.sort(key=lambda x: (not x["affects_award"], not x["ffma"], x["band"], x["call"], x["date"]))
+    return {"count": len(items),
+            "affecting": sum(1 for x in items if x["affects_award"]),
+            "items": items}
 
 
 def _wae_key(e):
@@ -2961,6 +2969,7 @@ table.ff-table th { font-weight: normal; color: #888; font-size: 0.78em; text-al
   border-bottom: 1px solid #222; padding: 0.15em 0.4em; }
 table.ff-table th:first-child { text-align: left; }
 table.ff-table td { padding: 0.18em 0.4em; border-bottom: 1px solid #141414; text-align: left; }
+table.ff-table tr.ff-disc-hot td { background: #2a1410; }  /* discrepancy that actually costs a needed grid */
 .ff-g { font-weight: 700; color: #d4af37; }
 .ff-when { color: #888; }
 .ff-who { color: #ccc; }
@@ -4927,29 +4936,36 @@ function renderFfma(j) {
     </div>`);
   }
 
-  // grid log discrepancies — your logged grid != the grid LoTW credited (6m+)
+  // grid log discrepancies — the grid the station ADVERTISED on the air (what
+  // WSJT-X logged) != the grid their LoTW upload credits (6m+, terrestrial)
   const gd = j.grid_discrepancies;
   if (gd && gd.count) {
     const rows = gd.items.map(x => {
       const cr = x.credited ? `<span class="ff-g">${x.credited}</span>` : `<span class="ff-pend">no grid</span>`;
       const tag = x.kind === "no_grid"
-        ? `<span class="ff-odds-one" title="the op uploaded to LoTW without a grid — no grid credit until they re-upload with one">op: no grid</span>`
-        : `<span class="ff-odds-good" title="LoTW credits a different grid — usually the op's TQSL station location was wrong (e.g. a rover left on home), or your logged grid is off">grid mismatch</span>`;
-      return `<tr>
+        ? `<span class="ff-odds-one" title="they advertised this grid on the air but uploaded to LoTW without any grid — no grid credit until they re-upload with one">op: no grid</span>`
+        : `<span class="ff-odds-good" title="they advertised this grid in their FT8 transmission but their LoTW upload credits a different one — classic rover with TQSL station location still set to home; nudge them to re-upload">advertised ≠ confirmed</span>`;
+      const need = x.affects_award
+        ? ` <span class="ff-tier ff-rare" title="you don't have this grid confirmed any other way — this mismatch is the only thing costing you the credit">NEEDED</span>`
+        : "";
+      return `<tr class="${x.affects_award ? "ff-disc-hot" : ""}">
         <td>${x.band}</td>
         <td class="ff-who">${x.call}${ffmaRover(x.call)}</td>
         <td class="ff-when">${ffmaFmtDate(x.date)}</td>
-        <td class="ff-g">${x.logged}${x.ffma ? ` <span class="ff-tier ff-rare">FFMA</span>` : ""}</td>
+        <td class="ff-g">${x.logged}${x.ffma ? ` <span class="ff-tier ff-unc">FFMA</span>` : ""}${need}</td>
         <td>${cr}</td>
         <td>${tag}</td>
       </tr>`;
     }).join("");
+    const affTxt = gd.affecting
+      ? `<span class="ff-count" style="background:#5a1a1a;color:#ffb0b0">${gd.affecting} cost a grid</span>`
+      : "";
     cards.push(`<div class="score-card ff-disc">
-      <h3>&#x26A0;&#xFE0F; Grid log discrepancies <span class="ff-count">${gd.count}</span></h3>
+      <h3>&#x26A0;&#xFE0F; Grid log discrepancies <span class="ff-count">${gd.count}</span> ${affTxt}</h3>
       <table class="ff-table">
-        <tr><th>band</th><th>station</th><th>date</th><th>you logged</th><th>LoTW credits</th><th>cause</th></tr>
+        <tr><th>band</th><th>station</th><th>date</th><th>advertised</th><th>LoTW credits</th><th>cause</th></tr>
         ${rows}</table>
-      <div class="mode-hint">QSOs where LoTW credited a <b>different grid</b> than you logged (6 m+ only, terrestrial). <b>Grid mismatch</b> = the op's TQSL station location was likely wrong (a rover left on home) &mdash; nudge them to re-upload. <b>No grid</b> = they uploaded without one. Either way these don't count toward FFMA/VUCC at your logged grid &mdash; this is the "who to chase to re-upload" list.</div>
+      <div class="mode-hint">On FT8 the grid is what the station <b>advertised in their transmission</b> &mdash; you don't type it &mdash; so a mismatch is always <i>their</i> upload disagreeing with what they sent on the air (a rover whose TQSL was left on home, or a gridless upload), never your mis-log. <b>Rows marked NEEDED (highlighted) actually cost you a grid</b> &mdash; you have no other confirmation for it, so getting that op to re-upload correctly is the credit. The rest are grids you already hold another way (cosmetic).</div>
     </div>`);
   }
 
