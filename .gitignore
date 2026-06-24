@@ -29,3 +29,6 @@ data/clublog_matches.json
 
 # M0OXO OQRS callsign-search results (personal QSO data, manual paste)
 data/m0oxo_matches.json
+
+# per-install push-alert matrix (runtime config)
+alerts.json

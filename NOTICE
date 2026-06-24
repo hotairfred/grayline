@@ -5,9 +5,14 @@ This project incorporates material from third-party open-source software.
 Each source's license terms are reproduced below as required.
 
 
-GridTracker 2 (mode tables, WPX-prefix algorithm, logbook-upload edge cases)
+GridTracker 2 (mode tables, WPX-prefix algorithm, logbook-upload edge cases,
+Pushover alert send)
 ---------------------------------------------------------------------------
 
+`grayline_server.py::_send_pushover` — port of `sendPushOverAlert()` from
+                                src/renderer/lib/roster/sendAlerts.js (POST to
+                                api.pushover.net/1/messages.json with user/token/
+                                title/message)
 `data/modes.json`            — verbatim copy of resources/data/modes.json
 `data/modes-phone.json`      — verbatim copy of resources/data/modes-phone.json
 `worked_state.py::wpx_prefix` — algorithmic port of `getWpx()` from

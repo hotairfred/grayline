@@ -2259,6 +2259,166 @@ def _wae_spot_status(call):
     return "new", name
 
 
+# ============== Pushover alerts (per-band × per-mode, award-aware) ==============
+# Fire a Pushover push when a spot matters — gated by a per-band×per-mode matrix
+# the operator configures AND the existing per-band award scope ("needed" = an
+# unworked "new" DXCC band-slot or grid band-slot, so it respects the per-band
+# scope automatically). Two flavors per enabled cell: "needed" (a wanted
+# entity/grid) and "open" (any local activity = the band's alive). Geographic
+# scope is MODE-AWARE: Es/tropo modes gate on local-spotter distance; meteor
+# scatter (MSK144) gates on DX-within-meteor-range (~1300 mi) since an MS
+# report's spotter location is irrelevant. Send is ported from GridTracker2
+# (BSD-3-Clause) sendAlerts.js::sendPushOverAlert — credited in NOTICE.
+ALERT_BANDS = ["160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m",
+               "6m", "2m", "1.25m", "70cm", "23cm", "3cm"]
+ALERT_MODES = ["CW", "Phone", "Digital", "MSK144"]   # Q65 when GoCluster ingests it
+_MS_RANGE_MI = 1300
+_ALERTS_PATH = _BASE_DIR / "alerts.json"
+_alert_cooldown: dict = {}   # cooldown key -> last-sent epoch
+
+
+def _load_alerts() -> dict:
+    try:
+        cfg = json.loads(_ALERTS_PATH.read_text())
+    except Exception:
+        cfg = {}
+    cfg.setdefault("enabled", False)
+    cfg.setdefault("cooldown_min", 30)
+    cfg.setdefault("cells", {})   # {band: {mode: {"needed": bool, "open": bool}}}
+    return cfg
+
+
+_ALERTS = _load_alerts()
+
+
+def _save_alerts(cfg: dict):
+    global _ALERTS
+    cfg.setdefault("enabled", False)
+    cfg.setdefault("cooldown_min", 30)
+    cfg.setdefault("cells", {})
+    _ALERTS = cfg
+    tmp = _ALERTS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cfg, indent=1))
+    tmp.replace(_ALERTS_PATH)
+
+
+def _pushover_creds() -> tuple[str, str]:
+    """Read fresh each time so creds can be added to secrets.json without a restart."""
+    try:
+        sec = json.loads((_BASE_DIR / "secrets.json").read_text())
+        return sec.get("pushover_token", "") or "", sec.get("pushover_user", "") or ""
+    except Exception:
+        return "", ""
+
+
+def _send_pushover(title: str, message: str, priority: int = 0) -> bool:
+    token, user = _pushover_creds()
+    if not token or not user:
+        return False
+    data = urllib.parse.urlencode({
+        "token": token, "user": user,
+        "title": title[:250], "message": message[:1024], "priority": priority,
+    }).encode()
+    try:
+        req = urllib.request.Request("https://api.pushover.net/1/messages.json", data=data)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            r.read()
+        return True
+    except Exception as e:
+        log.warning("pushover send failed: %s", e)
+        return False
+
+
+def _alert_mode_token(mode: str) -> str:
+    m = (mode or "").strip().upper()
+    if m in ("MSK144", "Q65"):
+        return m
+    return mode_class(mode)   # CW / Phone / Digital / Other
+
+
+def _within_ms_range(grid: str) -> bool:
+    if not HOME_LATLON or not grid:
+        return False
+    c = maidenhead_to_latlon(grid)
+    return bool(c) and haversine_miles(HOME_LATLON[0], HOME_LATLON[1], c[0], c[1]) <= _MS_RANGE_MI
+
+
+def _spot_is_needed(s: dict) -> bool:
+    # award-aware, per band: "new" = unworked DXCC band-slot OR grid band-slot.
+    # grid_band_status is only set on grid-award bands and dxcc on DXCC bands,
+    # so this honors the per-band scope without extra logic.
+    return s.get("dxcc_band_status") == "new" or s.get("grid_band_status") == "new"
+
+
+def _fire_alert(s: dict, reason: str, priority: int = 0):
+    call = s.get("dx_call", "?")
+    band = s.get("band", "")
+    mode = s.get("mode", "")
+    parts = [call]
+    if s.get("grid"):
+        parts.append(s["grid"])
+    if s.get("country") and s["country"] != "United States":
+        parts.append(s["country"])
+    bm = f"{band} {mode}".strip()
+    if bm:
+        parts.append(bm)
+    freq = s.get("freq_khz") or s.get("freq") or 0
+    try:
+        fk = float(freq)
+        if fk:
+            parts.append(f"{fk/1000:.3f}" if fk > 1000 else f"{fk}")
+    except (TypeError, ValueError):
+        pass
+    # Run the HTTP POST off the ingest/event-loop thread so a slow Pushover
+    # call never stalls spot processing.
+    threading.Thread(target=_send_pushover,
+                     args=(f"Grayline — {reason}", "  ".join(p for p in parts if p), priority),
+                     daemon=True).start()
+
+
+def _maybe_alert(s: dict, calling_me: bool = False):
+    if not s:
+        return
+    band = s.get("band", "")
+    call = s.get("dx_call", "")
+    mt = _alert_mode_token(s.get("mode", ""))
+    now = time.time()
+    # Calls-you bypass: someone sending YOUR call always pings (any band/mode),
+    # short cooldown so a pileup answering you doesn't spam.
+    if calling_me:
+        ck = ("callsme", call)
+        if now - _alert_cooldown.get(ck, 0) >= 300:
+            _alert_cooldown[ck] = now
+            _fire_alert(s, "CALLS YOU", priority=1)
+        return
+    cfg = _ALERTS
+    if not cfg.get("enabled"):
+        return
+    cell = cfg.get("cells", {}).get(band, {}).get(mt)
+    if not cell or not (cell.get("needed") or cell.get("open")):
+        return
+    # mode-aware geographic scope: MS = DX within meteor range; else local spotter
+    if mt == "MSK144":
+        in_scope = _within_ms_range(s.get("grid", ""))
+    else:
+        d = s.get("distance_mi")
+        in_scope = d is not None and d <= _telnet_feed_radius_mi(band)
+    if not in_scope:
+        return
+    cooldown = max(1, int(cfg.get("cooldown_min", 30))) * 60
+    if cell.get("needed") and _spot_is_needed(s):
+        ck = ("need", call, band)
+        if now - _alert_cooldown.get(ck, 0) >= cooldown:
+            _alert_cooldown[ck] = now
+            _fire_alert(s, "needed")
+        return
+    if cell.get("open"):
+        ck = ("open", band, mt)   # band-open is band/mode-level, not per-call
+        if now - _alert_cooldown.get(ck, 0) >= cooldown:
+            _alert_cooldown[ck] = now
+            _fire_alert(s, f"{band} {mt} active")
+
+
 def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
@@ -2470,6 +2630,10 @@ def add_spot(spot, cluster_name, calling_me=False):
     # well clear of the saturation point that caused the original audio
     # dropouts in GTBridge.
     _maybe_queue_flex_inject(_cache[key])
+
+    # Pushover: evaluate this finalized spot against the alert matrix (no-op
+    # unless configured + creds present; sends off-thread).
+    _maybe_alert(_cache.get(key), calling_me)
 
     # Re-broadcast to the SDC / DX-cluster telnet feed, applying the same tiered
     # local-spotter radius as the browser's "Local spotters only" toggle. By
@@ -3286,6 +3450,22 @@ details[open] .gear-icon { color: #fff; }
   .log-search-pager button { padding: 0.45em 0.8em; font-size: 0.95em; }
   .log-search-results { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* Push-alerts config panel */
+.alerts-panel { margin: 0.4em 0 0.6em; border: 1px solid #1a1a1a; background: #080808; padding: 0.2em 0.6em; }
+.alerts-panel > summary { cursor: pointer; color: #ff0; font-size: 0.85em; font-weight: 600; list-style: none; }
+.alerts-panel > summary::-webkit-details-marker { display: none; }
+.alerts-body { margin: 0.5em 0; font-size: 0.85em; }
+.alerts-warn { color: #fb6; margin-bottom: 0.5em; }
+.alerts-warn code { color: #ffd; }
+.alerts-top { margin-bottom: 0.5em; }
+.alerts-saved { color: #5c5; margin-left: 0.8em; font-size: 0.85em; }
+table.alerts-matrix { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.alerts-matrix th, table.alerts-matrix td { padding: 0.1em 0.55em; text-align: center; border-bottom: 1px solid #141414; }
+table.alerts-matrix th { color: #ff0; font-size: 0.78em; }
+table.alerts-matrix th.alerts-sub { color: #888; font-weight: normal; font-size: 0.68em; }
+table.alerts-matrix td.alerts-band, table.alerts-matrix th:first-child { text-align: right; color: #aaa; }
+table.alerts-matrix input[type="checkbox"] { margin: 0; }
 </style>
 </head><body>
 <div class="header-row">
@@ -3364,6 +3544,10 @@ details[open] .gear-icon { color: #fff; }
       <span style="color:#000;background:#ffa500;padding:0 4px;border-radius:2px">scope needed</span>
     </span>
   </div>
+  <details class="alerts-panel" id="alerts_panel">
+    <summary>&#x1F514; Push alerts <span id="alerts_state" class="ff-count"></span></summary>
+    <div id="alerts_body" class="alerts-body">Loading…</div>
+  </details>
   <div class="tab-strip" id="tab_strip"></div>
   <div class="band-mode-toggles" id="band_mode_toggles"></div>
   <div class="band-content" id="band_content"></div>
@@ -5031,6 +5215,83 @@ function fetchScores() {
 fetchScores();
 setInterval(fetchScores, 5 * 60 * 1000);  // refresh every 5 min — matches worked_state reload cadence
 
+// ============== Push-alerts config (per-band × per-mode matrix) ==============
+let alertsLoaded = false;
+function loadAlerts() {
+  fetch("/api/alerts").then(r => r.json()).then(renderAlerts)
+    .catch(e => { const b = document.getElementById("alerts_body"); if (b) b.textContent = "load failed: " + e; });
+}
+function updateAlertState(cfg) {
+  const el = document.getElementById("alerts_state");
+  if (!el) return;
+  const n = Object.values(cfg.cells || {}).reduce((a, m) => a + Object.keys(m).length, 0);
+  el.textContent = cfg.enabled ? (n ? `on · ${n} cells` : "on · none set") : "off";
+}
+function renderAlerts(d) {
+  const cfg = d.config || { enabled: false, cooldown_min: 30, cells: {} };
+  const cells = cfg.cells || {};
+  const credWarn = d.creds ? "" :
+    `<div class="alerts-warn">&#x26A0; No Pushover creds in secrets.json &mdash; add <code>pushover_token</code> + <code>pushover_user</code> to actually receive pushes.</div>`;
+  const head = "<tr><th>band</th>" + d.modes.map(m => `<th colspan="2">${m}</th>`).join("") + "</tr>";
+  const sub = "<tr><th></th>" + d.modes.map(() => `<th class="alerts-sub">need</th><th class="alerts-sub">open</th>`).join("") + "</tr>";
+  const rows = d.bands.map(b => {
+    const tds = d.modes.map(m => {
+      const c = (cells[b] && cells[b][m]) || {};
+      return `<td><input type="checkbox" data-b="${b}" data-m="${m}" data-f="needed" ${c.needed ? "checked" : ""}></td>`
+           + `<td><input type="checkbox" data-b="${b}" data-m="${m}" data-f="open" ${c.open ? "checked" : ""}></td>`;
+    }).join("");
+    return `<tr><td class="alerts-band">${b}</td>${tds}</tr>`;
+  }).join("");
+  document.getElementById("alerts_body").innerHTML = credWarn + `
+    <div class="alerts-top">
+      <label><input type="checkbox" id="alerts_enabled" ${cfg.enabled ? "checked" : ""}> <b>Enable push alerts</b></label>
+      <label style="margin-left:1.2em">cooldown <input type="number" id="alerts_cooldown" min="1" max="240" value="${cfg.cooldown_min || 30}" style="width:3.5em"> min</label>
+      <button id="alerts_test" style="margin-left:1.2em">Send test</button>
+      <span id="alerts_saved" class="alerts-saved"></span>
+    </div>
+    <table class="alerts-matrix">${head}${sub}${rows}</table>
+    <div class="mode-hint">Each cell &mdash; <b>need</b>: ping on a wanted entity/grid for that band's award scope · <b>open</b>: ping on any local activity (band's alive). Es/tropo modes gate on local spotters; <b>MSK144</b> uses continental meteor-scatter range. Blank row = silence (the default). "Calls you" always pings regardless. Changes save instantly.</div>`;
+  const body = document.getElementById("alerts_body");
+  body.querySelectorAll('input[type=checkbox][data-b], #alerts_enabled, #alerts_cooldown').forEach(el =>
+    el.addEventListener("change", saveAlerts));
+  document.getElementById("alerts_test").addEventListener("click", testAlerts);
+  updateAlertState(cfg);
+}
+function gatherAlerts() {
+  const cells = {};
+  document.querySelectorAll("#alerts_body input[type=checkbox][data-b]").forEach(el => {
+    if (!el.checked) return;
+    const b = el.dataset.b, m = el.dataset.m, f = el.dataset.f;
+    (cells[b] = cells[b] || {})[m] = cells[b][m] || {};
+    cells[b][m][f] = true;
+  });
+  return {
+    enabled: document.getElementById("alerts_enabled").checked,
+    cooldown_min: parseInt(document.getElementById("alerts_cooldown").value) || 30,
+    cells,
+  };
+}
+function saveAlerts() {
+  const cfg = gatherAlerts();
+  fetch("/api/alerts", { method: "POST", body: JSON.stringify(cfg) })
+    .then(r => r.json()).then(() => {
+      const s = document.getElementById("alerts_saved");
+      if (s) { s.textContent = "saved"; setTimeout(() => { s.textContent = ""; }, 1500); }
+      updateAlertState(cfg);
+    });
+}
+function testAlerts() {
+  fetch("/api/alerts/test", { method: "POST" }).then(r => r.json()).then(d => {
+    const s = document.getElementById("alerts_saved");
+    if (s) { s.textContent = d.ok ? "test sent ✓" : (d.error || "failed"); setTimeout(() => { s.textContent = ""; }, 3500); }
+  });
+}
+const _alertsPanel = document.getElementById("alerts_panel");
+if (_alertsPanel) _alertsPanel.addEventListener("toggle", function () {
+  if (this.open && !alertsLoaded) { alertsLoaded = true; loadAlerts(); }
+});
+loadAlerts();  // populate the summary state on load
+
 // ============== Log Sync (manual QRZ + LoTW buttons) ==============
 function fmtAgo(epoch, now){
   if(!epoch) return "never synced";
@@ -5352,6 +5613,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(_BAND_ACTIVITY_PAGE.encode(), "text/html; charset=utf-8")
         elif self.path == "/api/sync/status":
             self._send(json.dumps(_sync_status()).encode(), "application/json")
+        elif self.path == "/api/alerts":
+            tok, usr = _pushover_creds()
+            self._send(json.dumps({
+                "config": _ALERTS, "bands": ALERT_BANDS, "modes": ALERT_MODES,
+                "creds": bool(tok and usr),
+            }).encode(), "application/json")
         elif self.path.startswith("/api/log/search"):
             self._handle_log_search()
         else:
@@ -5363,6 +5630,27 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path in ("/api/sync/qrz", "/api/sync/lotw"):
             self._handle_sync("qrz" if self.path.endswith("qrz") else "lotw")
+            return
+        if self.path == "/api/alerts":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 65536:
+                self._send(json.dumps({"ok": False, "error": "bad length"}).encode(),
+                           "application/json", 400)
+                return
+            try:
+                cfg = json.loads(self.rfile.read(length))
+                _save_alerts(cfg)
+            except Exception as e:
+                self._send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}).encode(),
+                           "application/json", 400)
+                return
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
+            return
+        if self.path == "/api/alerts/test":
+            ok = _send_pushover("Grayline — test", "Push alerts are wired up. 73", 0)
+            self._send(json.dumps({"ok": ok,
+                                   "error": "" if ok else "no pushover creds in secrets.json or send failed"}).encode(),
+                       "application/json", 200 if ok else 400)
             return
         self._send(b"not found", "text/plain", 404)
 
