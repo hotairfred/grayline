@@ -2285,6 +2285,7 @@ def _load_alerts() -> dict:
     cfg.setdefault("enabled", False)
     cfg.setdefault("cooldown_min", 30)
     cfg.setdefault("cells", {})   # {band: {mode: {"needed": bool, "open": bool}}}
+    cfg.setdefault("local_only", True)   # alert only on MY OWN RX decodes (*-LOCAL), not others' spots
     return cfg
 
 
@@ -2296,6 +2297,7 @@ def _save_alerts(cfg: dict):
     cfg.setdefault("enabled", False)
     cfg.setdefault("cooldown_min", 30)
     cfg.setdefault("cells", {})
+    cfg.setdefault("local_only", True)
     _ALERTS = cfg
     tmp = _ALERTS_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(cfg, indent=1))
@@ -2397,11 +2399,20 @@ def _maybe_alert(s: dict, calling_me: bool = False):
     cell = cfg.get("cells", {}).get(band, {}).get(mt)
     if not cell or not (cell.get("needed") or cell.get("open")):
         return
-    # mode-aware geographic scope: MS = DX within meteor range; else local spotter
-    if mt == "MSK144":
-        in_scope = _within_ms_range(s.get("grid", ""))
+    # Scope. The gold-standard "I can actually work this" signal is MY OWN
+    # receiver decoding it (source *-LOCAL) — not a nearby spotter, because a
+    # local BIG GUN (Jim's 130ft Long Lines superstation 6mi away) hears DX a
+    # modest yard antenna can't, and the spotter-distance filter wrongly passes
+    # those as "local/workable." So local_only (default) fires ONLY on my own
+    # decodes; if I heard it, it's workable regardless of band/mode/range.
+    if cfg.get("local_only", True):
+        if not (s.get("source") or "").endswith("-LOCAL"):
+            return
+        in_scope = True
+    elif mt == "MSK144":
+        in_scope = _within_ms_range(s.get("grid", ""))      # MS: DX within meteor range
     else:
-        d = s.get("distance_mi")
+        d = s.get("distance_mi")                            # else: nearby-spotter proxy
         in_scope = d is not None and d <= _telnet_feed_radius_mi(band)
     if not in_scope:
         return
@@ -5261,13 +5272,14 @@ function renderAlerts(d) {
     <div class="alerts-top">
       <label><input type="checkbox" id="alerts_enabled" ${cfg.enabled ? "checked" : ""}> <b>Enable push alerts</b></label>
       <label style="margin-left:1.2em">cooldown <input type="number" id="alerts_cooldown" min="1" max="240" value="${cfg.cooldown_min || 30}" style="width:3.5em"> min</label>
+      <label style="margin-left:1.2em" title="Alert only on spots YOUR OWN receiver decoded (WSJT-X / SparkGap), not other stations' spots. A nearby big-gun (e.g. a buddy's superstation) hears DX you can't, and those slip through the distance filter as 'local' — this gates on what you can actually hear."><input type="checkbox" id="alerts_local" ${cfg.local_only === false ? "" : "checked"}> my RX only</label>
       <button id="alerts_test" style="margin-left:1.2em">Send test</button>
       <span id="alerts_saved" class="alerts-saved"></span>
     </div>
     <table class="alerts-matrix">${head}${sub}${rows}</table>
     <div class="mode-hint">Each cell &mdash; <b>need</b>: ping on a wanted entity/grid for that band's award scope · <b>open</b>: ping on any local activity (band's alive). Es/tropo modes gate on local spotters; <b>MSK144</b> uses continental meteor-scatter range. Blank row = silence (the default). "Calls you" always pings regardless. Changes save instantly.</div>`;
   const body = document.getElementById("alerts_body");
-  body.querySelectorAll('input[type=checkbox][data-b], #alerts_enabled, #alerts_cooldown').forEach(el =>
+  body.querySelectorAll('input[type=checkbox][data-b], #alerts_enabled, #alerts_cooldown, #alerts_local').forEach(el =>
     el.addEventListener("change", saveAlerts));
   document.getElementById("alerts_test").addEventListener("click", testAlerts);
   const poSave = document.getElementById("po_save");
@@ -5305,6 +5317,7 @@ function gatherAlerts() {
   });
   return {
     enabled: document.getElementById("alerts_enabled").checked,
+    local_only: document.getElementById("alerts_local").checked,
     cooldown_min: parseInt(document.getElementById("alerts_cooldown").value) || 30,
     cells,
   };
