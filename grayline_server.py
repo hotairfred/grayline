@@ -4371,13 +4371,15 @@ async function refresh() {
   // without clicking through each tab. Each band tab still drills down to a
   // single band when activity is concentrated.
   let activeBand = getActiveBand() || "*";
-  // If active band is no longer in the visible set, fall back to All
-  if (activeBand !== "*" && !bands.includes(activeBand)) {
-    activeBand = "*";
-    setActiveBand(activeBand);
+  // Keep the selected band STICKY even when it currently has no spots — show its
+  // tab + a band-specific empty state rather than silently reverting to All.
+  const tabBands = bands.slice();
+  if (activeBand !== "*" && !tabBands.includes(activeBand)) {
+    tabBands.push(activeBand);
+    tabBands.sort((a, b) => bandIdx(a) - bandIdx(b));
   }
   const tabStrip = document.getElementById("tab_strip");
-  if (bands.length === 0) {
+  if (tabBands.length === 0) {
     tabStrip.innerHTML = '<span class="empty">No spots match current filters.</span>';
   } else {
     // All tab — counter aggregates wanted/total across every visible band
@@ -4395,9 +4397,9 @@ async function refresh() {
       : `<span class="count">${allTotal}</span>`;
     const allCls = (activeBand === "*") ? "active" : "";
     let tabHTML = `<button class="${allCls}" data-band="*">All${allCounter}</button>`;
-    tabHTML += bands.map(b => {
+    tabHTML += tabBands.map(b => {
       let total = 0, wanted = 0;
-      for (const list of Object.values(byBand[b])) {
+      for (const list of Object.values(byBand[b] || {})) {   // active band may be empty (0 spots)
         for (const s of list) {
           total++;
           if (anyScopeNeeded(s)) wanted++;
@@ -4451,7 +4453,7 @@ async function refresh() {
       });
     }
   } else if (!byBand[activeBand]) {
-    modeTogglesBox.innerHTML = '<span class="empty">Select a band to view spots.</span>';
+    modeTogglesBox.innerHTML = `<span class="empty">No current spots on ${escapeHTML(activeBand)}.</span>`;
   } else {
     const modesInBand = Object.keys(byBand[activeBand]).sort();
     modeTogglesBox.innerHTML = `<strong style="color:#ff0;margin-right:0.8em">${escapeHTML(activeBand)} modes:</strong>` +
@@ -4499,7 +4501,9 @@ async function refresh() {
   });
 
   if (allRows.length === 0) {
-    html = '<div class="empty">No spots in current view.</div>';
+    html = (activeBand === "*")
+      ? '<div class="empty">No spots in current view.</div>'
+      : `<div class="empty">No current spots on ${escapeHTML(activeBand)} &mdash; holding this band; they'll show here the moment they arrive.</div>`;
   } else {
     const showBandCol = (activeBand === "*");
     let table = '<table><tr>';
