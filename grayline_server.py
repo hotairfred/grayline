@@ -31,6 +31,7 @@ import lotw_fetch
 import lotw_activity
 import dxmarathon
 import psk_heard
+import peer_copies
 import telnet_server
 from ctydat import CtyDat
 import worked_state
@@ -67,6 +68,7 @@ GOCLUSTER_HOST = CONFIG.get("gocluster_host", "ve7cc.net")   # a public DX clust
 GOCLUSTER_PORT = CONFIG.get("gocluster_port", 23)
 CALLSIGN = CONFIG.get("callsign", "N0CALL")
 HOME_GRID = CONFIG.get("home_grid", "")  # 6-char Maidenhead (e.g. "FN31pr"); needed for distance filtering
+PEER_RADIUS_MI = CONFIG.get("peer_radius_mi", 60)  # "who near me also copied this?" — local-peer radius for peer_copies
 # Commands sent after login. Empty by default — standard DX clusters (ve7cc.net
 # etc.) stream spots immediately with no setup. GoCluster / DXSpider filter
 # dialects (PASS ..., SET GRID ...) go here via config.json for those servers.
@@ -2025,6 +2027,28 @@ def haversine_miles(lat1, lon1, lat2, lon2):
 
 HOME_LATLON = maidenhead_to_latlon(HOME_GRID)
 
+
+def _nearby_grid_squares(home_latlon, home_grid, radius_mi):
+    """The 4-char Maidenhead squares whose center is within radius+slop of home —
+    peer_copies' cheap pre-filter set (a square spans ~70mi, so +70 slop keeps
+    edge receivers). Bounded to the 3x3 fields around home so it's fast at startup."""
+    if not home_latlon or len(home_grid) < 2:
+        return set()
+    f0, f1 = home_grid[0].upper(), home_grid[1].upper()
+    fields0 = [chr(o) for o in (ord(f0) - 1, ord(f0), ord(f0) + 1) if ord('A') <= o <= ord('R')]
+    fields1 = [chr(o) for o in (ord(f1) - 1, ord(f1), ord(f1) + 1) if ord('A') <= o <= ord('R')]
+    out = set()
+    for A in fields0:
+        for B in fields1:
+            for x in range(10):
+                for y in range(10):
+                    sq = f"{A}{B}{x}{y}"
+                    c = maidenhead_to_latlon(sq)
+                    if c and haversine_miles(home_latlon[0], home_latlon[1], c[0], c[1]) <= radius_mi + 70:
+                        out.add(sq)
+    return out
+
+
 # ---------------- spot cache ----------------
 _lock = threading.Lock()
 _cache: "OrderedDict[tuple, dict]" = OrderedDict()
@@ -3108,6 +3132,8 @@ details[open] > summary::before { transform: rotate(90deg); }
    glow so it reads as a live signal-intel cue, not just an emoji. */
 .heard-eye { margin-left: 0.3em; font-size: 0.92em; vertical-align: middle; cursor: help;
   filter: drop-shadow(0 0 2px #3ff) drop-shadow(0 0 4px #1cf); }
+.peer-copies { margin-left: 0.35em; font-size: 0.72em; font-weight: 800; cursor: help;
+  vertical-align: middle; color: #ffd24a; white-space: nowrap; }
 .ffr { display: inline-block; padding: 0 0.3em; margin-left: 0.3em; border-radius: 3px;
   font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
 .ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
@@ -3633,6 +3659,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
 <script>
 // Operator identity, injected from config.json at serve time.
 const MY_CALLSIGN = "__MY_CALLSIGN__".toUpperCase();
+const PEER_RADIUS_MI = __PEER_RADIUS_MI__;
 const BAND_ORDER = ["3cm","6cm","9cm","13cm","23cm","33cm","70cm","1.25m","2m","6m","10m","12m","15m","17m","20m","30m","40m","60m","80m","160m"];
 // Per-band award scopes — drives which cells get the orange highlight treatment.
 const DXCC_BANDS = new Set(["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"]);
@@ -4022,6 +4049,22 @@ function heardEye(s) {
               + (ago ? ` ${ago} ago` : "") + (h.grid ? ` (from ${escapeHTML(h.grid)})` : "")
               + " — path is open both ways, worth calling.";
   return ` <span class="heard-eye" title="${title}">\u{1F441}</span>`;
+}
+
+// "Who near me ALSO copied this?" — count of local peers (within PEER_RADIUS_MI)
+// who decoded this DX call, hover for their calls + signal reports. The control
+// group for "is it me or the band?": neighbors hear it and you don't => your
+// station; only one does => his path.
+function peerCopiesBadge(s) {
+  const pc = s.peer_copies;
+  if (!pc || !pc.length) return "";
+  const fmt = pc.map(p => {
+    const snr = (p.snr === null || p.snr === undefined) ? "" : " " + (p.snr > 0 ? "+" : "") + p.snr;
+    const band = (p.band && p.band !== s.band) ? " " + p.band : "";
+    return p.peer + snr + band;
+  }).join(", ");
+  const title = `Also copied within ${PEER_RADIUS_MI} mi by ${pc.length}: ${fmt}`;
+  return ` <span class="peer-copies" title="${escapeHTML(title)}">\u{1F442}${pc.length}</span>`;
 }
 
 function ffmaRarityBadge(s) {
@@ -4556,7 +4599,7 @@ async function refresh() {
         <td class="awards">${awardCell}</td>
         <td class="freq">${s.freq_khz.toFixed(1)}</td>
         <td class="${snrClass}">${snrCell}</td>
-        <td class="${spotterClass}">${escapeHTML(s.spotter)}</td>
+        <td class="${spotterClass}">${escapeHTML(s.spotter)}${peerCopiesBadge(s)}</td>
         <td class="${distClass}">${distCell}</td>
         <td class="age">${fmtAge(age)}</td>
       </tr>`;
@@ -5646,11 +5689,19 @@ class Handler(BaseHTTPRequestHandler):
             ffma_js = ",".join('"' + g + '"' for g in _FFMA_GRIDS)
             page = (HTML_PAGE.replace("__FFMA_GRIDS_INJECT__", ffma_js)
                     .replace("__MY_CALLSIGN__", CALLSIGN)
+                    .replace("__PEER_RADIUS_MI__", str(int(PEER_RADIUS_MI)))
                     .replace("__MY_GRID__", HOME_GRID or "your QTH")
                     .replace("__LOTW_FRESH_DAYS__", str(LOTW_FRESH_DAYS)))
             self._send(page.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/spots.json":
-            payload = {"spots": snapshot(), "now": time.time(), "worked_rev": _WORKED_REV}
+            # Enrich shallow copies (never mutate the cache) with live local-peer
+            # copies — only spots a neighbor actually heard carry the field, so the
+            # payload stays lean.
+            spots = []
+            for s in snapshot():
+                pc = peer_copies.copies(s.get("dx_call", ""))
+                spots.append({**s, "peer_copies": pc} if pc else s)
+            payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV}
             self._send(json.dumps(payload).encode(), "application/json")
         elif self.path == "/active_bands":
             payload = active_bands_snapshot()
@@ -6110,6 +6161,15 @@ async def main():
     threading.Thread(target=qrz_lookup_worker, daemon=True).start()
     threading.Thread(target=worked_state_reload_loop, daemon=True).start()
     threading.Thread(target=psk_heard_loop, daemon=True).start()   # PSKReporter "who heard me" eye
+    # peer_copies: "who within PEER_RADIUS_MI also copied this?" — PSKReporter MQTT
+    # firehose filtered to local receivers; the control group for "is it me or the band?"
+    if HOME_LATLON:
+        _peer_sq = _nearby_grid_squares(HOME_LATLON, HOME_GRID, PEER_RADIUS_MI)
+        peer_copies.configure(HOME_LATLON, PEER_RADIUS_MI, CALLSIGN,
+                              _peer_sq, maidenhead_to_latlon, haversine_miles)
+        peer_copies.start()
+        log.info("peer_copies: started — %.0fmi radius of %s, %d pre-filter squares",
+                 PEER_RADIUS_MI, HOME_GRID, len(_peer_sq))
     threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
     threading.Thread(target=clublog_matches_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:
