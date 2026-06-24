@@ -3460,6 +3460,13 @@ details[open] .gear-icon { color: #fff; }
 .alerts-warn code { color: #ffd; }
 .alerts-top { margin-bottom: 0.5em; }
 .alerts-saved { color: #5c5; margin-left: 0.8em; font-size: 0.85em; }
+.alerts-credrow { margin-bottom: 0.4em; }
+.alerts-ok { color: #5c5; font-weight: 600; }
+.alerts-credrow a { color: #6cf; }
+.alerts-creds { margin-bottom: 0.6em; padding: 0.4em 0.5em; background: #0d0d0d; border: 1px solid #1a1a1a; }
+.alerts-creds input { background: #1a1a1a; color: #eee; border: 1px solid #333; padding: 0.3em 0.5em; margin-right: 0.4em; font-family: inherit; font-size: 0.9em; width: 14em; max-width: 45%; }
+.alerts-creds button { background: #1a1a1a; color: #ccc; border: 1px solid #333; padding: 0.3em 0.8em; cursor: pointer; font-family: inherit; }
+.alerts-creds button:hover { background: #2a2a2a; color: #fff; }
 table.alerts-matrix { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 table.alerts-matrix th, table.alerts-matrix td { padding: 0.1em 0.55em; text-align: center; border-bottom: 1px solid #141414; }
 table.alerts-matrix th { color: #ff0; font-size: 0.78em; }
@@ -5230,8 +5237,16 @@ function updateAlertState(cfg) {
 function renderAlerts(d) {
   const cfg = d.config || { enabled: false, cooldown_min: 30, cells: {} };
   const cells = cfg.cells || {};
-  const credWarn = d.creds ? "" :
-    `<div class="alerts-warn">&#x26A0; No Pushover creds in secrets.json &mdash; add <code>pushover_token</code> + <code>pushover_user</code> to actually receive pushes.</div>`;
+  const credRow = `<div class="alerts-credrow" id="alerts_credrow">${d.creds
+    ? `<span class="alerts-ok">&#x2705; Pushover connected</span> &middot; <a href="#" id="po_change">change creds</a>`
+    : `<span class="alerts-warn">&#x26A0; Pushover not set up yet</span>`}</div>`;
+  const credForm = `<div class="alerts-creds" id="po_form" ${d.creds ? 'style="display:none"' : ''}>
+      <input type="text" id="po_user" placeholder="Pushover user key" autocomplete="off">
+      <input type="text" id="po_token" placeholder="Pushover API token" autocomplete="off">
+      <button id="po_save">Save &amp; test</button>
+      <span id="po_status" class="alerts-saved"></span>
+      <div class="mode-hint">Both come from <b>pushover.net</b> &mdash; your <b>User Key</b> on the dashboard, then create an <b>Application</b> for the <b>API Token</b>. Saved to the server; you'll get a test push to confirm.</div>
+    </div>`;
   const head = "<tr><th>band</th>" + d.modes.map(m => `<th colspan="2">${m}</th>`).join("") + "</tr>";
   const sub = "<tr><th></th>" + d.modes.map(() => `<th class="alerts-sub">need</th><th class="alerts-sub">open</th>`).join("") + "</tr>";
   const rows = d.bands.map(b => {
@@ -5242,7 +5257,7 @@ function renderAlerts(d) {
     }).join("");
     return `<tr><td class="alerts-band">${b}</td>${tds}</tr>`;
   }).join("");
-  document.getElementById("alerts_body").innerHTML = credWarn + `
+  document.getElementById("alerts_body").innerHTML = credRow + credForm + `
     <div class="alerts-top">
       <label><input type="checkbox" id="alerts_enabled" ${cfg.enabled ? "checked" : ""}> <b>Enable push alerts</b></label>
       <label style="margin-left:1.2em">cooldown <input type="number" id="alerts_cooldown" min="1" max="240" value="${cfg.cooldown_min || 30}" style="width:3.5em"> min</label>
@@ -5255,7 +5270,30 @@ function renderAlerts(d) {
   body.querySelectorAll('input[type=checkbox][data-b], #alerts_enabled, #alerts_cooldown').forEach(el =>
     el.addEventListener("change", saveAlerts));
   document.getElementById("alerts_test").addEventListener("click", testAlerts);
+  const poSave = document.getElementById("po_save");
+  if (poSave) poSave.addEventListener("click", saveCreds);
+  const poChange = document.getElementById("po_change");
+  if (poChange) poChange.addEventListener("click", e => {
+    e.preventDefault();
+    const f = document.getElementById("po_form");
+    if (f) f.style.display = "";
+  });
   updateAlertState(cfg);
+}
+function saveCreds() {
+  const user = document.getElementById("po_user").value.trim();
+  const token = document.getElementById("po_token").value.trim();
+  const st = document.getElementById("po_status");
+  if (!user || !token) { if (st) st.textContent = "enter both fields"; return; }
+  if (st) st.textContent = "saving…";
+  fetch("/api/alerts/creds", { method: "POST", body: JSON.stringify({ user, token }) })
+    .then(r => r.json()).then(d => {
+      if (!d.ok) { if (st) st.textContent = d.error || "save failed"; return; }
+      return fetch("/api/alerts/test", { method: "POST" }).then(r => r.json()).then(t => {
+        if (st) st.textContent = t.ok ? "saved ✓ — test sent, check your phone" : ("saved, but test failed: " + (t.error || ""));
+        setTimeout(loadAlerts, 3500);   // refresh to the connected state
+      });
+    }).catch(e => { if (st) st.textContent = "error: " + e; });
 }
 function gatherAlerts() {
   const cells = {};
@@ -5651,6 +5689,46 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps({"ok": ok,
                                    "error": "" if ok else "no pushover creds in secrets.json or send failed"}).encode(),
                        "application/json", 200 if ok else 400)
+            return
+        if self.path == "/api/alerts/creds":
+            # Let a non-technical user set Pushover creds from the panel (no
+            # hand-editing secrets.json). Merge into secrets.json (preserving the
+            # other secrets), re-lock to 0600. LAN-only single-op install; these
+            # are low-stakes send-only creds. Never echoed back via GET.
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 8192:
+                self._send(json.dumps({"ok": False, "error": "bad length"}).encode(),
+                           "application/json", 400)
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+                user = (body.get("user") or "").strip()
+                token = (body.get("token") or "").strip()
+            except Exception as e:
+                self._send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}).encode(),
+                           "application/json", 400)
+                return
+            if not user or not token:
+                self._send(json.dumps({"ok": False, "error": "both user key and API token are required"}).encode(),
+                           "application/json", 400)
+                return
+            try:
+                p = _BASE_DIR / "secrets.json"
+                try:
+                    sec = json.loads(p.read_text())
+                except Exception:
+                    sec = {}
+                sec["pushover_user"] = user
+                sec["pushover_token"] = token
+                tmp = p.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(sec, indent=1))
+                tmp.replace(p)
+                p.chmod(0o600)
+            except Exception as e:
+                self._send(json.dumps({"ok": False, "error": f"save failed: {e}"}).encode(),
+                           "application/json", 500)
+                return
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
             return
         self._send(b"not found", "text/plain", 404)
 
