@@ -469,6 +469,8 @@ class WorkedState:
         # Sets keyed for fast `in` checks (mirrors GT.tracker shape):
         self.worked_calls: set[str] = set()
         self.confirmed_calls: set[str] = set()
+        self.worked_calls_band: set[tuple[str, str]] = set()      # (call, band) — band-scoped call status
+        self.confirmed_calls_band: set[tuple[str, str]] = set()
 
         # Indexed by ADIF DXCC ID (the number QRZ uses)
         self.worked_dxcc_band: set[tuple[str, str]] = set()  # (dxcc_id, band)
@@ -608,6 +610,8 @@ class WorkedState:
 
         worked_calls: set[str] = set()
         confirmed_calls: set[str] = set()
+        worked_calls_band: set[tuple[str, str]] = set()
+        confirmed_calls_band: set[tuple[str, str]] = set()
         worked_dxcc_band: set[tuple[str, str]] = set()
         confirmed_dxcc_band: set[tuple[str, str]] = set()
         slot_calls: dict[tuple[str, str], set] = {}  # (dxcc,band) -> {callsigns worked there}
@@ -764,6 +768,10 @@ class WorkedState:
                 worked_calls.add(call)
                 if confirmed:
                     confirmed_calls.add(call)
+                if band:
+                    worked_calls_band.add((call, band))
+                    if confirmed:
+                        confirmed_calls_band.add((call, band))
 
             if dxcc:
                 worked_dxcc.add(dxcc)
@@ -890,6 +898,8 @@ class WorkedState:
 
         self.worked_calls = worked_calls
         self.confirmed_calls = confirmed_calls
+        self.worked_calls_band = worked_calls_band
+        self.confirmed_calls_band = confirmed_calls_band
         self.worked_dxcc_band = worked_dxcc_band
         self.confirmed_dxcc_band = confirmed_dxcc_band
         self.slot_calls = slot_calls
@@ -962,6 +972,10 @@ class WorkedState:
             if confirmed:
                 self.confirmed_calls.add(c)
         b = _norm_band(band) if band else ""
+        if c and b:
+            self.worked_calls_band.add((c, b))
+            if confirmed:
+                self.confirmed_calls_band.add((c, b))
         m = (mode or "").upper().strip()
         cls = mode_class(m) if m else ""
         d = (dxcc or "").strip()
@@ -1016,6 +1030,20 @@ class WorkedState:
         if c in self.confirmed_calls:
             return "confirmed"
         if c in self.worked_calls:
+            return "worked"
+        return "new"
+
+    def call_band_status(self, call: str, band: str) -> str:
+        """Band-scoped call_status: worked/confirmed status of this CALL on THIS band
+        only. For the grid chase, 'confirmed on 20m' is NOT 'confirmed on 6m' — a call
+        worked only on another band reads 'new' here, because you still need them on the
+        band you're working. Falls back to 'new' when band is unknown."""
+        c = _norm_call(call)
+        if not c or not band:
+            return "new"
+        if (c, band) in self.confirmed_calls_band:
+            return "confirmed"
+        if (c, band) in self.worked_calls_band:
             return "worked"
         return "new"
 

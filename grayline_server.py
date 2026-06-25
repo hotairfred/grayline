@@ -1416,7 +1416,7 @@ def _refresh_cache_worked_status():
     _WORKED_REV += 1
     with _lock:
         for s in _cache.values():
-            s["call_status"] = _worked.call_status(s["dx_call"])
+            s["call_status"] = _worked.call_band_status(s["dx_call"], s["band"])
             country = s.get("country", "")
             band = s["band"]
             mode = s.get("mode") or ""
@@ -2576,7 +2576,7 @@ def add_spot(spot, cluster_name, calling_me=False):
     modeclass = mode_class(mode) if mode else ""
     grid_band_status = "new"
     if _worked:
-        call_status = _worked.call_status(spot.dx_call)
+        call_status = _worked.call_band_status(spot.dx_call, band)
         if country:
             # Number-keyed (LoTW ground truth, collapses WAE splits) UNION name.
             dxcc_band_status = _worked.entity_band_status(dxcc_num, country, band)
