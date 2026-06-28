@@ -112,6 +112,20 @@ FLEX_HOST = CONFIG.get("flex_host", "")
 FLEX_PORT = CONFIG.get("flex_port", 4992)
 FLEX_ENABLED = CONFIG.get("flex_enabled", False)
 
+# ---------------- Rotator control (Hamlib rotctld proxy) ----------------
+# Manual beam control (and later click-to-rotate / autopilot). The browser never
+# talks to rotctld directly — it calls /api/rotor here and Grayline relays over
+# the net-rotctl protocol to a Hamlib rotctld (the K3NG / Alliance HD-73 on the
+# packet Pi). When the rotator brain later moves to an ESP32/MQTT, only these
+# settings + the _rotor_* helpers change; the /rotor page never does.
+ROTCTLD_HOST = CONFIG.get("rotctld_host", "192.168.1.45")
+ROTCTLD_PORT = CONFIG.get("rotctld_port", 4533)
+# Beam-vs-controller azimuth calibration: the raw value rotctld reports when the beam
+# physically points TRUE NORTH. 0 = uncalibrated (controller reading == true bearing).
+# WF8Z's HD-73 slipped on the mast — north reads 243, so the mechanical stop at raw 180
+# lands at true ~297 (WNW). true = (raw - this) % 360 ; raw = (true + this) % 360.
+ROTOR_NORTH_RAW = float(CONFIG.get("rotor_az_north_raw", 0.0))
+
 # Phase 2 panadapter injection tuning
 FLEX_INJECT_ENABLED = CONFIG.get("flex_inject_enabled", False)
 FLEX_INJECT_RATE_SEC = 0.5         # max 2 spots/sec to the radio (gentle on the API)
@@ -682,12 +696,19 @@ def _wsjtx_state_get_latest() -> dict | None:
         return max(live, key=lambda s: s["ts"])
 
 
-def _wsjtx_state_for_band(band: str) -> dict | None:
-    """Return the most-recent live WSJT-X state whose dial frequency falls
-    on the given band, or None if no WSJT-X instance is currently tuned to
-    that band. Used by click-to-tune to gate WSJT-X-mode routing on actual
-    band match — clicking an FT8 spot when no WSJT-X is on that band does
-    nothing (intentionally, per operator-respect rule)."""
+def _wsjtx_state_for_band(band: str, freq_khz: float | None = None) -> dict | None:
+    """Return the live WSJT-X state to route a click-to-tune to. Gated on the
+    instance's dial being on the given band (operator-respect: clicking an FT8
+    spot when no WSJT-X is on that band does nothing).
+
+    When freq_khz is given and MORE THAN ONE instance is on the band (e.g. a
+    SliceA WSJT-X on 50.313 and a SliceB WSJT-X on 50.323 — both '6m'), prefer
+    the instance whose audio passband [MIN..MAX Hz above its dial] actually
+    CONTAINS the signal, so a 50.313 spot routes to the 50.313 slice instead of
+    whichever instance merely sent a Status most recently. Among in-window
+    instances the most recently heard wins. If none can currently hear it, fall
+    back to the most-recent band match so the caller still reports the honest
+    'dial would need adjusting' against a real dial."""
     if not band:
         return None
     cutoff = time.time() - WSJTX_STATE_TTL_SEC
@@ -701,6 +722,14 @@ def _wsjtx_state_for_band(band: str) -> dict | None:
                 matches.append(state)
     if not matches:
         return None
+    if freq_khz is not None:
+        in_window = []
+        for s in matches:
+            audio_hz = round((freq_khz - s["dial_freq_hz"] / 1000.0) * 1000)
+            if WSJTX_AUDIO_MIN_HZ <= audio_hz <= WSJTX_AUDIO_MAX_HZ:
+                in_window.append(s)
+        if in_window:
+            return max(in_window, key=lambda s: s["ts"])
     return max(matches, key=lambda s: s["ts"])
 
 
@@ -2025,7 +2054,56 @@ def haversine_miles(lat1, lon1, lat2, lon2):
     return 2 * R_MI * math.asin(math.sqrt(a))
 
 
+def great_circle_bearing(lat1, lon1, lat2, lon2):
+    """Initial great-circle bearing in degrees true (0-360) from point 1 to point 2 —
+    the heading you'd point a beam to work a station at (lat2, lon2)."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dlon)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
 HOME_LATLON = maidenhead_to_latlon(HOME_GRID)
+
+
+def bearing_to_grid(grid):
+    """Initial great-circle bearing (deg true, whole degree, 0-360) from HOME to the
+    center of a Maidenhead grid. None if HOME or the grid is unknown/too short."""
+    if not HOME_LATLON or not grid:
+        return None
+    c = maidenhead_to_latlon(grid)
+    if c is None:
+        return None
+    return round(great_circle_bearing(HOME_LATLON[0], HOME_LATLON[1], c[0], c[1])) % 360
+
+
+def dist_to_grid(grid):
+    """Great-circle distance (miles) from HOME to the center of a Maidenhead grid.
+    None if HOME or the grid is unknown/too short. Companion to bearing_to_grid —
+    together they place a DX spot on the rotor radar (bearing=angle, dist=radius).
+    NOTE: distinct from a spot's `distance_mi`, which is the SPOTTER's distance (≈0
+    for our own local decodes) and is wrong for plotting the DX itself."""
+    if not HOME_LATLON or not grid:
+        return None
+    c = maidenhead_to_latlon(grid)
+    if c is None:
+        return None
+    return round(haversine_miles(HOME_LATLON[0], HOME_LATLON[1], c[0], c[1]))
+
+
+# FT8 sign-off / control tokens that are NOT grids but pass a naive Maidenhead format
+# check — RR73 especially ("Roger Roger 73" → a valid-looking 4-char locator at ~80N
+# 166E, middle of the Arctic). A naive parser cached these as grids for 713 calls;
+# reject them wherever a grid is accepted so a poisoned cache / sloppy parse can't
+# fake a location (and misaim the beam via click-to-aim).
+_NON_GRID_TOKENS = {"RR73", "RRR", "73", "RR", "R", "RR73AA"}
+
+
+def _clean_grid(g) -> str:
+    """Return a grid string with FT8 sign-off tokens rejected (-> "")."""
+    g = (g or "").strip()
+    return "" if g.upper() in _NON_GRID_TOKENS else g
 
 
 def _nearby_grid_squares(home_latlon, home_grid, radius_mi):
@@ -2370,10 +2448,16 @@ def _within_ms_range(grid: str) -> bool:
 
 
 def _spot_is_needed(s: dict) -> bool:
-    # award-aware, per band: "new" = unworked DXCC band-slot OR grid band-slot.
-    # grid_band_status is only set on grid-award bands and dxcc on DXCC bands,
-    # so this honors the per-band scope without extra logic.
-    return s.get("dxcc_band_status") == "new" or s.get("grid_band_status") == "new"
+    # "new" = unworked DXCC band-slot OR grid band-slot. BUT both statuses default to
+    # "new" *before* resolution, so a spot with NO grid (Field Day class+section
+    # exchange, no QRZ grid) — or NO resolved entity — would otherwise fire a phantom
+    # "needed" alert with nothing to chase (the push literally says "needed" and no
+    # grid). Require the underlying datum to actually exist before trusting "new" —
+    # this mirrors the live view's `&& s.grid` guard so an alert never fires for
+    # something the spot table shows as nothing.
+    dxcc_needed = s.get("dxcc_band_status") == "new" and bool(s.get("dxcc"))
+    grid_needed = s.get("grid_band_status") == "new" and bool(s.get("grid"))
+    return dxcc_needed or grid_needed
 
 
 def _fire_alert(s: dict, reason: str, priority: int = 0):
@@ -2557,15 +2641,15 @@ def add_spot(spot, cluster_name, calling_me=False):
     # grid we already deduced from its CQ. Precedence: this decode's grid → the
     # grid we already cached for this call (a prior grid-bearing decode) → the
     # QRZ-cached grid (covers cluster spots that never carry one).
-    eff_grid = spot.grid or ""
+    eff_grid = _clean_grid(spot.grid)
     if not eff_grid:
         with _lock:
             prev = _cache.get(key)
             if prev:
-                eff_grid = prev.get("grid", "") or ""
+                eff_grid = _clean_grid(prev.get("grid", ""))
     if not eff_grid:
         with _qrz_cache_lock:
-            eff_grid = _qrz_cache.get(spot.dx_call, "") or ""
+            eff_grid = _clean_grid(_qrz_cache.get(spot.dx_call, ""))
 
     # Worked/needed status (against your QRZ logbook)
     call_status = "new"
@@ -2627,6 +2711,8 @@ def add_spot(spot, cluster_name, calling_me=False):
             "snr": spot.snr,
             "grid": eff_grid,
             "distance_mi": distance_mi,
+            "bearing": bearing_to_grid(eff_grid),           # great-circle heading HOME->DX grid (deg true) — for the beam/rotor; None if no grid
+
             "country": country,
             "dxcc": dxcc_num,
             "dxcc_rank": (_DXCC_RARITY.get(dxcc_num) if dxcc_num else None),  # Club Log Most Wanted rank (lower=rarer) or None
@@ -3025,8 +3111,20 @@ th { color: #ff0; font-weight: normal; font-size: 0.75em; background: #1a1a00; }
 .spotter { color: #999; font-size: 0.85em; }
 .spotter.us { color: #5f5; font-weight: 600; }       /* spotter is us — we definitely heard it */
 tr.us-spotted { box-shadow: inset 3px 0 0 #5f5; }     /* subtle green left edge on the row */
-tr.clickable { cursor: pointer; }
+tr.clickable { cursor: pointer; -webkit-user-select: none; user-select: none; }
 tr.clickable:hover { background: #1a2a3a; }
+/* Bigger vertical hit target for click-to-tune — the global 1px row padding made
+   the live rows a thin sliver to land on. Scoped to the live table only. */
+.band-content td, .band-content th { padding-top: 3px; padding-bottom: 3px; }
+td.beam { text-align: right; white-space: nowrap; }
+td.beam .bearing { color: #7a8aa0; }
+button.aim {
+  background: #1f3340; color: #7cf; border: 1px solid #2f5266;
+  border-radius: 3px; padding: 0 5px; font: inherit; font-size: 0.9em;
+  line-height: 1.5; cursor: pointer;
+}
+button.aim:hover { background: #2f5266; color: #aef; border-color: #6ad; }
+button.aim.aiming { background: #6ad; color: #021; border-color: #6ad; }
 tr.tuning { background: #2a4a6a !important; transition: background 0.6s; }
 .snr { text-align: right; }
 .snr.neg { color: #f99; }
@@ -3581,6 +3679,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <label style="margin-left:1em" title="Re-weight FFMA grid rarity by reachability from your QTH (HOME_GRID): globally-rare grids in your single-hop Es sweet spot get discounted; far/double-hop ones amplified. Adds the Es-hop band (1H/2H) to the badge."><input type="checkbox" id="ffma_qth"> FFMA: rare for my QTH</label>
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <a href="/bands" target="_blank" rel="noopener" class="band-activity-link" title="Open the Band Activity bar graph (CW/SSB/Digital × contest bands, local-filtered) in a new tab — a contest 'which band is hot' tool, kept off the main page">&#x1F4CA; Band Activity &#x2197;</a>
+    <a href="/rotor" target="_blank" rel="noopener" class="band-activity-link" title="Manual beam control (HD-73 via rotctld) — compass buttons, degree entry, stop. Opens in a new tab.">&#x1F9ED; Rotor &#x2197;</a>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
@@ -4550,7 +4649,7 @@ async function refresh() {
   } else {
     const showBandCol = (activeBand === "*");
     let table = '<table><tr>';
-    table += '<th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th>';
+    table += '<th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th><th>Beam</th>';
     if (showBandCol) table += '<th>Band</th>';
     table += '<th>Mode</th><th>Award</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
     for (const s of allRows) {
@@ -4589,11 +4688,21 @@ async function refresh() {
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
       ).join("") + marathonBadge(s) + waeBadge(s);   // Marathon + WAE live with the other award pills
       const bandCell = showBandCol ? `<td class="band">${escapeHTML(s.band)}</td>` : "";
+      // Beam heading: great-circle bearing HOME->DX grid. On VHF+ (rotatable-beam
+      // bands) it's a one-click aim button; on HF it's plain text (no rotor).
+      let beamCell = "";
+      if (s.bearing !== null && s.bearing !== undefined) {
+        const bz = Math.round(s.bearing);
+        beamCell = GRID_BANDS.has(s.band)
+          ? `<button class="aim" data-az="${bz}" title="Rotate beam to ${bz}° (${escapeHTML(s.grid)})">${bz}°</button>`
+          : `<span class="bearing">${bz}°</span>`;
+      }
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}${ffmaRarityBadge(s)}</td>
+        <td class="beam">${beamCell}</td>
         ${bandCell}
         <td class="mode">${escapeHTML(s.mode)}</td>
         <td class="awards">${awardCell}</td>
@@ -4623,13 +4732,43 @@ async function refresh() {
     `<span style="color:#5f5">${usCount} we heard</span> · ` +
     `${newCallCount} new calls · ${confirmedCount} confirmed · ` +
     `${bands.length} bands · ${new Date().toLocaleTimeString()}${filterTag}`;
-  document.getElementById("band_content").innerHTML = html;
+  // Don't redraw the table out from under a click. We hold the table via a
+  // sliding freeze window re-armed by any pointer activity over it (see below),
+  // rather than :hover — :hover has a quirk where new rows swapped in under a
+  // stationary cursor don't re-acquire hover until the mouse moves, so the
+  // freeze silently released after the first click and clicks 2+ chased a
+  // reshuffling table again. The negated form draws normally when the window is
+  // 0/undefined (first paint, before the listener arms). Status line above keeps
+  // ticking so it's clearly still live while the table holds.
+  const bc = document.getElementById("band_content");
+  if (bc && !(Date.now() < spotsFreezeUntil)) bc.innerHTML = html;
 }
 refresh();
 setInterval(refresh, 5000);
+// Freeze the live table briefly whenever the pointer is working over it, so the
+// rows can't reshuffle out from under a click. A sliding window re-armed by any
+// pointer activity is robust where :hover wasn't: it survives the stationary-
+// cursor-after-swap quirk, rapid spray-clicking, and momentary dips off a row.
+// Auto-resumes ~3s after you stop touching the table, catching up next tick.
+var spotsFreezeUntil = 0;
+(function () {
+  const bc = document.getElementById("band_content");
+  if (!bc) return;
+  const hold = () => { spotsFreezeUntil = Date.now() + 3000; };
+  bc.addEventListener("mousemove", hold);
+  bc.addEventListener("mousedown", hold);
+  bc.addEventListener("mouseover", hold);
+  bc.addEventListener("mouseleave", () => setTimeout(refresh, 3100));
+})();
 
-// Click-to-tune: delegate clicks on tr.clickable rows to /api/tune
-document.addEventListener("click", (ev) => {
+// Tune-to-spot fires on mousedown (not click): it triggers the instant you press,
+// so a micro-drag, a text-selection, or the table reflowing between press and
+// release can't swallow it. The old "click" needed a clean down+up on the exact
+// same spot — which is why it felt like it wanted a double-click or a precise hit
+// right on the callsign.
+document.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0) return;                    // left button only
+  if (ev.target.closest("button.aim")) return;    // the beam-aim button handles its own click
   const tr = ev.target.closest("tr.clickable");
   if (!tr) return;
   const call = tr.dataset.call;
@@ -4647,9 +4786,29 @@ document.addEventListener("click", (ev) => {
     if (j.ok) {
       console.log(`tuned ${call} on ${freq}: ${j.message || ''}`);
     } else {
-      console.warn(`tune ${call} on ${freq} failed: ${j.error || 'unknown'}`);
+      // Surface the backend's real reason (it lives in .message, not .error).
+      console.warn(`tune ${call} on ${freq} FAILED [${j.route||'?'}]: ${j.message || j.error || 'unknown'}`);
     }
   }).catch(e => console.error("tune fetch failed:", e));
+});
+
+// Click-to-aim: a beam-bearing button rotates the rotator to that azimuth (VHF+ bands).
+// Lives on the same delegated path as click-to-tune; the tune handler bails on these.
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button.aim");
+  if (!btn) return;
+  ev.stopPropagation();
+  const az = parseFloat(btn.dataset.az);
+  if (isNaN(az)) return;
+  btn.classList.add("aiming");
+  setTimeout(() => btn.classList.remove("aiming"), 900);
+  fetch("/api/rotor", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({op: "goto", az: az})
+  }).then(r => r.json()).then(j => {
+    console.log(`aim ${az}°: ${j.ok ? 'ok' : (j.error || 'failed')}`);
+  }).catch(e => console.error("aim fetch failed:", e));
 });
 
 // ============== View tabs (Live / Scores / Log search) ==============
@@ -5660,6 +5819,274 @@ def _sync_status() -> dict:
     return {"now": time.time(), "qrz": mt(LOGBOOK_PATH), "lotw": mt(lotw_path)}
 
 
+# ==================== Rotator control (Hamlib rotctld proxy) ====================
+# Tiny net-rotctl client. Read position = "p\n" -> "az\nel\n"; go-to =
+# "P <az> <el>\n" -> "RPRT 0"; stop = "S\n". Azimuth only (el forced 0); the
+# HD-73 build reports a phantom elevation we ignore. Each call is a short-lived
+# connection — rotctld is built for exactly this poll/command pattern.
+_ROTOR_LOCK = threading.Lock()
+_rotor_target = {"az": None, "ts": 0.0}   # last commanded heading (drives the "moving?" hint)
+
+
+def _rotctld(cmd: str, timeout: float = 4.0) -> str:
+    with socket.create_connection((ROTCTLD_HOST, ROTCTLD_PORT), timeout) as s:
+        s.settimeout(timeout)
+        s.sendall((cmd + "\n").encode())
+        time.sleep(0.15)
+        return s.recv(256).decode(errors="replace")
+
+
+def _raw_to_true(raw: float) -> float:
+    """Controller raw azimuth -> true bearing (applies the north-calibration offset)."""
+    return (raw - ROTOR_NORTH_RAW) % 360.0
+
+
+def _true_to_raw(true_az: float) -> float:
+    """True bearing -> the controller raw azimuth to command."""
+    return (true_az + ROTOR_NORTH_RAW) % 360.0
+
+
+def _rotor_status() -> dict:
+    """Current TRUE-bearing azimuth + whether it's still slewing toward the last target.
+    _rotor_target stores the commanded RAW az; we convert both ends to true for display."""
+    try:
+        raw = float(_rotctld("p").strip().split("\n")[0])
+    except Exception as e:
+        return {"ok": False, "error": str(e), "az": None}
+    with _ROTOR_LOCK:
+        tgt_raw = _rotor_target.get("az")
+    moving = bool(tgt_raw is not None and abs(((raw - tgt_raw + 180) % 360) - 180) > 3)
+    tgt_true = round(_raw_to_true(tgt_raw), 1) if tgt_raw is not None else None
+    return {"ok": True, "az": round(_raw_to_true(raw), 1), "az_raw": round(raw, 1),
+            "target": tgt_true, "moving": moving}
+
+
+def _rotor_goto(az) -> dict:
+    # `az` arrives as a TRUE bearing (click-to-aim, the degree box, compass buttons).
+    try:
+        az_true = float(az) % 360.0
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "bad azimuth"}
+    raw = _true_to_raw(az_true)   # -> controller space; the stop/seam logic lives here
+    # Mechanical-stop disambiguation, in RAW/controller space. The HD-73's single stop
+    # is at raw 180 (post-calibration that points true ~297 / WNW). A command of exactly
+    # raw 180 is ambiguous: K3NG resolves it to the CCW extreme, forcing the long way
+    # when you're on the other side. With capability=360 the internal range is 180->540,
+    # so raw 179 maps to 539 (approach from one side) and 181 to 181 (the other). Nudge
+    # 1 deg toward whichever side we're on -> short path. 1 deg is invisible on a 60-deg beam.
+    if abs(raw - 180.0) < 0.5:
+        try:
+            cur = float(_rotctld("p").strip().split("\n")[0])
+            raw = 179.0 if cur <= 180.0 else 181.0
+        except Exception:
+            pass  # can't read position -> just send raw 180 as-is
+    try:
+        reply = _rotctld(f"P {raw:.1f} 0")
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    ok = ("RPRT 0" in reply) or (reply.strip() == "")
+    with _ROTOR_LOCK:
+        _rotor_target["az"] = round(raw, 1)
+        _rotor_target["ts"] = time.time()
+    return {"ok": ok, "target": round(_raw_to_true(raw), 1), "reply": reply.strip()}
+
+
+def _rotor_stop() -> dict:
+    try:
+        _rotctld("S")
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    with _ROTOR_LOCK:
+        _rotor_target["az"] = None
+    return {"ok": True}
+
+
+_ROTOR_PAGE = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotor</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#0a0a0a; color:#ddd; font-family:system-ui,Arial,sans-serif;
+         font-variant-numeric:tabular-nums; padding:1.2em 1.4em; -webkit-tap-highlight-color:transparent; }
+  h1 { margin:0 0 .1em; font-size:1.5em; letter-spacing:.06em; color:#fff; font-weight:700; }
+  .sub { color:#777; font-size:.85em; margin-bottom:1.1em; }
+  a.back { color:#3fc7e0; text-decoration:none; }
+  .wrap { max-width:380px; margin:0 auto; }
+  .read { text-align:center; margin:.2em 0 .6em; }
+  .az { font-size:3.6em; font-weight:800; color:#fff; line-height:1; }
+  .az .d { font-size:.4em; color:#777; font-weight:600; vertical-align:.7em; }
+  .tgt { color:#e0a83c; font-size:.95em; min-height:1.3em; }
+  .tgt.moving { color:#3fc7e0; }
+  .dialwrap { display:flex; justify-content:center; margin:.3em 0 .6em; }
+  svg { width:300px; height:300px; max-width:86vw; }
+  .radar-ctl { display:flex; flex-direction:column; gap:.4em; margin:0 0 .6em; }
+  .radar-ctl .grp { display:flex; align-items:center; gap:.3em; }
+  .radar-ctl .lbl { color:#666; font-size:.7em; text-transform:uppercase; letter-spacing:.05em; width:3.2em; flex:0 0 3.2em; }
+  .radar-ctl button { font-size:.82em; font-weight:700; padding:.42em 0; flex:1; }
+  .radar-ctl button.on { background:#12303a; border-color:#1d6b80; color:#7fe3f5; }
+  .legend { color:#5a5a5a; font-size:.68em; text-align:center; margin:0 0 1em; line-height:1.6; }
+  .legend b { color:#ff5b5b; } .legend i { color:#3fc7e0; font-style:normal; }
+  .compass { display:grid; grid-template-columns:repeat(3,1fr); gap:.5em; margin-bottom:.9em; }
+  button { font-family:inherit; font-size:1.05em; font-weight:700; color:#ddd; background:#1a1a1a;
+           border:1px solid #2a2a2a; border-radius:7px; padding:.85em 0; cursor:pointer; }
+  button:hover { background:#242424; border-color:#3a3a3a; }
+  button:active { background:#2f2f2f; }
+  .compass .c { color:#444; background:transparent; border:none; cursor:default; }
+  .gobar { display:flex; gap:.5em; margin-bottom:.9em; }
+  .gobar input { flex:1; font-size:1.15em; font-family:inherit; background:#141414; color:#fff;
+                 border:1px solid #2a2a2a; border-radius:7px; padding:.6em .7em; text-align:center; }
+  .gobar button { flex:0 0 4.5em; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:.5em; }
+  .south { background:#241c10; border-color:#4a3a1a; color:#e0a83c; }
+  .stop { background:#2a1414; border-color:#5a2020; color:#ff6b6b; }
+  .stop:hover { background:#3a1a1a; }
+  .err { color:#ff6b6b; font-size:.8em; min-height:1.1em; margin-top:.7em; text-align:center; }
+</style></head>
+<body>
+<div class="wrap">
+  <h1>ROTOR</h1>
+  <div class="sub"><a class="back" href="/">&larr; spots</a> &middot; HD-73 &middot; south stop @ 180&deg; (crossing south = long way)</div>
+  <div class="read">
+    <div class="az"><span id="az">--</span><span class="d">&deg;</span></div>
+    <div class="tgt" id="tgt">&nbsp;</div>
+  </div>
+  <div class="dialwrap"><svg viewBox="0 0 200 200">
+    <circle cx="100" cy="100" r="92" fill="#0b0b0b" stroke="#222" stroke-width="2"/>
+    <g id="rings"></g>
+    <path id="beam" fill="rgba(63,199,224,0.08)" stroke="none"></path>
+    <g id="dots"></g>
+    <g fill="#5a5a5a" font-size="12" font-family="system-ui" text-anchor="middle">
+      <text x="100" y="23">N</text><text x="183" y="105">E</text>
+      <text x="100" y="191">S</text><text x="17" y="105">W</text></g>
+    <line id="needle" x1="100" y1="100" x2="100" y2="16" stroke="#3fc7e0" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="100" cy="100" r="4" fill="#3fc7e0"/>
+  </svg></div>
+  <div class="radar-ctl">
+    <div class="grp"><span class="lbl">range</span>
+      <button data-rng="1500" class="on">1.5k</button><button data-rng="3000">3k</button>
+      <button data-rng="6000">6k</button><button data-rng="12000">12k</button></div>
+    <div class="grp"><span class="lbl">band</span>
+      <button data-bnd="6m" class="on">6 m</button><button data-bnd="all">all</button></div>
+    <div class="grp"><span class="lbl">view</span>
+      <button data-view="all">all</button><button data-view="mine">mine</button>
+      <button data-view="local" class="on">local</button><button data-view="want">wanted</button></div>
+    <div class="grp"><span class="lbl">local &#8804;</span>
+      <button data-loc="100">100</button><button data-loc="250" class="on">250</button>
+      <button data-loc="500">500</button><span class="lbl" style="width:auto;flex:0 0 auto">mi</span></div>
+  </div>
+  <div class="legend"><b>&#9679; needed</b> &middot; <i>&#9679; heard</i> &middot; size = pile-up &middot; brightness = SNR &middot; <span style="color:#888">&#9650; on rim = beyond range</span> &middot; tap a dot to aim</div>
+  <div class="compass">
+    <button data-az="315">NW</button><button data-az="0">N</button><button data-az="45">NE</button>
+    <button data-az="270">W</button><button class="c">&middot;</button><button data-az="90">E</button>
+    <button data-az="225">SW</button><button data-az="180">S</button><button data-az="135">SE</button>
+  </div>
+  <div class="gobar">
+    <input id="deg" type="number" min="0" max="360" placeholder="212" inputmode="numeric">
+    <button id="go">GO</button>
+  </div>
+  <button class="stop" id="stop" style="width:100%">STOP</button>
+  <div class="err" id="err">&nbsp;</div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const SVGNS="http://www.w3.org/2000/svg";
+let maxRange=1500, bandFilter="6m", radarPts=[], viewMode="local", localR=250;
+function el(tag,a){ const e=document.createElementNS(SVGNS,tag); for(const k in a) e.setAttribute(k,a[k]); return e; }
+function polar(az,r){ const a=az*Math.PI/180; return [100+r*Math.sin(a), 100-r*Math.cos(a)]; }
+function setNeedle(az){
+  const [x,y]=polar(az,86); const n=$("#needle"); n.setAttribute("x2",x.toFixed(1)); n.setAttribute("y2",y.toFixed(1));
+  const bw=23, [x1,y1]=polar(az-bw,92), [x2,y2]=polar(az+bw,92);
+  $("#beam").setAttribute("d","M100,100 L"+x1.toFixed(1)+","+y1.toFixed(1)+" A92,92 0 0 1 "+x2.toFixed(1)+","+y2.toFixed(1)+" Z");
+}
+function drawRings(){
+  const g=$("#rings"); g.innerHTML="";
+  [0.25,0.5,0.75,1.0].forEach(f=>{
+    g.appendChild(el("circle",{cx:100,cy:100,r:(92*f).toFixed(1),fill:"none",stroke:"#1c1c1c","stroke-width":"1"}));
+    if(f===0.5||f===1.0){ const t=el("text",{x:"103",y:(100-92*f+3.4).toFixed(1),fill:"#444","font-size":"7","font-family":"system-ui"});
+      t.textContent=Math.round(maxRange*f); g.appendChild(t); }
+  });
+}
+function draw(){
+  drawRings();
+  const dots=$("#dots"); dots.innerHTML="";
+  const angBin=6, radBin=92/12, bins=new Map();
+  for(const p of radarPts){
+    if(p.az==null) continue;
+    if(bandFilter==="6m" && p.band!=="6m") continue;
+    if(viewMode==="mine" && !p.mine) continue;
+    if(viewMode==="want" && !p.need) continue;
+    if(viewMode==="local" && !(p.mine || (p.sdist!=null && p.sdist<=localR))) continue;
+    const raw=(p.dist||0)/maxRange, beyond=raw>1, r=Math.min(raw,1)*92;
+    // beyond-range get their own bin namespace so they don't merge with real rim dots
+    const key=(beyond?"B":"")+Math.round(p.az/angBin)+"_"+Math.round(r/radBin);
+    let b=bins.get(key); if(!b){ b={n:0,az:0,r:0,snr:0,ns:0,dist:0,need:false,beyond:beyond,call:p.call}; bins.set(key,b); }
+    b.n++; b.az+=p.az; b.r+=r; b.dist+=(p.dist||0); if(p.snr!=null){ b.snr+=p.snr; b.ns++; } if(p.need) b.need=true;
+  }
+  bins.forEach(b=>{
+    const az=b.az/b.n, r=b.r/b.n, avgd=Math.round(b.dist/b.n);
+    const avg=b.ns? b.snr/b.ns : null;
+    const op=(avg==null)?0.55:Math.max(0.3,Math.min(1,(avg+25)/45));
+    const col=b.need?"#ff3b3b":"#3fc7e0";
+    const aim=((Math.round(az)%360)+360)%360;
+    let node;
+    if(b.beyond){
+      // pinned to the outer ring as an outward-pointing chevron: action beyond the
+      // current scale, on this bearing — bump the range to see it placed properly.
+      const [ax,ay]=polar(az,91), [lx,ly]=polar(az-3.6,83), [rx,ry]=polar(az+3.6,83);
+      node=el("path",{d:"M"+ax.toFixed(1)+","+ay.toFixed(1)+" L"+lx.toFixed(1)+","+ly.toFixed(1)+" L"+rx.toFixed(1)+","+ry.toFixed(1)+" Z",
+        fill:col,"fill-opacity":Math.max(op,0.6).toFixed(2)});
+      if(b.need){ node.setAttribute("stroke","#ff8a8a"); node.setAttribute("stroke-width","0.6"); }
+    } else {
+      const [x,y]=polar(az,r);
+      const rad=Math.min(7.5, 2.3+Math.log2(b.n+1)*1.5);
+      node=el("circle",{cx:x.toFixed(1),cy:y.toFixed(1),r:rad.toFixed(1),fill:col,"fill-opacity":op.toFixed(2)});
+      if(b.need){ node.setAttribute("stroke","#ff8a8a"); node.setAttribute("stroke-width","0.7"); }
+    }
+    node.style.cursor="pointer";
+    node.addEventListener("click",()=>go(aim));
+    const ti=el("title",{});
+    ti.textContent=(b.n>1?b.n+" sigs":(b.call||"?"))+" @ "+aim+"\\u00b0 \\u2022 "+avgd+" mi"+(b.beyond?" (beyond scale)":"")+(b.need?" \\u2022 NEEDED":"");
+    node.appendChild(ti);
+    dots.appendChild(node);
+  });
+}
+function setRange(v,btn){ maxRange=v; document.querySelectorAll("[data-rng]").forEach(b=>b.classList.toggle("on",b===btn)); draw(); }
+function setBand(v,btn){ bandFilter=v; document.querySelectorAll("[data-bnd]").forEach(b=>b.classList.toggle("on",b===btn));
+  if(v==="all" && maxRange<6000){ const t=document.querySelector('[data-rng="6000"]'); if(t) setRange(6000,t); } draw(); }
+function setView(v,btn){ viewMode=v; document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("on",b===btn)); draw(); }
+function setLoc(v,btn){ localR=v; document.querySelectorAll("[data-loc]").forEach(b=>b.classList.toggle("on",b===btn)); if(viewMode==="local") draw(); }
+async function pollRadar(){ try{ const r=await fetch("/api/radar",{cache:"no-store"}); const d=await r.json(); radarPts=d.pts||[]; draw(); }catch(e){} }
+function render(d){
+  if(!d || d.ok===false){ $("#err").textContent=(d&&d.error)?("rotor offline: "+d.error):"rotor offline"; return; }
+  $("#err").textContent="";
+  if(d.az!=null){ $("#az").textContent=Math.round(d.az); setNeedle(d.az); }
+  const t=$("#tgt");
+  if(d.target!=null && d.moving){ t.textContent="\\u2192 "+Math.round(d.target)+"\\u00b0"; t.className="tgt moving"; }
+  else if(d.target!=null){ t.textContent="at "+Math.round(d.target)+"\\u00b0"; t.className="tgt"; }
+  else { t.innerHTML="&nbsp;"; t.className="tgt"; }
+}
+async function poll(){ try{ const r=await fetch("/api/rotor"); render(await r.json()); }catch(e){} }
+async function cmd(body){ try{
+  const r=await fetch("/api/rotor",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json(); if(d.ok===false) $("#err").textContent=d.error||"command failed"; poll();
+}catch(e){ $("#err").textContent=String(e); } }
+function go(az){ cmd({op:"goto", az:az}); }
+document.querySelectorAll("[data-az]").forEach(b=>b.addEventListener("click",()=>go(parseFloat(b.dataset.az))));
+$("#go").addEventListener("click",()=>{ const v=parseFloat($("#deg").value); if(!isNaN(v)) go(((v%360)+360)%360); });
+$("#deg").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#go").click(); });
+$("#stop").addEventListener("click",()=>cmd({op:"stop"}));
+document.querySelectorAll("[data-rng]").forEach(b=>b.addEventListener("click",()=>setRange(parseFloat(b.dataset.rng),b)));
+document.querySelectorAll("[data-bnd]").forEach(b=>b.addEventListener("click",()=>setBand(b.dataset.bnd,b)));
+document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view,b)));
+document.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLoc(parseFloat(b.dataset.loc),b)));
+poll(); setInterval(poll, 1500);
+draw(); pollRadar(); setInterval(pollRadar, 5000);
+</script>
+</body></html>"""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quiet access log
         return
@@ -5727,12 +6154,61 @@ class Handler(BaseHTTPRequestHandler):
             }).encode(), "application/json")
         elif self.path.startswith("/api/log/search"):
             self._handle_log_search()
+        elif self.path == "/rotor":
+            self._send(_ROTOR_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/rotor":
+            self._send(json.dumps(_rotor_status()).encode(), "application/json")
+        elif self.path == "/api/radar":
+            # Compact PPI-scope feed for the /rotor radar overlay: one tiny record
+            # per spot that has a bearing (no grid -> no bearing -> can't plot).
+            # 'need' reuses the same award-need test that drives alerts, so a
+            # red dot here means the exact same thing as a wanted spot/alert.
+            pts = []
+            for s in snapshot():
+                az = s.get("bearing")
+                if az is None:
+                    continue
+                pts.append({
+                    "az": round(az, 1),
+                    "dist": dist_to_grid(s.get("grid")),  # HOME->DX (plot radius), NOT spotter distance
+                    "snr": s.get("snr"),
+                    "band": s.get("band"),
+                    "call": s.get("dx_call"),
+                    "grid": s.get("grid"),
+                    "need": _spot_is_needed(s),
+                    "mine": (s.get("source") or "").endswith("-LOCAL"),  # our own RX decode
+                    "sdist": s.get("distance_mi"),  # SPOTTER distance from home — for the "local" filter
+                })
+            self._send(json.dumps({"pts": pts, "now": time.time()}).encode(),
+                       "application/json")
         else:
             self._send(b"not found", "text/plain", 404)
 
     def do_POST(self):
         if self.path == "/api/tune":
             self._handle_tune()
+            return
+        if self.path == "/api/rotor":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 4096:
+                self._send(json.dumps({"ok": False, "error": "bad length"}).encode(),
+                           "application/json", 400)
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except Exception as e:
+                self._send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}).encode(),
+                           "application/json", 400)
+                return
+            op = body.get("op")
+            if op == "goto":
+                res = _rotor_goto(body.get("az"))
+            elif op == "stop":
+                res = _rotor_stop()
+            else:
+                res = {"ok": False, "error": f"unknown op {op!r}"}
+            self._send(json.dumps(res).encode(), "application/json",
+                       200 if res.get("ok") else 500)
             return
         if self.path in ("/api/sync/qrz", "/api/sync/lotw"):
             self._handle_sync("qrz" if self.path.endswith("qrz") else "lotw")
@@ -5942,7 +6418,9 @@ class Handler(BaseHTTPRequestHandler):
         # ---- WSJT-X-mode routing: exclusive, band-gated ----
         if mode_in in WSJTX_MODES:
             results["route"] = "wsjtx"
-            state = _wsjtx_state_for_band(spot_band)
+            # Pass freq so multi-slice 6m routes to the instance that can hear
+            # the signal (SliceA@50.313 vs SliceB@50.323), not just the newest.
+            state = _wsjtx_state_for_band(spot_band, freq_khz)
             if state is None:
                 results["message"] = (f"no WSJT-X on {spot_band}; no action "
                                       f"(operator-respect rule for {mode_in})")
@@ -6017,6 +6495,14 @@ class Handler(BaseHTTPRequestHandler):
                                       f"src={cached.get('source','?') if cached else 'no-cache'}")
             except Exception as e:
                 results["message"] = f"WSJT-X reply send failed: {e}"
+                log.warning("tune %s @ %.3f kHz: reply send FAILED: %r "
+                            "(client=%s addr=%s cached_src=%s)",
+                            dx_call, freq_khz, e, state.get("client_id"),
+                            state.get("source_addr"),
+                            cached.get("source") if cached else "no-cache")
+            if not results["ok"]:
+                log.warning("tune %s @ %.3f kHz -> ok=False: %s",
+                            dx_call, freq_khz, results["message"])
             self._send(json.dumps(results).encode(), "application/json")
             return
 

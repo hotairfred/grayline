@@ -43,7 +43,17 @@ how confirmation-source tracking keeps each award counting by its own rules.
   worked/needed in real time, writes a local ADIF, and (optionally) fan-out
   uploads to QRZ / ClubLog / eQSL / LoTW.
 - **FlexRadio integration** (optional) — slice tracking, panadapter spot
-  inject, click-to-tune.
+  inject, click-to-tune. Click-to-tune routes a WSJT-X Reply to the instance
+  whose passband actually contains the signal, so it works correctly with two
+  slices on one band (e.g. SliceA + SliceB both on 6m).
+- **Rotor control + signal radar** (optional) — a phone-friendly `/rotor`
+  page: manual beam aim and one-tap **click-to-aim** great-circle bearings
+  (Hamlib `rotctld`), true-north calibration for a slipped indicator, and a
+  **PPI radar scope** that plots live signals on the compass by bearing and
+  distance — red for needed, brightness for SNR, pile-ups clustered, your beam
+  heading drawn as a sweep wedge, and out-of-range openings pinned to the rim
+  as chevrons. Filter to what *you* can actually hear (mine / local / wanted)
+  and scale the range from a tight 6m Es ring out to worldwide.
 - **Re-broadcast** (optional) — serves its filtered, annotated spots back out
   as a standard DX-Spider telnet node for other logging tools.
 
