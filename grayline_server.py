@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import datetime
 import urllib.request
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
@@ -852,6 +853,98 @@ def _wpx_prefix(call: str) -> str:
     return m.group(0) if m else parts[0] + "0"
 
 
+# Live "re-work this for the confirmation" map, rebuilt each _build_ffma_chase pass.
+# grids: grid4 -> 'dead'|'ghost' (worked-but-unconfirmed FFMA grids that need a fresh
+# QSO, not just patience); calls: op -> tier (for gridless live spots). HOT/WARM are
+# omitted on purpose — those self-confirm, no nag. Read-only at spot-serialize time.
+_FFMA_REWORK: dict = {"grids": {}, "calls": {}}
+
+
+def _ffma_conf_tier(recs) -> str:
+    """Confirmation prognosis for an UNCONFIRMED FFMA grid, from its 6m QSO recs
+    [(qso_date 'YYYYMMDD', time_on, call, confirmed), ...]:
+      hot   - recent (<=90d) with a still-live LoTW path (an op who has NOT uploaded
+              a batch past our QSO yet) -> just wait, likely self-confirms
+      warm  - same, 90d-1yr, fading
+      ghost - silent: op isn't a LoTW user, or the only live path is >1yr quiet ->
+              a re-work (or their LoTW conversion) is the realistic path
+      dead  - every op has UPLOADED to LoTW *after* our QSO and we're STILL unconfirmed
+              => provably not in their log; a fresh clean QSO is the ONLY path.
+    Fred's taxonomy (2026-06-30): dead = 'they hit upload and I wasn't in the batch.'"""
+    today = datetime.date.today()
+    most_recent = None
+    alive = dead = ghost = 0
+    for qd, _t, call, _cf in recs:
+        try:
+            qdate = datetime.date(int(qd[:4]), int(qd[4:6]), int(qd[6:8]))
+        except Exception:
+            continue
+        if most_recent is None or qdate > most_recent:
+            most_recent = qdate
+        lu = lotw_activity.last_upload(call) if call else None
+        if lu:
+            try:
+                ludate = datetime.date.fromisoformat(lu)
+            except Exception:
+                ludate = None
+            if ludate and ludate > qdate:
+                dead += 1            # uploaded since our QSO, still unconfirmed
+            else:
+                alive = 1            # LoTW user who hasn't uploaded past our QSO yet
+        else:
+            ghost += 1               # not a LoTW user
+    if most_recent is None:
+        return "ghost"
+    age = (today - most_recent).days
+    if alive:
+        return "hot" if age <= 90 else ("warm" if age <= 365 else "ghost")
+    if dead and not ghost:
+        return "dead"
+    return "ghost"
+
+
+def _ffma_call_tier(call, recs):
+    """Per-OP confirmation prognosis for ONE call's QSOs into a grid (recs are this
+    call's (qso_date,time_on,call,confirmed) tuples). Returns (tier, up) where up is
+    the op's last LoTW-upload date when tier=='dead' (the evidence), else None. Same
+    hot/warm/ghost/dead meaning as the grid-level classifier but scoped to a single
+    op — so a re-worked grid can show several ops with DIFFERENT status."""
+    today = datetime.date.today()
+    most_recent = None
+    for qd, _t, _c, _cf in recs:
+        try:
+            qdate = datetime.date(int(qd[:4]), int(qd[4:6]), int(qd[6:8]))
+        except Exception:
+            continue
+        if most_recent is None or qdate > most_recent:
+            most_recent = qdate
+    if most_recent is None:
+        return ("ghost", None)
+    lu = lotw_activity.last_upload(call) if call else None
+    if not lu:
+        return ("ghost", None)              # not a LoTW user
+    try:
+        ludate = datetime.date.fromisoformat(lu)
+    except Exception:
+        ludate = None
+    if ludate and ludate > most_recent:
+        return ("dead", lu)                 # uploaded after our QSO, still unconfirmed
+    age = (today - most_recent).days
+    return ("hot" if age <= 90 else ("warm" if age <= 365 else "ghost"), None)
+
+
+def _ffma_rework_tier(band: str, grid: str, call: str):
+    """Live re-work flag for a 6m spot: 'dead'/'ghost' when this grid (or, for a
+    gridless spot, this call) is a worked-but-unconfirmed FFMA grid needing a fresh
+    QSO. None otherwise. Pure read of the map built in _build_ffma_chase."""
+    if band != "6m":
+        return None
+    g4 = (grid or "")[:4].upper()
+    if g4:
+        return _FFMA_REWORK["grids"].get(g4)
+    return _FFMA_REWORK["calls"].get((call or "").upper())
+
+
 def _build_ffma_chase(grid_qsos: dict) -> dict:
     """FFMA chase intel for the dedicated FFMA tab, all derived LIVE from the
     6m FFMA QSO detail so entries self-clear as confirmations arrive:
@@ -868,19 +961,35 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
                 int(info.get("leaders_needing", 0)))
 
     pending, rares, atno_list = [], [], []
+    _FFMA_REWORK["grids"].clear()
+    _FFMA_REWORK["calls"].clear()
     for g, recs in grid_qsos.items():
         confirmed = any(r[3] for r in recs)
         tier, pct, leaders = tier_of(g)
-        # unique calls that could confirm this grid, most-recent QSO first
-        calls = []
-        for d, t, c, cf in sorted(recs, reverse=True):
-            if c and c not in calls:
-                calls.append(c)
         fd, ft = min((r[0], r[1]) for r in recs)   # first-ever QSO for this grid
         first_call = sorted(recs)[0][2]            # the call that opened the grid
         if not confirmed:
-            pending.append({"grid": g, "date": fd, "calls": calls,
-                            "multi_op": len(calls) > 1, "tier": tier, "pct": pct})
+            # Per-OP status: a grid can hold ops with DIFFERENT prognoses (esp. after
+            # a re-work adds a fresh HOT QSO beside an old DEAD one). Group this grid's
+            # QSOs by call and classify each op on its own, most-recent op first.
+            by_call: dict[str, list] = {}
+            for r in recs:
+                if r[2]:
+                    by_call.setdefault(r[2], []).append(r)
+            calls = []
+            for c in sorted(by_call, key=lambda cc: max(r[0] for r in by_call[cc]), reverse=True):
+                cct, cup = _ffma_call_tier(c, by_call[c])
+                calls.append({"call": c, "tier": cct, "up": cup})
+            ct = _ffma_conf_tier(recs)             # grid overall (best op) -> row tint + order
+            ld = max(r[0] for r in recs)           # LAST worked (most-recent QSO) — the freshest attempt, consistent w/ the recency tier (fd stays first-worked for the ATNO panel)
+            pending.append({"grid": g, "date": ld, "calls": calls,
+                            "multi_op": len(calls) > 1, "tier": tier, "pct": pct,
+                            "conf_tier": ct})
+            if ct in ("dead", "ghost"):            # grid w/ no live path -> grid-level live badge
+                _FFMA_REWORK["grids"][g] = ct
+            for c in calls:                        # per-op live flags (a HOT grid can still hold a DEAD op)
+                if c["tier"] in ("dead", "ghost") and _FFMA_REWORK["calls"].get(c["call"]) != "dead":
+                    _FFMA_REWORK["calls"][c["call"]] = c["tier"]
         if tier in ("rare", "uncommon"):
             rep = sorted([r for r in recs if r[3]] or recs)[0]   # prefer a confirmed QSO
             rares.append({"grid": g, "tier": tier, "pct": pct, "leaders": leaders,
@@ -888,7 +997,11 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
         atno_list.append({"grid": g, "date": fd, "time": ft, "call": first_call,
                           "confirmed": confirmed, "tier": tier, "pct": pct})
 
-    pending.sort(key=lambda p: (p["pct"], p["date"]), reverse=True)   # rarest, then newest
+    # Action-sorted: DEAD (re-work-only) and GHOST (re-work/card) on top, then WARM,
+    # then HOT (self-confirming — leave alone); within a tier, rarest then newest.
+    _ct_pri = {"dead": 0, "ghost": 1, "warm": 2, "hot": 3}
+    pending.sort(key=lambda p: (_ct_pri.get(p.get("conf_tier"), 9),
+                                -(p.get("pct") or 0.0), -int(p.get("date") or 0)))
     rares.sort(key=lambda r: (-r["pct"], r["grid"]))                  # rarest first
     atno_list.sort(key=lambda a: (a["date"], a["time"]), reverse=True)  # newest grids first
     recent_atnos = atno_list[:5]
@@ -1461,6 +1574,7 @@ def _refresh_cache_worked_status():
             grid = s.get("grid", "")
             if grid:
                 s["grid_band_status"] = _worked.grid_band_status(grid, band)
+            s["ffma_tier"] = _ffma_rework_tier(band, grid, s["dx_call"])
             if s.get("waja_pref"):
                 s["waja_status"] = _worked.prefecture_status(s["waja_pref"])
             if _cty:
@@ -2722,6 +2836,7 @@ def add_spot(spot, cluster_name, calling_me=False):
             "wae_status": wae_status,                        # WAE need: 'new'|'worked'|'confirmed'|None
             "wae_name": wae_name,                            # WAE country name (pill tooltip)
             "ffma_rarity": ffma_rarity,                     # FFMA grid rarity (6m only): {pct_needed,leaders_needing,tier} or None
+            "ffma_tier": _ffma_rework_tier(band, eff_grid, spot.dx_call),  # 6m re-work flag: 'dead'/'ghost' worked-but-unconfirmed FFMA grid, else None
             "heard_me": heard_me,                           # this station reported decoding ME to PSKReporter (eye badge) or None
             "continent": continent,
             "cq_zone": cq_zone,
@@ -3236,6 +3351,25 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
 .ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
 .ffr-unc  { background: #6b5a1a; color: #f5d76e; }   /* uncommon — muted gold */
+/* FFMA re-work flags. Live spot: skull = dead (op uploaded without you, re-work only),
+   ghost = op not on LoTW / silent (re-work or card). Glow so they read as action cues. */
+.rework { margin-left: 0.3em; font-size: 0.92em; vertical-align: middle; cursor: help; }
+.rw-dead  { filter: drop-shadow(0 0 2px #f55) drop-shadow(0 0 5px #c0392b); }
+.rw-ghost { filter: drop-shadow(0 0 2px #9cf) drop-shadow(0 0 4px #6af); opacity: 0.92; }
+/* FFMA-tab confirmation-tier pills + row tint. */
+.ff-ct { display: inline-block; padding: 0 0.3em; border-radius: 3px; font-size: 0.7em;
+  font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; white-space: nowrap; }
+.ff-ct-dead  { background: #5a1a1a; color: #ff9a9a; }
+.ff-ct-ghost { background: #243447; color: #9cc7f0; }
+.ff-ct-warm  { background: #4a3a14; color: #f0cf8a; }
+.ff-ct-hot   { background: #14401f; color: #8ff0a8; }
+.ff-ctbreak { font-size: 0.8em; font-weight: 600; color: #aaa; margin-left: 0.5em; }
+/* Per-op re-work status symbol next to each call under "who to nudge". */
+.rwsym { font-size: 0.95em; margin-right: 0.1em; cursor: help; vertical-align: middle; }
+.rwsym-dead  { filter: drop-shadow(0 0 2px #f55); }
+.rwsym-ghost { filter: drop-shadow(0 0 2px #9cf); opacity: 0.95; }
+tr.ff-ct-row-dead  .ff-g { color: #ff9a9a; }
+tr.ff-ct-row-ghost .ff-g { color: #9cc7f0; }
 /* ===== FFMA tab ===== */
 #view_ffma { max-width: 56em; }
 .ff-standing { text-align: center; padding: 0.8em 0 1.1em; }
@@ -4150,6 +4284,18 @@ function heardEye(s) {
   return ` <span class="heard-eye" title="${title}">\u{1F441}</span>`;
 }
 
+// FFMA re-work flag — this 6m spot is a worked-but-UNCONFIRMED FFMA grid you still
+// need a fresh QSO for. Skull = dead: the op already uploaded to LoTW without you in
+// the batch (provably not in their log — re-work the only path). Ghost = op isn't on
+// LoTW / has gone silent (re-work a LoTW op in-grid, or chase a card). HOT/WARM aren't
+// flagged — they self-confirm, no point nagging. s.ffma_tier set server-side.
+function ffmaReworkBadge(s) {
+  const t = s.ffma_tier;
+  if (t === "dead") return ` <span class="rework rw-dead" title="DEAD confirmation — you worked this FFMA grid, but the op already uploaded to LoTW without you in the batch. It will never self-confirm. Work them again and pray they hit Log QSO.">\u{1F480}</span>`;
+  if (t === "ghost") return ` <span class="rework rw-ghost" title="GHOST confirmation — worked-but-unconfirmed FFMA grid; the op isn't on LoTW (or has gone silent). Re-work a LoTW op in this grid, or chase a card.">\u{1F47B}</span>`;
+  return "";
+}
+
 // "Who near me ALSO copied this?" — count of local peers (within PEER_RADIUS_MI)
 // who decoded this DX call, hover for their calls + signal reports. The control
 // group for "is it me or the band?": neighbors hear it and you don't => your
@@ -4698,7 +4844,7 @@ async function refresh() {
           : `<span class="bearing">${bz}°</span>`;
       }
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
-        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}</td>
+        <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}${ffmaReworkBadge(s)}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
         <td class="${gridCellClass}">${escapeHTML(s.grid)}${ffmaRarityBadge(s)}</td>
@@ -5294,6 +5440,33 @@ function ffmaTierBadge(tier, pct) {
   if (tier === "uncommon") return `<span class="ff-tier ff-unc">unc ${pct}%</span>`;
   return `<span class="ff-tier ff-common">common</span>`;
 }
+// Confirmation prognosis badge for the pending list (Fred's hot/warm/ghost/dead).
+const FF_CONF = {
+  dead:  ["\u{1F480} dead",  "ff-ct ff-ct-dead",  "Op uploaded to LoTW WITHOUT you — provably not in their log. Re-work is the only path."],
+  ghost: ["\u{1F47B} ghost", "ff-ct ff-ct-ghost", "Op isn't on LoTW / gone silent. Re-work a LoTW op in-grid, or chase a card."],
+  warm:  ["\u{1F312} warm",  "ff-ct ff-ct-warm",  "Worked 3-12 months ago, op on LoTW — fading, but could still confirm."],
+  hot:   ["\u{1F525} hot",   "ff-ct ff-ct-hot",   "Recently worked, op on LoTW and hasn't uploaded past it — just wait, likely self-confirms."],
+};
+function ffmaConfBadge(ct) {
+  const c = FF_CONF[ct];
+  return c ? `<span class="${c[1]}" title="${c[2]}">${c[0]}</span>` : "";
+}
+// Per-op status symbol next to each call under "who to nudge". A grid can carry
+// several ops with different prognoses (a re-work adds a fresh HOT beside an old
+// DEAD), so status lives per-call, not per-grid.
+function ffmaCallSym(tier, up) {
+  const sym = { dead:"\u{1F480}", ghost:"\u{1F47B}", warm:"\u{1F312}", hot:"\u{1F525}" }[tier];
+  if (!sym) return "";
+  const titles = {
+    dead:  "DEAD — this op uploaded to LoTW without you; a fresh QSO is the only path",
+    ghost: "GHOST — op isn't on LoTW / has gone silent; re-work a LoTW op or chase a card",
+    warm:  "WARM — op on LoTW, worked 3-12 mo ago; fading but could still confirm",
+    hot:   "HOT — op on LoTW, hasn't uploaded past your QSO; likely self-confirms, just wait",
+  };
+  let title = titles[tier];
+  if (tier === "dead" && up) title = `DEAD — uploaded to LoTW ${up} without you. Re-work them.`;
+  return `<span class="rwsym rwsym-${tier}" title="${title}">${sym}</span>`;
+}
 function renderFfma(j) {
   const el = document.getElementById("ffma_panel");
   if (!el) return;
@@ -5346,12 +5519,14 @@ function renderFfma(j) {
 
   // pending confirmation — the chase list
   {
+    const ctCount = {hot:0, warm:0, ghost:0, dead:0};
+    ch.pending.forEach(p => { if (p.conf_tier in ctCount) ctCount[p.conf_tier]++; });
     const rows = ch.pending.map(p => {
-      const who = p.calls.map(c => `${c}${ffmaRover(c)}`).join(", ");
+      const who = p.calls.map(c => `${ffmaCallSym(c.tier, c.up)} ${c.call}${ffmaRover(c.call)}`).join(", ");
       const odds = p.multi_op
         ? `<span class="ff-odds-good" title="more than one op worked this grid — any one uploading to LoTW confirms it">${p.calls.length} ops &#x2713;</span>`
         : `<span class="ff-odds-one" title="only one op worked it — hinges on their LoTW upload">1 op</span>`;
-      return `<tr>
+      return `<tr class="ff-ct-row-${p.conf_tier||''}">
         <td class="ff-g">${p.grid}</td>
         <td>${ffmaTierBadge(p.tier,p.pct)}</td>
         <td class="ff-when">${ffmaFmtDate(p.date)}</td>
@@ -5359,12 +5534,14 @@ function renderFfma(j) {
         <td>${odds}</td>
       </tr>`;
     }).join("");
+    const ctBreak = `<span class="ff-ctbreak" title="grid prognosis (its best op): hot=wait · warm=fading · ghost=re-work/card · dead=they uploaded without you, re-work only">`
+      + `\u{1F525}${ctCount.hot} \u{1F312}${ctCount.warm} \u{1F47B}${ctCount.ghost} \u{1F480}${ctCount.dead}</span>`;
     cards.push(`<details class="score-card ff-pending ff-collapse" ${ffPendOpen ? "open" : ""}>
-      <summary>&#x23F3; Worked &mdash; awaiting confirmation <span class="ff-count">${ch.pending.length}</span></summary>
+      <summary>&#x23F3; Worked &mdash; awaiting confirmation <span class="ff-count">${ch.pending.length}</span> ${ctBreak}</summary>
       ${ch.pending.length ? `<table class="ff-table">
-        <tr><th>grid</th><th>rarity</th><th>worked</th><th>who to nudge</th><th>odds</th></tr>
+        <tr><th>grid</th><th>rarity</th><th>last worked</th><th>who to nudge</th><th>odds</th></tr>
         ${rows}</table>
-        <div class="mode-hint">Rarest first. Multi-op grids confirm easier &mdash; any one of them uploading to LoTW credits it. Rows clear themselves as confirmations arrive.</div>`
+        <div class="mode-hint">Each op under &ldquo;who to nudge&rdquo; carries its own status &mdash; &#x1F480; <b>dead</b> (uploaded without you &rarr; re-work), &#x1F47B; <b>ghost</b> (not on LoTW &rarr; re-work/card), &#x1F525; <b>hot</b> (just wait). A re-worked grid can show several. Grid tint &amp; row order follow the grid&rsquo;s best prognosis; rows clear as confirmations arrive.</div>`
         : `<div class="ff-empty">Nothing pending &mdash; every worked grid is confirmed. &#x1F389;</div>`}
     </details>`);
   }
