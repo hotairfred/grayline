@@ -73,21 +73,24 @@ point: keep the UDP/compute load away from the machine running your radio audio)
 git clone <your-fork-url> grayline
 cd grayline
 
-# 1. Operator settings (callsign, grid, cluster host, which features are on)
+# 1. Dependencies — one package (paho-mqtt); everything else is stdlib
+pip install -r requirements.txt
+
+# 2. Operator settings (callsign, grid, cluster host, which features are on)
 cp config.json.example config.json
 $EDITOR config.json          # set "callsign" and "home_grid" at minimum
 
-# 2. API credentials (only needed for the services you enable)
+# 3. API credentials (only needed for the services you enable)
 cp secrets.json.example secrets.json
 $EDITOR secrets.json         # QRZ / LoTW / etc.
 
-# 3. Run
+# 4. Run (needs Python 3.8+)
 python3 grayline_server.py
 ```
 
 Then open `http://<host>:8080/` (the `http_port` from `config.json`) from any
-browser on your network. Stdlib-only — no `pip install` required for the core
-server.
+browser on your network. One dependency (`paho-mqtt`, for MQTT peer-copies);
+everything else is Python stdlib. Runs on Python 3.8+.
 
 ### What you'll see on first run
 

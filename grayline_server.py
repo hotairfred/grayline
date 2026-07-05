@@ -7,6 +7,12 @@ Runs on .101, serves HTML to any browser on the LAN. No UDP at the
 workstation, no Flex panadapter inject, no audio-critical interference.
 """
 
+# PEP 563 — defer annotation evaluation so `X | None` union syntax parses as a
+# string instead of being evaluated at import. Lets Grayline run on Python 3.8+
+# (all our unions are annotations, none runtime), so a crew install on an older
+# stock Python — e.g. a Mac's 3.9 — doesn't choke at import. Must stay first.
+from __future__ import annotations
+
 import asyncio
 import socket
 import gzip
