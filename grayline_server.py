@@ -857,7 +857,7 @@ def _wpx_prefix(call: str) -> str:
 # grids: grid4 -> 'dead'|'ghost' (worked-but-unconfirmed FFMA grids that need a fresh
 # QSO, not just patience); calls: op -> tier (for gridless live spots). HOT/WARM are
 # omitted on purpose — those self-confirm, no nag. Read-only at spot-serialize time.
-_FFMA_REWORK: dict = {"grids": {}, "calls": {}}
+_FFMA_REWORK: dict = {"grids": {}, "callgrid": {}}
 
 
 def _ffma_conf_tier(recs) -> str:
@@ -934,15 +934,25 @@ def _ffma_call_tier(call, recs):
 
 
 def _ffma_rework_tier(band: str, grid: str, call: str):
-    """Live re-work flag for a 6m spot: 'dead'/'ghost' when this grid (or, for a
-    gridless spot, this call) is a worked-but-unconfirmed FFMA grid needing a fresh
-    QSO. None otherwise. Pure read of the map built in _build_ffma_chase."""
+    """Live re-work flag for a 6m spot, keyed by (CALL, GRID) so a rover's status is
+    grid-SPECIFIC — K8JH can be a 'dead' re-work in DN75 yet a brand-new grid in DN64:
+      - you've worked THIS op in THIS grid, unconfirmed -> that contact's own tier
+        ('dead' = uploaded without you / 'ghost' = not on LoTW or silent)
+      - else a fresh op in a grid you've worked-but-can't-confirm -> 'need': a new path
+        to land the grid (NOT a ghost — judge the op by their own LoTW badge)
+    Gridless spots return None (can't place them; avoids cross-grid rover false-flags).
+    Pure read of the map built in _build_ffma_chase."""
     if band != "6m":
         return None
     g4 = (grid or "")[:4].upper()
-    if g4:
-        return _FFMA_REWORK["grids"].get(g4)
-    return _FFMA_REWORK["calls"].get((call or "").upper())
+    if not g4:
+        return None
+    cg = _FFMA_REWORK["callgrid"].get(((call or "").upper(), g4))
+    if cg:                                  # worked THIS op in THIS grid -> their own status
+        return cg
+    if g4 in _FFMA_REWORK["grids"]:         # fresh op in a grid you need a re-work in
+        return "need"
+    return None
 
 
 def _build_ffma_chase(grid_qsos: dict) -> dict:
@@ -962,7 +972,7 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
 
     pending, rares, atno_list = [], [], []
     _FFMA_REWORK["grids"].clear()
-    _FFMA_REWORK["calls"].clear()
+    _FFMA_REWORK["callgrid"].clear()
     for g, recs in grid_qsos.items():
         confirmed = any(r[3] for r in recs)
         tier, pct, leaders = tier_of(g)
@@ -985,11 +995,14 @@ def _build_ffma_chase(grid_qsos: dict) -> dict:
             pending.append({"grid": g, "date": ld, "calls": calls,
                             "multi_op": len(calls) > 1, "tier": tier, "pct": pct,
                             "conf_tier": ct})
-            if ct in ("dead", "ghost"):            # grid w/ no live path -> grid-level live badge
-                _FFMA_REWORK["grids"][g] = ct
-            for c in calls:                        # per-op live flags (a HOT grid can still hold a DEAD op)
-                if c["tier"] in ("dead", "ghost") and _FFMA_REWORK["calls"].get(c["call"]) != "dead":
-                    _FFMA_REWORK["calls"][c["call"]] = c["tier"]
+            _FFMA_REWORK["grids"][g] = ct          # ANY unconfirmed grid -> flag FRESH ops as 'need' (a backup
+                                                   # path). Even with a HOT pending op, keep surfacing new ops
+                                                   # until the grid is ACTUALLY confirmed — a fresh op may
+                                                   # confirm faster than a flaky pending path (e.g. an RRR guy
+                                                   # who may never upload). "See the grid, work the grid."
+            for c in calls:                        # per-(call,GRID) flags — a rover's status is grid-SPECIFIC.
+                if c["tier"] in ("dead", "ghost"): # NOTE: HOT/WARM ops stay unflagged (blue) — don't nag to
+                    _FFMA_REWORK["callgrid"][(c["call"], g)] = c["tier"]  # re-work an op that's self-confirming
         if tier in ("rare", "uncommon"):
             rep = sorted([r for r in recs if r[3]] or recs)[0]   # prefer a confirmed QSO
             rares.append({"grid": g, "tier": tier, "pct": pct, "leaders": leaders,
@@ -2652,6 +2665,14 @@ def _maybe_alert(s: dict, calling_me: bool = False):
             _fire_alert(s, f"{band} {mt} active")
 
 
+# Per-CALL last-known grid — freq-INDEPENDENT bearing memory. The prev-cache
+# grid backfill inside add_spot is keyed by (band,mode,FREQ,call), so a gridless
+# decode landing on a different audio offset than the station's CQ misses it. This
+# keeps a station's radar dot alive through gridless (report/RR73) decodes instead
+# of flickering off, for anything we've EVER seen a grid for this session.
+_LAST_GRID: dict[str, str] = {}
+
+
 def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
@@ -2764,6 +2785,14 @@ def add_spot(spot, cluster_name, calling_me=False):
     if not eff_grid:
         with _qrz_cache_lock:
             eff_grid = _clean_grid(_qrz_cache.get(spot.dx_call, ""))
+    # Freq-independent per-call fallback: a gridless decode on a different offset
+    # than the CQ misses the key-scoped prev lookup above, so remember/reuse the
+    # last grid we EVER deduced for this call (keeps the radar dot from flickering).
+    _dxc = (spot.dx_call or "").upper()
+    if not eff_grid and _dxc:
+        eff_grid = _LAST_GRID.get(_dxc, "")
+    elif eff_grid and _dxc:
+        _LAST_GRID[_dxc] = eff_grid
 
     # Worked/needed status (against your QRZ logbook)
     call_status = "new"
@@ -3356,6 +3385,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 .rework { margin-left: 0.3em; font-size: 0.92em; vertical-align: middle; cursor: help; }
 .rw-dead  { filter: drop-shadow(0 0 2px #f55) drop-shadow(0 0 5px #c0392b); }
 .rw-ghost { filter: drop-shadow(0 0 2px #9cf) drop-shadow(0 0 4px #6af); opacity: 0.92; }
+.rw-need  { filter: drop-shadow(0 0 2px #7f7) drop-shadow(0 0 4px #4c4); }  /* fresh op in a needed grid — go get it */
 /* FFMA-tab confirmation-tier pills + row tint. */
 .ff-ct { display: inline-block; padding: 0 0.3em; border-radius: 3px; font-size: 0.7em;
   font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; white-space: nowrap; }
@@ -3814,6 +3844,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <a href="/bands" target="_blank" rel="noopener" class="band-activity-link" title="Open the Band Activity bar graph (CW/SSB/Digital × contest bands, local-filtered) in a new tab — a contest 'which band is hot' tool, kept off the main page">&#x1F4CA; Band Activity &#x2197;</a>
     <a href="/rotor" target="_blank" rel="noopener" class="band-activity-link" title="Manual beam control (HD-73 via rotctld) — compass buttons, degree entry, stop. Opens in a new tab.">&#x1F9ED; Rotor &#x2197;</a>
+    <a href="/ffma_map" target="_blank" rel="noopener" class="band-activity-link" title="The 488 FFMA grids as a wall map — green = confirmed (LoTW), amber = worked-pending, red = needed (brighter = rarer). Sourced from your LoTW mirror. Opens in a new tab.">&#x1F5FA; Grid Map &#x2197;</a>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
@@ -4292,7 +4323,8 @@ function heardEye(s) {
 function ffmaReworkBadge(s) {
   const t = s.ffma_tier;
   if (t === "dead") return ` <span class="rework rw-dead" title="DEAD confirmation — you worked this FFMA grid, but the op already uploaded to LoTW without you in the batch. It will never self-confirm. Work them again and pray they hit Log QSO.">\u{1F480}</span>`;
-  if (t === "ghost") return ` <span class="rework rw-ghost" title="GHOST confirmation — worked-but-unconfirmed FFMA grid; the op isn't on LoTW (or has gone silent). Re-work a LoTW op in this grid, or chase a card.">\u{1F47B}</span>`;
+  if (t === "ghost") return ` <span class="rework rw-ghost" title="GHOST — you worked THIS op in this FFMA grid, but they aren't on LoTW (or have gone silent). Re-work a LoTW op in this grid, or chase a card.">\u{1F47B}</span>`;
+  if (t === "need") return ` <span class="rework rw-need" title="NEEDED grid — you've worked this FFMA grid but it's still unconfirmed, and you have NOT worked THIS station here. A fresh QSO can finally land it — work them, especially if the LoTW badge shows they upload.">\u{1F3AF}</span>`;
   return "";
 }
 
@@ -6104,7 +6136,7 @@ _ROTOR_PAGE = """<!doctype html>
   .radar-ctl button { font-size:.82em; font-weight:700; padding:.42em 0; flex:1; }
   .radar-ctl button.on { background:#12303a; border-color:#1d6b80; color:#7fe3f5; }
   .legend { color:#5a5a5a; font-size:.68em; text-align:center; margin:0 0 1em; line-height:1.6; }
-  .legend b { color:#ff5b5b; } .legend i { color:#3fc7e0; font-style:normal; }
+  .legend b { color:#ff5b5b; } .legend i { color:#3fc7e0; font-style:normal; } .legend .lg-rw { color:#ffd24a; }
   .compass { display:grid; grid-template-columns:repeat(3,1fr); gap:.5em; margin-bottom:.9em; }
   button { font-family:inherit; font-size:1.05em; font-weight:700; color:#ddd; background:#1a1a1a;
            border:1px solid #2a2a2a; border-radius:7px; padding:.85em 0; cursor:pointer; }
@@ -6153,7 +6185,7 @@ _ROTOR_PAGE = """<!doctype html>
       <button data-loc="100">100</button><button data-loc="250" class="on">250</button>
       <button data-loc="500">500</button><span class="lbl" style="width:auto;flex:0 0 auto">mi</span></div>
   </div>
-  <div class="legend"><b>&#9679; needed</b> &middot; <i>&#9679; heard</i> &middot; size = pile-up &middot; brightness = SNR &middot; <span style="color:#888">&#9650; on rim = beyond range</span> &middot; tap a dot to aim</div>
+  <div class="legend"><b>&#9679; needed</b> &middot; <span class="lg-rw">&#9679; re-work</span> &middot; <i>&#9679; heard</i> &middot; size = pile-up &middot; brightness = SNR &middot; <span style="color:#888">&#9650; on rim = beyond range</span> &middot; tap a dot to aim</div>
   <div class="compass">
     <button data-az="315">NW</button><button data-az="0">N</button><button data-az="45">NE</button>
     <button data-az="270">W</button><button class="c">&middot;</button><button data-az="90">E</button>
@@ -6193,19 +6225,21 @@ function draw(){
     if(p.az==null) continue;
     if(bandFilter==="6m" && p.band!=="6m") continue;
     if(viewMode==="mine" && !p.mine) continue;
-    if(viewMode==="want" && !p.need) continue;
+    if(viewMode==="want" && !p.need && !p.rework) continue;   // re-works belong in "want" too
     if(viewMode==="local" && !(p.mine || (p.sdist!=null && p.sdist<=localR))) continue;
     const raw=(p.dist||0)/maxRange, beyond=raw>1, r=Math.min(raw,1)*92;
     // beyond-range get their own bin namespace so they don't merge with real rim dots
     const key=(beyond?"B":"")+Math.round(p.az/angBin)+"_"+Math.round(r/radBin);
-    let b=bins.get(key); if(!b){ b={n:0,az:0,r:0,snr:0,ns:0,dist:0,need:false,beyond:beyond,call:p.call}; bins.set(key,b); }
-    b.n++; b.az+=p.az; b.r+=r; b.dist+=(p.dist||0); if(p.snr!=null){ b.snr+=p.snr; b.ns++; } if(p.need) b.need=true;
+    let b=bins.get(key); if(!b){ b={n:0,az:0,r:0,snr:0,ns:0,dist:0,need:false,rework:null,beyond:beyond,call:p.call}; bins.set(key,b); }
+    b.n++; b.az+=p.az; b.r+=r; b.dist+=(p.dist||0); if(p.snr!=null){ b.snr+=p.snr; b.ns++; } if(p.need) b.need=true; if(p.rework && !b.rework) b.rework=p.rework;
   }
   bins.forEach(b=>{
     const az=b.az/b.n, r=b.r/b.n, avgd=Math.round(b.dist/b.n);
     const avg=b.ns? b.snr/b.ns : null;
     const op=(avg==null)?0.55:Math.max(0.3,Math.min(1,(avg+25)/45));
-    const col=b.need?"#ff3b3b":"#3fc7e0";
+    // red = brand-new need; gold = FFMA re-work (worked-but-unconfirmed -> go confirm it); cyan = just heard
+    const col=b.need?"#ff3b3b":(b.rework?"#ffd24a":"#3fc7e0");
+    const ol=b.need?"#ff8a8a":(b.rework?"#ffe9a8":null);
     const aim=((Math.round(az)%360)+360)%360;
     let node;
     if(b.beyond){
@@ -6214,17 +6248,17 @@ function draw(){
       const [ax,ay]=polar(az,91), [lx,ly]=polar(az-3.6,83), [rx,ry]=polar(az+3.6,83);
       node=el("path",{d:"M"+ax.toFixed(1)+","+ay.toFixed(1)+" L"+lx.toFixed(1)+","+ly.toFixed(1)+" L"+rx.toFixed(1)+","+ry.toFixed(1)+" Z",
         fill:col,"fill-opacity":Math.max(op,0.6).toFixed(2)});
-      if(b.need){ node.setAttribute("stroke","#ff8a8a"); node.setAttribute("stroke-width","0.6"); }
+      if(ol){ node.setAttribute("stroke",ol); node.setAttribute("stroke-width","0.6"); }
     } else {
       const [x,y]=polar(az,r);
       const rad=Math.min(7.5, 2.3+Math.log2(b.n+1)*1.5);
       node=el("circle",{cx:x.toFixed(1),cy:y.toFixed(1),r:rad.toFixed(1),fill:col,"fill-opacity":op.toFixed(2)});
-      if(b.need){ node.setAttribute("stroke","#ff8a8a"); node.setAttribute("stroke-width","0.7"); }
+      if(ol){ node.setAttribute("stroke",ol); node.setAttribute("stroke-width","0.7"); }
     }
     node.style.cursor="pointer";
     node.addEventListener("click",()=>go(aim));
     const ti=el("title",{});
-    ti.textContent=(b.n>1?b.n+" sigs":(b.call||"?"))+" @ "+aim+"\\u00b0 \\u2022 "+avgd+" mi"+(b.beyond?" (beyond scale)":"")+(b.need?" \\u2022 NEEDED":"");
+    ti.textContent=(b.n>1?b.n+" sigs":(b.call||"?"))+" @ "+aim+"\\u00b0 \\u2022 "+avgd+" mi"+(b.beyond?" (beyond scale)":"")+(b.need?" \\u2022 NEEDED":"")+(b.rework?" \\u2022 RE-WORK("+b.rework+")":"");
     node.appendChild(ti);
     dots.appendChild(node);
   });
@@ -6262,6 +6296,127 @@ poll(); setInterval(poll, 1500);
 draw(); pollRadar(); setInterval(pollRadar, 5000);
 </script>
 </body></html>"""
+
+
+_FFMA_MAP_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFMA Grid Map</title>
+<style>
+  body{background:#0b0b0b;color:#ccc;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:10px}
+  h1{font-size:1.1em;margin:0 0 3px}
+  a{color:#3fc7e0;text-decoration:none} a:hover{text-decoration:underline}
+  #wrap{max-width:1040px;margin:0 auto}
+  #counts{color:#888;font-size:0.88em;margin-bottom:8px}
+  #counts b{color:#eee;font-variant-numeric:tabular-nums}
+  svg{width:100%;height:auto;background:#0e0e0e;border:1px solid #1c1c1c;border-radius:5px}
+  rect.cell{stroke:#0b0b0b;stroke-width:0.5;cursor:default}
+  rect.cell:hover{stroke:#fff;stroke-width:1}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:0.85em;margin:8px 0;color:#aaa}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:13px;height:13px;border-radius:2px;display:inline-block}
+  .foot{color:#777;font-size:0.82em;margin-top:8px}
+  #tip{position:fixed;pointer-events:none;background:#000;border:1px solid #444;padding:5px 8px;border-radius:4px;font-size:0.82em;display:none;z-index:9;white-space:nowrap}
+  #tip b{color:#fff}
+</style></head>
+<body><div id="wrap">
+  <h1>FFMA &mdash; 488 Grid Map</h1>
+  <div id="counts">loading&hellip;</div>
+  <div class="legend">
+    <span><i class="sw" style="background:#2ecc71"></i>confirmed (LoTW)</span>
+    <span><i class="sw" style="background:#f1c40f"></i>worked, pending</span>
+    <span><i class="sw" style="background:hsl(0,60%,30%)"></i>needed</span>
+    <span style="color:#888">brighter red = rarer &middot; hover a cell for detail</span>
+  </div>
+  <svg id="map" viewBox="0 0 1000 440" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="foot"><a href="/">&larr; dashboard</a> &middot; <a href="/rotor">rotor / radar</a> &middot; sourced from your LoTW mirror (the truth &mdash; not QRZ flags). refreshes every 60s.</div>
+</div>
+<div id="tip"></div>
+<script>
+const SVGNS="http://www.w3.org/2000/svg";
+const map=document.getElementById("map"), tip=document.getElementById("tip");
+const COL={confirmed:"#2ecc71", worked:"#f1c40f"};
+function needColor(pct){ var p=Math.min(1,(pct||0)/30); return "hsl(0,60%,"+(27+p*38).toFixed(0)+"%)"; }
+async function load(){
+  var d; try{ d=await (await fetch("/api/ffma_map",{cache:"no-store"})).json(); }catch(e){ return; }
+  var gs=d.grids; if(!gs||!gs.length) return;
+  var loMin=1e9,loMax=-1e9,laMin=1e9,laMax=-1e9;
+  for(const g of gs){ loMin=Math.min(loMin,g.lon);loMax=Math.max(loMax,g.lon);laMin=Math.min(laMin,g.lat);laMax=Math.max(laMax,g.lat); }
+  loMin-=1;loMax+=1;laMin-=0.5;laMax+=0.5;
+  var W=1000,H=440,pad=8;
+  var sx=(W-2*pad)/(loMax-loMin), sy=(H-2*pad)/(laMax-laMin);
+  map.innerHTML="";
+  function showTip(e,g){
+    tip.style.display="block"; tip.style.left=(e.clientX+13)+"px"; tip.style.top=(e.clientY+13)+"px";
+    const st=g.s==="new"?"NEEDED":(g.s==="worked"?"worked, pending":"CONFIRMED");
+    let html="<b>"+g.g+"</b> &mdash; "+st+"<br>"+g.tier+(g.pct?(" &middot; "+g.pct+"% need it"):"");
+    if(g.s==="worked" && g.paths && g.paths.length){
+      html+="<div style='margin-top:4px;border-top:1px solid #333;padding-top:3px'>";
+      for(const p of g.paths){ html+=p.t+" <b>"+p.c+"</b><br>"; }
+      html+="<i style='color:#8fce8f'>"+(g.pred||"")+"</i></div>";
+    }
+    tip.innerHTML=html;
+  }
+  for(const g of gs){
+    const x=pad+((g.lon-1)-loMin)*sx, y=pad+(laMax-(g.lat+0.5))*sy;
+    const col=g.s==="new"?needColor(g.pct):(COL[g.s]||"#444");
+    const r=document.createElementNS(SVGNS,"rect");
+    r.setAttribute("class","cell");
+    r.setAttribute("x",x.toFixed(1)); r.setAttribute("y",y.toFixed(1));
+    r.setAttribute("width",(2*sx).toFixed(1)); r.setAttribute("height",(1*sy).toFixed(1));
+    r.setAttribute("fill",col);
+    r.addEventListener("mousemove",function(e){ showTip(e,g); });
+    r.addEventListener("click",function(e){ showTip(e,g); });
+    r.addEventListener("mouseleave",function(){ tip.style.display="none"; });
+    map.appendChild(r);
+  }
+  var c=d.counts, pct=(100*c.confirmed/d.total).toFixed(1);
+  document.getElementById("counts").innerHTML="<b>"+c.confirmed+"</b> confirmed &middot; <b>"+c.worked+"</b> worked-pending &middot; <b>"+c.new+"</b> needed &middot; of "+d.total+" &nbsp;|&nbsp; <b>"+pct+"%</b> complete";
+}
+load(); setInterval(load,60000);
+</script></body></html>"""
+
+
+def _ffma_pending_detail() -> dict:
+    """Per-op re-work detail for WORKED-but-unconfirmed 6m FFMA grids, for the
+    grid-map hover. Returns grid4 -> {"paths": [{"c": call, "t": "<emoji> tier"}],
+    "pred": <human confirm-prediction>}. Tier per op via _ffma_call_tier
+    (hot/warm/ghost/dead). Prediction: any HOT path -> likely; else WARM ->
+    possible; else needs a fresh re-work. Mirrors the ffma_chase pending logic
+    but scoped to what the map tooltip needs."""
+    emoji = {"hot": "\U0001F525", "warm": "\U0001F325",
+             "ghost": "\U0001F47B", "dead": "\U0001F480"}
+    order = {"hot": 0, "warm": 1, "ghost": 2, "dead": 3}
+    grid_qsos: dict[str, list] = {}
+    for q in (_worked.qsos if _worked else []):
+        if (q.get("prop_mode") or "").strip().upper() == "SAT":
+            continue
+        b = (q.get("band") or "").strip().lower()
+        g = (q.get("grid") or "").strip().upper()[:4]
+        if b != "6m" or g not in _FFMA_GRID_SET:
+            continue
+        confirmed = (g, b) in _worked.confirmed_grid_band
+        grid_qsos.setdefault(g, []).append((
+            q.get("qso_date", ""), (q.get("time_on") or "").zfill(6),
+            (q.get("call") or "").strip().upper(), confirmed))
+    out = {}
+    for g, recs in grid_qsos.items():
+        if (g, "6m") in _worked.confirmed_grid_band:
+            continue  # confirmed grids need no pending detail
+        by_call: dict[str, list] = {}
+        for r in recs:
+            if r[2]:
+                by_call.setdefault(r[2], []).append(r)
+        paths, best = [], None
+        for c in sorted(by_call, key=lambda cc: max(r[0] for r in by_call[cc]), reverse=True):
+            t, _up = _ffma_call_tier(c, by_call[c])
+            paths.append({"c": c, "t": (emoji.get(t, "") + " " + t).strip()})
+            if best is None or order.get(t, 9) < order.get(best, 9):
+                best = t
+        pred = ("likely to confirm" if best == "hot"
+                else "possible — getting stale" if best == "warm"
+                else "needs a fresh re-work")
+        out[g] = {"paths": paths, "pred": pred}
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -6333,6 +6488,33 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_log_search()
         elif self.path == "/rotor":
             self._send(_ROTOR_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/ffma_map":
+            self._send(_FFMA_MAP_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/ffma_map":
+            # Per-grid FFMA status for the 488-grid wall map. Status comes from
+            # worked_state.grid_band_status (confirmed = LoTW mirror, worked =
+            # in the log but NOT LoTW-confirmed, new = never worked) — the
+            # AUTHORITATIVE LoTW-clean source, never the QRZ flags (which is
+            # exactly the EM83/WB4SIA confusion this map is built to kill).
+            _mgrids = []
+            _cc = {"confirmed": 0, "worked": 0, "new": 0}
+            _pend = _ffma_pending_detail()
+            for _g in _FFMA_GRID_SET:
+                _ll = maidenhead_to_latlon(_g)
+                if not _ll:
+                    continue
+                _st = _worked.grid_band_status(_g, "6m") if _worked else "new"
+                _cc[_st] = _cc.get(_st, 0) + 1
+                _rr = _FFMA_RARITY.get(_g.upper()) or {}
+                _e = {"g": _g, "lat": round(_ll[0], 3), "lon": round(_ll[1], 3),
+                      "s": _st, "tier": _rr.get("tier", "common"),
+                      "pct": _rr.get("pct_needed", 0)}
+                if _st == "worked" and _g in _pend:
+                    _e["paths"] = _pend[_g]["paths"]
+                    _e["pred"] = _pend[_g]["pred"]
+                _mgrids.append(_e)
+            self._send(json.dumps({"grids": _mgrids, "counts": _cc,
+                                   "total": len(_FFMA_GRID_SET)}).encode(), "application/json")
         elif self.path == "/api/rotor":
             self._send(json.dumps(_rotor_status()).encode(), "application/json")
         elif self.path == "/api/radar":
@@ -6353,6 +6535,7 @@ class Handler(BaseHTTPRequestHandler):
                     "call": s.get("dx_call"),
                     "grid": s.get("grid"),
                     "need": _spot_is_needed(s),
+                    "rework": s.get("ffma_tier"),  # FFMA re-work flag: 'dead'/'ghost'/'need' (gold dot) or None
                     "mine": (s.get("source") or "").endswith("-LOCAL"),  # our own RX decode
                     "sdist": s.get("distance_mi"),  # SPOTTER distance from home — for the "local" filter
                 })

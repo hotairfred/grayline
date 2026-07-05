@@ -9,6 +9,14 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **FFMA 488-grid wall map** (`/ffma_map`). Every FFMA grid drawn
+  geographically as a CONUS lattice — green confirmed, amber
+  worked-pending, red needed (brightness scaled by rarity). Status is
+  read from the **LoTW mirror only** (never QRZ flags), so it reflects
+  award truth rather than optimistic logbook flags. Hover or tap a
+  pending cell for its per-op re-work detail: every path worked there
+  tagged hot / ghost / dead, plus a confirm-prediction (likely /
+  possible / needs a fresh re-work).
 - **Per-band award scope routing.** HF spots route to DXCC×band
   (ARRL DXCC Challenge / 5BDXCC). 6m routes to BOTH DXCC×band AND
   grid×band (FFMA + 6m DXCC are both meaningful awards). 2m and up
@@ -230,6 +238,18 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Fixed
 
+- **Re-work engine surfaces fresh ops on ANY unconfirmed grid.** A grid
+  with a HOT (recently-worked, likely-to-self-confirm) path used to
+  suppress the re-work flag on *other* ops in it, hiding clean backup
+  paths behind a single — possibly flaky — pending contact. Now every
+  unconfirmed FFMA grid flags fresh ops as a path, so backups surface
+  until the grid actually confirms; self-confirming HOT ops stay
+  unflagged (no nagging to re-work something already in the pipeline).
+- **Radar keeps a station on its bearing through gridless decodes.** A
+  freq-independent per-call last-known-grid cache means FT8 traffic that
+  carries no grid (signal reports, RR73) no longer drops a station off
+  the PPI scope — it holds its last bearing instead of flickering on and
+  off.
 - **Downstream click-to-tune now actually reaches WSJT-X.** The bidirectional
   hub forwarded decodes from a throwaway ephemeral socket, so a downstream
   consumer (GridTracker) saw them arriving from `:<random>` and sent its

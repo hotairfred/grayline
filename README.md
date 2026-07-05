@@ -54,6 +54,12 @@ how confirmation-source tracking keeps each award counting by its own rules.
   heading drawn as a sweep wedge, and out-of-range openings pinned to the rim
   as chevrons. Filter to what *you* can actually hear (mine / local / wanted)
   and scale the range from a tight 6m Es ring out to worldwide.
+- **FFMA grid map** (optional) — a `/ffma_map` wall map of all 488 FFMA
+  grids laid out geographically: green confirmed, amber worked-pending, red
+  needed (brighter red = rarer). Status is read from your **LoTW mirror**, not
+  QRZ flags, so it reflects award truth. Hover or tap a pending grid for the
+  per-op re-work detail — every path worked there tagged hot / ghost / dead,
+  plus a confirm-prediction.
 - **Re-broadcast** (optional) — serves its filtered, annotated spots back out
   as a standard DX-Spider telnet node for other logging tools.
 
