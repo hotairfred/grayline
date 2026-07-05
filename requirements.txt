@@ -1,2 +1,2 @@
 # Grayline runtime dependencies — everything else is the Python standard library.
-paho-mqtt   # MQTT client for peer-copies (broker on .14); code supports paho 1.x and 2.x
+paho-mqtt   # MQTT client for peer-copies (PSKReporter's public MQTT firehose); paho 1.x and 2.x both work

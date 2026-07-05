@@ -102,7 +102,15 @@ def _purge_loop():
 def start():
     if _started_already() or _cfg["home"] is None or not _cfg["squares"]:
         return
-    import paho.mqtt.client as mqtt
+    # paho-mqtt is an OPTIONAL dependency — it powers only this feature (peer-copies
+    # via the PSKReporter MQTT firehose). If it isn't installed, disable the feature
+    # gracefully instead of crashing the whole server at startup.
+    try:
+        import paho.mqtt.client as mqtt
+    except ImportError:
+        log.warning("peer_copies: paho-mqtt not installed — peer-copies disabled. "
+                    "Run 'pip install paho-mqtt' to enable it.")
+        return
 
     def _run():
         while True:
