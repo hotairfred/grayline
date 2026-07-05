@@ -107,7 +107,11 @@ To unlock the rest, in order of payoff:
    band/mode firehose — no distance awareness, no "who near me hears this." Also
    backfills DX grids for grid awards and pulls worked/needed status. Get this
    first if you intend to use the spotting side at all.
-3. **`lotw_fetch_enabled` + LoTW creds** — confirmations for the award scoreboard.
+3. **`lotw_fetch_enabled` + LoTW creds** — confirmations for the award
+   scoreboard, the FFMA grid map, and the re-work engine. Your **first**
+   fetch pulls your entire LoTW history (a full sync); after that it's a
+   quick incremental download of new confirmations. Run it once up front so
+   the awards have something to score.
 4. **`require_spotter_grid: true`** — once the QRZ cache is warm, for the clean
    verified-spotter feed.
 
