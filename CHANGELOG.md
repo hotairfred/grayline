@@ -245,6 +245,17 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Fixed
 
+- **Grid confirmations recorded in `VUCC_GRIDS` are now credited.** A rover or
+  grid-line station's LoTW confirmation can list two or more grids in
+  `VUCC_GRIDS` (e.g. `DM76XR,DM86AR`) while `GRIDSQUARE` holds only one — so the
+  other grid (DM76) was never counted toward FFMA/VUCC even though LoTW confirms
+  it. `worked_state.py` now parses `VUCC_GRIDS` and credits every 4-char prefix,
+  same as `GRIDSQUARE`. (Reported by Mitch N8XS with a full root-cause + repro.)
+- **`/api/scores` and `/api/ffma_map` FFMA counts now agree.** Scores re-derived
+  the confirmed set by re-iterating logged QSOs (keyed on each QSO's GRIDSQUARE),
+  which could disagree with the map's direct read of `confirmed_grid_band` by a
+  grid (e.g. a VUCC_GRIDS confirmation). Both endpoints now read the same
+  authoritative grid-band sets, so they can't diverge.
 - **Re-work engine surfaces fresh ops on ANY unconfirmed grid.** A grid
   with a HOT (recently-worked, likely-to-self-confirm) path used to
   suppress the re-work flag on *other* ops in it, hiding clean backup

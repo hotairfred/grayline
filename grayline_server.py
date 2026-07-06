@@ -1229,6 +1229,26 @@ def _build_scores_payload() -> dict:
                 q.get("qso_date", ""), (q.get("time_on") or "").zfill(6),
                 (q.get("call") or "").strip().upper(), confirmed))
 
+    # The loop above keys ffma_grid_qsos on each QSO's GRIDSQUARE (for the chase
+    # panel). But the worked/confirmed COUNTS derive from the authoritative
+    # grid_band sets, which also credit VUCC_GRIDS multi-grid rover confirmations
+    # — so a grid confirmed only via VUCC_GRIDS (a different GRIDSQUARE) isn't
+    # missed here, and /api/scores matches /api/ffma_map (which reads the same
+    # sets). Fixes the scores-vs-map split Mitch N8XS reported 2026-07-06.
+    ffma_worked_set = {g for (g, b) in _worked.worked_grid_band
+                       if b == "6m" and g in _FFMA_GRID_SET}
+    ffma_confirmed_set = {g for (g, b) in _worked.confirmed_grid_band
+                          if b == "6m" and g in _FFMA_GRID_SET}
+    vucc_band_w = {}
+    vucc_band_c = {}
+    for _b in VUCC_BANDS:
+        _w = {g for (g, bb) in _worked.worked_grid_band if bb == _b}
+        _c = {g for (g, bb) in _worked.confirmed_grid_band if bb == _b}
+        if _w:
+            vucc_band_w[_b] = _w
+        if _c:
+            vucc_band_c[_b] = _c
+
     ffma_chase = _build_ffma_chase(ffma_grid_qsos)
 
     # CQ WPX — unique worked prefixes (Mixed). Own pass: WPX counts every QSO

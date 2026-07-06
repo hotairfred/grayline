@@ -101,6 +101,7 @@ def _parse_adif_qsos(path: Path) -> list[dict]:
             "time_on": rec.get("TIME_ON", ""),
             "freq": rec.get("FREQ", ""),
             "grid": rec.get("GRIDSQUARE", ""),
+            "vucc_grids": rec.get("VUCC_GRIDS", ""),  # rover/grid-line: may list 2+ grids GRIDSQUARE omits
             "dxcc": rec.get("DXCC", ""),
             "country": rec.get("COUNTRY", ""),
             "state": rec.get("STATE", ""),
@@ -815,6 +816,18 @@ class WorkedState:
                 worked_grid_band.add((grid4, band))
                 if confirmed:
                     confirmed_grid_band.add((grid4, band))
+            # VUCC_GRIDS — a rover / grid-line confirmation can report multiple
+            # grids (e.g. "DM76XR,DM86AR") in VUCC_GRIDS while GRIDSQUARE holds
+            # only one, so the others get silently missed. Credit every 4-char
+            # prefix it lists, same as GRIDSQUARE. (Reported by Mitch N8XS,
+            # 2026-07-06 — a rover confirmation via N6UA on DM76/DM86.)
+            if band and (q.get("prop_mode") or "").strip().upper() != "SAT":
+                for _sub in (q.get("vucc_grids") or "").split(","):
+                    _vg4 = _sub.strip()[:4].upper()
+                    if len(_vg4) == 4:
+                        worked_grid_band.add((_vg4, band))
+                        if confirmed:
+                            confirmed_grid_band.add((_vg4, band))
 
             # WAS — the 50 US states. Alaska (DXCC 6) and Hawaii (DXCC 110) are
             # SEPARATE DXCC entities but valid WAS states, so the gate must allow
