@@ -9,6 +9,13 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **One-command install (`install.sh` / `run.sh`).** `install.sh` finds a
+  Python 3.8+ interpreter, builds an isolated venv, installs the lone
+  dependency (paho-mqtt) *into it*, and seeds config.json / secrets.json
+  from the examples; `run.sh` launches the server with the venv's
+  interpreter. Kills the "which pip fed which python" / "No module named
+  paho" mismatch (and Homebrew's externally-managed-pip block on macOS)
+  that trips fresh crew installs. Verified end-to-end on a clean checkout.
 - **FFMA 488-grid wall map** (`/ffma_map`). Every FFMA grid drawn
   geographically as a CONUS lattice — green confirmed, amber
   worked-pending, red needed (brightness scaled by rarity). Status is

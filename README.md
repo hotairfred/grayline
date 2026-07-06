@@ -73,20 +73,26 @@ point: keep the UDP/compute load away from the machine running your radio audio)
 git clone <your-fork-url> grayline
 cd grayline
 
-# 1. Dependencies — one package (paho-mqtt); everything else is stdlib
-pip install -r requirements.txt
+# 1. Install — finds Python 3.8+, builds an isolated venv, installs the one
+#    dependency (paho-mqtt) into it, and seeds config.json / secrets.json.
+./install.sh
 
 # 2. Operator settings (callsign, grid, cluster host, which features are on)
-cp config.json.example config.json
 $EDITOR config.json          # set "callsign" and "home_grid" at minimum
 
 # 3. API credentials (only needed for the services you enable)
-cp secrets.json.example secrets.json
 $EDITOR secrets.json         # QRZ / LoTW / etc.
 
-# 4. Run (needs Python 3.8+)
-python3 grayline_server.py
+# 4. Run
+./run.sh
 ```
+
+`install.sh` puts everything in a **virtual environment** on purpose — it
+sidesteps the "which pip fed which python" mismatch (and Homebrew's
+externally-managed-pip block on macOS) that otherwise trips fresh installs.
+Prefer to wire it up by hand? The manual path still works —
+`pip install -r requirements.txt` then `python3 grayline_server.py` — just make
+sure that pip and python are the *same* 3.8+ interpreter.
 
 Then open `http://<host>:8080/` (the `http_port` from `config.json`) from any
 browser on your network. One dependency (`paho-mqtt`, for MQTT peer-copies);
