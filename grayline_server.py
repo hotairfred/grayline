@@ -5002,7 +5002,7 @@ async function refresh() {
       : `<div class="empty">No current spots on ${escapeHTML(activeBand)} &mdash; holding this band; they'll show here the moment they arrive.</div>`;
   } else {
     const showBandCol = (activeBand === "*");
-    const _arrow = c => spotSort.col === c ? (spotSort.dir > 0 ? " \\u25B2" : " \\u25BC") : "";
+    const _arrow = c => spotSort.col === c ? (spotSort.dir > 0 ? " ▲" : " ▼") : "";
     const _th = (label, col) => col
       ? `<th class="sortable" onclick="setSpotSort('${col}')">${label}${_arrow(col)}</th>`
       : `<th>${label}</th>`;
