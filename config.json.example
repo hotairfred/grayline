@@ -21,6 +21,8 @@
 
   "wsjtx_enabled": true,
   "wsjtx_listen_port": 2237,
+  "peer_spots_enabled": true,
+  "peer_group": [],
   "wsjtx_forward_targets": [],
 
   "n1mm_enabled": true,

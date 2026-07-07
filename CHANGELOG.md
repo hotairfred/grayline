@@ -9,6 +9,14 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **Peer activity page (`/peers`) — see what your crew is working.** From your
+  OWN WSJT-X decodes (no cooperation or Grayline install needed on their end —
+  it's your RX), Grayline now tracks the transmissions of a configured
+  `peer_group` and shows, per peer, who they're working or calling plus their
+  last message: `N8ECI → W1ABC (R-15)`, `N8DX → calling CQ`. So you can see Jim
+  work W1ABC without tuning to his frequency. Self-limiting by design: only
+  peers you can actually hear ever populate. Configure `peer_group` with the
+  local calls you copy.
 - **Peer-spots — local-peer PSKReporter receptions become Live-view spots.**
   When a station within `peer_radius_mi` hears a DX (via the PSKReporter MQTT
   firehose), Grayline now synthesizes a spot with the *closest* peer as the

@@ -174,6 +174,12 @@ TELNET_FEED_VHF_PLUS_BANDS = frozenset(
 # (b) knows the current dial frequency for click-to-tune audio-offset math.
 WSJTX_ENABLED = CONFIG.get("wsjtx_enabled", True)
 PEER_SPOTS_ENABLED = CONFIG.get("peer_spots_enabled", True)  # synthesize Live-view spots from local-peer PSKReporter receptions (peer-spots)
+# Peer-group activity: callsigns whose TRANSMISSIONS we track from our OWN WSJT-X
+# decodes (people you can hear — works even if they don't run Grayline). Powers
+# the /peers page: "N8ECI -> W1ABC (R-15)" without tuning to their freq.
+PEER_GROUP = frozenset(c.upper() for c in CONFIG.get("peer_group", []))
+_peer_activity: dict = {}                # PEER(upper) -> {working, exchange, message, freq_khz, snr, mode, band, ts}
+_peer_activity_lock = threading.Lock()
 WSJTX_LISTEN_HOST = "0.0.0.0"
 WSJTX_LISTEN_PORT = CONFIG.get("wsjtx_listen_port", 2237)             # WSJT-X default UDP server port
 # Mirror every received WSJT-X UDP datagram (verbatim) to these hosts, so other
@@ -766,6 +772,10 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
     freq_khz = rf_hz / 1000.0
 
     message = parsed.get("message", "") or ""
+    # Peer-group activity: capture the peer's TX regardless of whether it's a
+    # "spottable" signal (a peer sending "TO PEER R-15" isn't a spot, but it IS
+    # what they're working). Runs before the spottable-call filter below.
+    _update_peer_activity(message, freq_khz, parsed.get("snr"), parsed.get("mode", ""))
     call, grid = parse_ft8_message(message)
     if not call:
         return  # message format we don't recognize as a spottable signal
@@ -2939,6 +2949,32 @@ def add_spot(spot, cluster_name, calling_me=False):
     # WSJT-X paths), so the non-blocking writer.write() calls are loop-safe.
     if _telnet_feed is not None and distance_mi <= _telnet_feed_radius_mi(band):
         _telnet_feed.broadcast_spot(spot)
+
+
+def _update_peer_activity(message, freq_khz, snr, glyph):
+    """If this decode was TRANSMITTED by a tracked peer (FROM-call in PEER_GROUP),
+    record what they're doing for the /peers page. FT8 form is "TO FROM exch" (or
+    "CQ FROM grid"): sender is token 2, who they're working is token 1. Works for
+    any peer you can hear — no cooperation or Grayline install on their end, it's
+    your own RX."""
+    if not PEER_GROUP:
+        return
+    mp = message.strip().split()
+    if len(mp) < 2:
+        return
+    to_call = mp[0].upper()               # "CQ"/"QRZ" or the station they're working
+    sender = mp[1].upper()                # the FROM-call = the peer
+    if sender not in PEER_GROUP:
+        return
+    with _peer_activity_lock:
+        _peer_activity[sender] = {
+            "working": to_call,
+            "exchange": mp[2].upper() if len(mp) >= 3 else "",
+            "message": message.strip(),
+            "freq_khz": round(freq_khz, 1), "snr": snr,
+            "mode": {"~": "FT8", "+": "FT4"}.get(glyph or "", "FT8"),
+            "band": dxcluster.freq_to_band(freq_khz) or "", "ts": time.time(),
+        }
 
 
 def _synthesize_peer_spots():
@@ -6368,6 +6404,55 @@ draw(); pollRadar(); setInterval(pollRadar, 5000);
 </body></html>"""
 
 
+_PEERS_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Peer Activity</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ body{background:#0b0f14;color:#cdd6e0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:12px}
+ h1{font-size:15px;color:#8fb7ff;margin:0 0 4px;font-weight:600}
+ .sub{color:#5f7085;font-size:12px;margin:0 0 12px}
+ .peer{background:#141b24;border:1px solid #1f2b38;border-radius:8px;padding:10px 12px;margin:8px 0;display:flex;align-items:center;gap:12px}
+ .call{font-weight:700;font-size:16px;color:#e6edf5;min-width:82px}
+ .act{flex:1}
+ .to{color:#7ee0a8;font-weight:600}
+ .cq{color:#ffd27e;font-weight:600}
+ .exch{color:#9fb2c8}
+ .meta{color:#5f7085;font-size:12px;margin-top:2px}
+ .idle{color:#5f7085;font-style:italic}
+ .stale{opacity:.45}
+ .dot{width:9px;height:9px;border-radius:50%;background:#3a4a5a;flex:0 0 auto}
+ .live .dot{background:#39d98a;box-shadow:0 0 6px #39d98a}
+</style></head>
+<body>
+<h1>&#128225; Peer Activity</h1>
+<div class="sub">what your crew is working &mdash; from your own decodes, no tuning to their freq</div>
+<div id="list"><div class="idle">loading&hellip;</div></div>
+<script>
+function fmtAge(a){ if(a==null) return "not heard"; if(a<60) return a+"s ago"; return Math.floor(a/60)+"m ago"; }
+async function tick(){
+  try{
+    const r = await fetch("/api/peers",{cache:"no-store"});
+    const d = await r.json();
+    const el = document.getElementById("list");
+    if(!d.peers.length){ el.innerHTML='<div class="idle">No peer_group configured &mdash; add calls to "peer_group" in config.json (e.g. ["N8ECI","N8DX"]).</div>'; return; }
+    el.innerHTML = d.peers.map(function(p){
+      if(p.age==null) return '<div class="peer"><span class="dot"></span><span class="call">'+p.peer+'</span><span class="act idle">not heard yet</span></div>';
+      var live = p.age<180, stale = p.age>=180 ? "stale" : "";
+      var who = (p.working==="CQ"||p.working==="QRZ")
+        ? '<span class="cq">calling '+p.working+'</span>'
+        : 'working <span class="to">'+p.working+'</span> <span class="exch">'+(p.exchange||"")+'</span>';
+      var meta = [ (p.freq_khz?p.freq_khz+" kHz":""), (p.band||""), (p.mode||""),
+                   (p.snr!=null?p.snr+" dB":""), fmtAge(p.age) ].filter(Boolean).join(" \\u00b7 ");
+      return '<div class="peer '+(live?"live":"")+' '+stale+'"><span class="dot"></span>'
+           + '<span class="call">'+p.peer+'</span>'
+           + '<span class="act">'+who+'<div class="meta">'+meta+'</div></span></div>';
+    }).join("");
+  }catch(e){}
+}
+tick(); setInterval(tick, 4000);
+</script></body></html>"""
+
+
 _FFMA_MAP_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FFMA Grid Map</title>
@@ -6585,6 +6670,28 @@ class Handler(BaseHTTPRequestHandler):
                 _mgrids.append(_e)
             self._send(json.dumps({"grids": _mgrids, "counts": _cc,
                                    "total": len(_FFMA_GRID_SET)}).encode(), "application/json")
+        elif self.path == "/peers":
+            self._send(_PEERS_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/peers":
+            # Peer-group activity from our OWN WSJT-X decodes: what each tracked
+            # peer is transmitting (who they're working/calling), no need to tune
+            # to their freq. Every PEER_GROUP member is listed; age=None = not
+            # heard yet this session.
+            _now = time.time()
+            with _peer_activity_lock:
+                _snap = dict(_peer_activity)
+            _pa = []
+            for _pc in sorted(PEER_GROUP):
+                _a = _snap.get(_pc)
+                if _a:
+                    _pa.append({"peer": _pc, "age": int(_now - _a["ts"]),
+                                "working": _a["working"], "exchange": _a["exchange"],
+                                "message": _a["message"], "freq_khz": _a["freq_khz"],
+                                "snr": _a["snr"], "mode": _a["mode"], "band": _a["band"]})
+                else:
+                    _pa.append({"peer": _pc, "age": None})
+            _pa.sort(key=lambda x: (x["age"] is None, x["age"] or 0))
+            self._send(json.dumps({"peers": _pa}).encode(), "application/json")
         elif self.path == "/api/rotor":
             self._send(json.dumps(_rotor_status()).encode(), "application/json")
         elif self.path == "/api/radar":
