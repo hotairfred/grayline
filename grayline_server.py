@@ -173,6 +173,7 @@ TELNET_FEED_VHF_PLUS_BANDS = frozenset(
 # (a) ingests our own real-time decodes as local-source spots, and
 # (b) knows the current dial frequency for click-to-tune audio-offset math.
 WSJTX_ENABLED = CONFIG.get("wsjtx_enabled", True)
+PEER_SPOTS_ENABLED = CONFIG.get("peer_spots_enabled", True)  # synthesize Live-view spots from local-peer PSKReporter receptions (peer-spots)
 WSJTX_LISTEN_HOST = "0.0.0.0"
 WSJTX_LISTEN_PORT = CONFIG.get("wsjtx_listen_port", 2237)             # WSJT-X default UDP server port
 # Mirror every received WSJT-X UDP datagram (verbatim) to these hosts, so other
@@ -239,6 +240,9 @@ LOTW_FRESH_DAYS = int(CONFIG.get("lotw_fresh_days", 365))
 SOURCE_PRIORITY = {
     "WSJTX-LOCAL": 100,    # our running WSJT-X — highest fidelity
     "SPARKGAP-LOCAL": 90,  # a local CW skimmer at the home station
+    "PEER": 70,            # a local peer (within PEER_RADIUS_MI) heard it via PSKReporter —
+                           # beats a far cluster spot for display (a neighbor's ears are a
+                           # better local-workability proxy), loses to our own RX
     "GOCLUSTER": 50,       # local validated aggregator (default external feed)
     # everything else (RBN, DXSummit, PSKR ingest via GoCluster) defaults to 10
 }
@@ -2935,6 +2939,46 @@ def add_spot(spot, cluster_name, calling_me=False):
     # WSJT-X paths), so the non-blocking writer.write() calls are loop-safe.
     if _telnet_feed is not None and distance_mi <= _telnet_feed_radius_mi(band):
         _telnet_feed.broadcast_spot(spot)
+
+
+def _synthesize_peer_spots():
+    """Turn local-peer PSKReporter receptions into Live-view spots. Each DX a
+    peer hears becomes a DXSpot with the CLOSEST peer as the spotter (source
+    "PEER"), fed through the SAME add_spot() dedup as cluster spots. So it slots
+    into the local-spotter view (a peer is local by construction), loses to our
+    own WSJT-X decode, beats a far cluster re-spot for display, and falls back
+    gracefully when the peer stops hearing it — the peer entry ages out of
+    all_heard, synthesis stops re-adding, and the spot expires on the normal
+    digital TTL. Each cycle re-adds only on a genuinely fresh reception (<=
+    SPOT_TTL_DIGITAL), so it is a real re-observation, NOT the ts-refresh
+    anti-pattern the dedup warns against."""
+    hhmm = time.strftime("%H%M", time.gmtime())
+    for h in peer_copies.all_heard(max_age_sec=SPOT_TTL_DIGITAL):
+        if not h.get("freq_khz"):
+            continue  # no freq -> no click-to-tune; not a useful spot
+        snr = h.get("snr")
+        via = h["spotter"]
+        spot = dxcluster.DXSpot(
+            spotter=via,
+            freq_khz=h["freq_khz"],
+            dx_call=h["dx_call"],
+            comment=(f"peer-copy {snr}dB via {via}" if snr is not None
+                     else f"peer-copy via {via}"),
+            time_utc=hhmm,
+            mode=(h.get("mode") or None),
+            snr=snr,
+            grid=(h.get("dx_grid") or None),
+        )
+        add_spot(spot, "PEER")
+
+
+def _peer_spot_loop():
+    while True:
+        try:
+            _synthesize_peer_spots()
+        except Exception as e:
+            log.warning("peer-spot synthesis error: %s", e)
+        time.sleep(20)
 
 
 def purge_loop():
@@ -7042,6 +7086,9 @@ async def main():
         peer_copies.start()
         log.info("peer_copies: started — %.0fmi radius of %s, %d pre-filter squares",
                  PEER_RADIUS_MI, HOME_GRID, len(_peer_sq))
+        if PEER_SPOTS_ENABLED:
+            threading.Thread(target=_peer_spot_loop, daemon=True).start()
+            log.info("peer-spots: synthesizing Live-view spots from local-peer receptions (source PEER)")
     threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
     threading.Thread(target=clublog_matches_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:

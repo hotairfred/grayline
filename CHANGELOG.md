@@ -9,6 +9,16 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **Peer-spots — local-peer PSKReporter receptions become Live-view spots.**
+  When a station within `peer_radius_mi` hears a DX (via the PSKReporter MQTT
+  firehose), Grayline now synthesizes a spot with the *closest* peer as the
+  spotter (source `PEER`, priority above external cluster feeds, below your own
+  WSJT-X). It slots into the local-spotter view like any other spot — so a
+  needed grid your neighbors are hearing stays visible *between* the 3-minute
+  FT8 cluster blinks (proactive, not reactive), and gracefully falls back to a
+  live cluster spot the moment the peer stops hearing it. Reuses the existing
+  source-precedence dedup, so `PEER` beats a far cluster re-spot for display but
+  never overwrites your own decode. Toggle: `peer_spots_enabled` (default on).
 - **One-command install (`install.sh` / `run.sh`).** `install.sh` finds a
   Python 3.8+ interpreter, builds an isolated venv, installs the lone
   dependency (paho-mqtt) *into it*, and seeds config.json / secrets.json

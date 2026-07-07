@@ -65,6 +65,37 @@ def copies(dx_call: str) -> list[dict]:
     return out
 
 
+def all_heard(max_age_sec=None):
+    """Every DX currently heard by a local peer, ONE entry per DX using the
+    CLOSEST peer as the synthetic spotter — the input to peer-spot synthesis.
+    Returns spot-ready dicts: {dx_call, spotter, spotter_grid, freq_khz, band,
+    mode, dx_grid, snr, age}. Only receptions within max_age_sec (default TTL)
+    count, so a DX drops out once every peer has stopped hearing it."""
+    ttl = TTL_SEC if max_age_sec is None else max_age_sec
+    now = time.time()
+    out = []
+    with _lock:
+        for dx, peers in _cache.items():
+            best = None
+            for pc, d in peers.items():
+                if now - d["ts"] > ttl:
+                    continue
+                if best is None or d.get("dist", 9e9) < best[1].get("dist", 9e9):
+                    best = (pc, d)
+            if best is None:
+                continue
+            pc, d = best
+            f = d.get("freq")
+            out.append({
+                "dx_call": dx, "spotter": pc, "spotter_grid": d.get("peer_grid", ""),
+                "freq_khz": round(f / 1000.0, 1) if f else None,
+                "band": d.get("band", ""), "mode": d.get("mode", ""),
+                "dx_grid": d.get("dx_grid", ""), "snr": d.get("snr"),
+                "age": int(now - d["ts"]),
+            })
+    return out
+
+
 def _on_message(client, userdata, msg):
     try:
         m = json.loads(msg.payload)
@@ -78,11 +109,20 @@ def _on_message(client, userdata, msg):
     if not rc or not sc or rc == _cfg["mycall"]:  # skip my own reports — I'm the control
         return
     c = _cfg["latlon"](rl)
-    if not c or _cfg["dist"](_cfg["home"][0], _cfg["home"][1], c[0], c[1]) > _cfg["radius"]:
+    if not c:
+        return
+    pd = _cfg["dist"](_cfg["home"][0], _cfg["home"][1], c[0], c[1])
+    if pd > _cfg["radius"]:
         return
     with _lock:
-        _cache.setdefault(sc, {})[rc] = {"snr": m.get("rp"),
-                                         "band": m.get("b") or "", "ts": time.time()}
+        # Keep enough to synthesize a full spot from a peer reception (peer-spots):
+        # DX freq/grid/mode + the peer's grid and distance (to pick the closest peer
+        # as the synthetic spotter). copies() still reads only snr/band/ts.
+        _cache.setdefault(sc, {})[rc] = {
+            "snr": m.get("rp"), "band": m.get("b") or "", "ts": time.time(),
+            "freq": m.get("f"), "dx_grid": (m.get("sl") or "")[:6],
+            "mode": (m.get("md") or "").upper(), "peer_grid": rl[:6], "dist": pd,
+        }
 
 
 def _purge_loop():
