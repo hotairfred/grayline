@@ -3983,6 +3983,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <a href="/bands" target="_blank" rel="noopener" class="band-activity-link" title="Open the Band Activity bar graph (CW/SSB/Digital × contest bands, local-filtered) in a new tab — a contest 'which band is hot' tool, kept off the main page">&#x1F4CA; Band Activity &#x2197;</a>
     <a href="/rotor" target="_blank" rel="noopener" class="band-activity-link" title="Manual beam control (HD-73 via rotctld) — compass buttons, degree entry, stop. Opens in a new tab.">&#x1F9ED; Rotor &#x2197;</a>
     <a href="/ffma_map" target="_blank" rel="noopener" class="band-activity-link" title="The 488 FFMA grids as a wall map — green = confirmed (LoTW), amber = worked-pending, red = needed (brighter = rarer). Sourced from your LoTW mirror. Opens in a new tab.">&#x1F5FA; Grid Map &#x2197;</a>
+    <a href="/peers" target="_blank" rel="noopener" class="band-activity-link" title="What your peer group is working — who each local is calling/working, from your own decodes (no tuning to their freq). Add/remove calls right on the page. Opens in a new tab.">&#x1F4E1; Peers &#x2197;</a>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
