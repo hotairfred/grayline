@@ -34,7 +34,8 @@ of QRZ.
 
 A live spot (FT8 decode or cluster spot) usually carries **no** prefecture — just a
 callsign. To show an advisory "probably a new prefecture" nudge,
-`resolve_prefecture(call, addr2)` combines two signals.
+`resolve_prefecture(call, addr2)` combines the QRZ address (matched first by
+prefecture name, then by postal code) with the call-area digit.
 
 ### Ingredient A — QRZ `addr2` name match
 
@@ -47,6 +48,20 @@ callsign. To show an advisory "probably a new prefecture" nudge,
   `"Narashino"` must not match `"Nara"`.
 - If two *different* prefectures appear in one string (rare — e.g. a QSL-manager
   line), return `None` (ambiguous → decline).
+
+### Ingredient A2 — postal-code fallback
+
+`_prefecture_from_postal(addr2)`, tried **only when the name match returns nothing**:
+
+- Japanese postal codes are `NNN-NNNN`; the **3-digit prefix** maps to a prefecture
+  via `_JA_POSTAL_RANGES` (e.g. `651-…` → 27 Hyōgo, `812-…` → 40 Fukuoka). An address
+  that carries the code but not a tidy romaji name still resolves.
+- The hyphen is **required**, so a bare run of digits (a phone or QSL number) can't
+  latch on.
+- Coarser than a name match (a prefecture spans a contiguous prefix range), which is
+  why it's a fallback — and why the call-area cross-check (Ingredient B) still
+  validates it: a boundary miss lands outside the call-area set and is declined, not
+  credited. Borrowed from K8DP's Color WAJA, which resolves by "name *or* postal code."
 
 ### Ingredient B — Call-area cross-check
 
@@ -84,6 +99,12 @@ resolution returns `None` → no pill.
 1. QRZ `addr2 = "Minato-ku, TOKYO 105-0011"` → `"tokyo"` → **10 (Tokyo)**.
 2. `JE`**`6`** → area 6 = {40–47}. 10 ∉ set → address disagrees with operating
    region → **decline, no pill.**
+
+**Postal fallback — `JA3ABC`, `addr2 = "Kobe-shi 651-2244"` (no romaji name):**
+
+1. Name match → nothing.
+2. Postal fallback → `651` ∈ 650–679 → **27 (Hyōgo)**.
+3. `JA`**`3`** → area 3 (Kansai) = {22–27}. 27 ∈ set → **resolve to 27, Hyōgo.**
 
 **Whole-word guard:** `"Sagamihara, KANAGAWA"` → `"Sagamihara"` never matches `"Saga"`;
 `"Kanagawa"` → 11 (Kanagawa).

@@ -201,6 +201,31 @@ _JA_AREA_PREFECTURES = {
 }
 
 
+# Japanese postal-code 3-digit prefix -> WAJA/ADIF prefecture code, as (lo, hi, code)
+# ranges over the leading three digits (NNN of NNN-NNNN). A SECOND, name-independent
+# signal for resolve_prefecture(): a QRZ addr2 like "Kobe, HYOGO 651-2244" carries
+# "651" -> Hyogo (27) even if the romaji name were absent/garbled. Coarser than a name
+# match (used only as a fallback, and the call-area cross-check still validates it), so
+# boundary imprecision is caught rather than credited. Hokkaido appears twice — its
+# codes bracket the Akita/Iwate/Aomori block (010-039). Borrowed from K8DP's Color WAJA,
+# which resolves by "prefecture name OR postal code."
+_JA_POSTAL_RANGES = (
+    (1, 9, "01"), (10, 19, "04"), (20, 29, "03"), (30, 39, "02"), (40, 99, "01"),
+    (100, 208, "10"), (210, 259, "11"), (260, 299, "12"),
+    (300, 319, "14"), (320, 329, "15"), (330, 369, "13"), (370, 379, "16"), (380, 399, "09"),
+    (400, 409, "17"), (410, 439, "18"), (440, 498, "20"),
+    (500, 509, "19"), (510, 519, "21"), (520, 529, "23"), (530, 599, "25"),
+    (600, 629, "22"), (630, 639, "24"), (640, 649, "26"), (650, 679, "27"),
+    (680, 689, "34"), (690, 699, "32"),
+    (700, 719, "31"), (720, 739, "35"), (740, 759, "33"), (760, 769, "36"),
+    (770, 779, "37"), (780, 789, "39"), (790, 799, "38"),
+    (800, 839, "40"), (840, 849, "41"), (850, 859, "42"), (860, 869, "43"),
+    (870, 879, "44"), (880, 889, "45"), (890, 899, "46"),
+    (900, 909, "47"), (910, 919, "29"), (920, 929, "30"), (930, 939, "28"),
+    (940, 959, "08"), (960, 979, "07"), (980, 989, "06"), (990, 999, "05"),
+)
+
+
 def ja_call_area(call: str) -> str | None:
     """The JA call-area digit ("0".."9") from a callsign, or None. Handles the
     7J–7N / 8J–8N prefixes (leading digit is the prefix, not the area) and a
@@ -220,12 +245,13 @@ def ja_call_area(call: str) -> str | None:
 
 def resolve_prefecture(call: str, addr2: str) -> str | None:
     """Best-effort WAJA prefecture code for a JA station, combining the QRZ
-    `addr2` text with the call-area digit. addr2 supplies the specific
-    prefecture; the call area validates it (declining a mailing-address mismatch)
-    and resolves the unambiguous single-prefecture area (JA8 -> Hokkaido) when
-    addr2 names nothing. Returns a code or None (-> no pill)."""
+    `addr2` text with the call-area digit. addr2 supplies the specific prefecture
+    — first by prefecture NAME, then (fallback) by POSTAL CODE; the call area
+    validates whichever (declining a mailing-address mismatch) and resolves the
+    unambiguous single-prefecture area (JA8 -> Hokkaido) when addr2 names nothing.
+    Returns a code or None (-> no pill)."""
     valid = _JA_AREA_PREFECTURES.get(ja_call_area(call) or "")
-    code = resolve_prefecture_from_addr2(addr2)
+    code = resolve_prefecture_from_addr2(addr2) or _prefecture_from_postal(addr2)
     if code:
         if valid is None or code in valid:
             return code          # consistent, or call area unknown -> trust addr2
@@ -260,6 +286,25 @@ def resolve_prefecture_from_addr2(addr2: str) -> str | None:
                 return None
             seen = code
     return seen
+
+
+def _prefecture_from_postal(addr2: str) -> str | None:
+    """Fallback prefecture (WAJA) code from a Japanese postal code in `addr2`, used
+    only when no prefecture NAME matched. JP codes are NNN-NNNN; the 3-digit prefix
+    maps to a prefecture via _JA_POSTAL_RANGES ("651-..." -> 27 Hyogo, "812-..." ->
+    40 Fukuoka). The hyphen is required, so a bare run of digits (a phone or QSL
+    number) can't latch on. Coarser than a name match — resolve_prefecture() still
+    cross-checks the result against the call area before trusting it."""
+    if not addr2:
+        return None
+    m = re.search(r"(?<!\d)(\d{3})-\d{4}(?!\d)", addr2)
+    if not m:
+        return None
+    p = int(m.group(1))
+    for lo, hi, code in _JA_POSTAL_RANGES:
+        if lo <= p <= hi:
+            return code
+    return None
 
 
 def mode_class(mode: str) -> str:
