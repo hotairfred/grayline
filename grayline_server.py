@@ -177,7 +177,8 @@ PEER_SPOTS_ENABLED = CONFIG.get("peer_spots_enabled", True)  # synthesize Live-v
 # Peer-group activity: callsigns whose TRANSMISSIONS we track from our OWN WSJT-X
 # decodes (people you can hear — works even if they don't run Grayline). Powers
 # the /peers page: "N8ECI -> W1ABC (R-15)" without tuning to their freq.
-PEER_GROUP = frozenset(c.upper() for c in CONFIG.get("peer_group", []))
+PEER_GROUP = set(c.upper() for c in CONFIG.get("peer_group", []))  # mutable: editable live from /peers
+_peer_group_lock = threading.Lock()
 _peer_activity: dict = {}                # PEER(upper) -> {working, exchange, message, freq_khz, snr, mode, band, ts}
 _peer_activity_lock = threading.Lock()
 WSJTX_LISTEN_HOST = "0.0.0.0"
@@ -2949,6 +2950,37 @@ def add_spot(spot, cluster_name, calling_me=False):
     # WSJT-X paths), so the non-blocking writer.write() calls are loop-safe.
     if _telnet_feed is not None and distance_mi <= _telnet_feed_radius_mi(band):
         _telnet_feed.broadcast_spot(spot)
+
+
+def _persist_peer_group():
+    """Write PEER_GROUP back to config.json so live edits from /peers survive a
+    restart. Read-modify-write to leave the rest of the config untouched."""
+    try:
+        cfg = json.loads(_CONFIG_PATH.read_text())
+        cfg["peer_group"] = sorted(PEER_GROUP)
+        _CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
+    except Exception as e:
+        log.warning("peer_group persist failed: %s", e)
+
+
+def _add_peer(call):
+    call = (call or "").strip().upper()
+    if not call or not _looks_like_call(call):
+        return {"ok": False, "error": "not a valid callsign"}
+    with _peer_group_lock:
+        PEER_GROUP.add(call)
+        _persist_peer_group()
+    return {"ok": True, "peer_group": sorted(PEER_GROUP)}
+
+
+def _remove_peer(call):
+    call = (call or "").strip().upper()
+    with _peer_group_lock:
+        PEER_GROUP.discard(call)
+        _persist_peer_group()
+    with _peer_activity_lock:
+        _peer_activity.pop(call, None)
+    return {"ok": True, "peer_group": sorted(PEER_GROUP)}
 
 
 def _update_peer_activity(message, freq_khz, snr, glyph):
@@ -6422,21 +6454,38 @@ _PEERS_PAGE = """<!doctype html>
  .stale{opacity:.45}
  .dot{width:9px;height:9px;border-radius:50%;background:#3a4a5a;flex:0 0 auto}
  .live .dot{background:#39d98a;box-shadow:0 0 6px #39d98a}
+ .add{display:flex;gap:6px;margin:0 0 12px}
+ .add input{background:#0e141b;border:1px solid #26333f;border-radius:6px;color:#e6edf5;padding:7px 10px;font:14px inherit;text-transform:uppercase;width:150px}
+ .add button{background:#1c3a2a;border:1px solid #2f5a41;border-radius:6px;color:#8ff0be;padding:7px 14px;cursor:pointer;font:600 14px inherit}
+ .add button:hover{background:#245537}
+ .rm{color:#5f7085;cursor:pointer;padding:0 4px;font-size:17px;flex:0 0 auto}
+ .rm:hover{color:#ff7e7e}
 </style></head>
 <body>
 <h1>&#128225; Peer Activity</h1>
 <div class="sub">what your crew is working &mdash; from your own decodes, no tuning to their freq</div>
+<div class="add"><input id="addcall" placeholder="add a call" maxlength="12"
+  onkeydown="if(event.key==='Enter')addPeer()"><button onclick="addPeer()">+ add</button></div>
 <div id="list"><div class="idle">loading&hellip;</div></div>
 <script>
 function fmtAge(a){ if(a==null) return "not heard"; if(a<60) return a+"s ago"; return Math.floor(a/60)+"m ago"; }
+async function post(op, call){
+  try{ await fetch("/api/peers",{method:"POST",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({op:op,call:call})}); }catch(e){}
+  tick();
+}
+function addPeer(){ var i=document.getElementById("addcall"); var c=(i.value||"").trim().toUpperCase();
+  if(c){ i.value=""; post("add",c); } }
+function rmPeer(c){ if(c) post("remove",c); }
 async function tick(){
   try{
     const r = await fetch("/api/peers",{cache:"no-store"});
     const d = await r.json();
     const el = document.getElementById("list");
-    if(!d.peers.length){ el.innerHTML='<div class="idle">No peer_group configured &mdash; add calls to "peer_group" in config.json (e.g. ["N8ECI","N8DX"]).</div>'; return; }
+    if(!d.peers.length){ el.innerHTML='<div class="idle">No peers yet &mdash; add a call above.</div>'; return; }
     el.innerHTML = d.peers.map(function(p){
-      if(p.age==null) return '<div class="peer"><span class="dot"></span><span class="call">'+p.peer+'</span><span class="act idle">not heard yet</span></div>';
+      var rm = '<span class="rm" title="remove" data-call="'+p.peer+'">&times;</span>';
+      if(p.age==null) return '<div class="peer"><span class="dot"></span><span class="call">'+p.peer+'</span><span class="act idle">not heard yet</span>'+rm+'</div>';
       var live = p.age<180, stale = p.age>=180 ? "stale" : "";
       var who = (p.working==="CQ"||p.working==="QRZ")
         ? '<span class="cq">calling '+p.working+'</span>'
@@ -6445,10 +6494,13 @@ async function tick(){
                    (p.snr!=null?p.snr+" dB":""), fmtAge(p.age) ].filter(Boolean).join(" \\u00b7 ");
       return '<div class="peer '+(live?"live":"")+' '+stale+'"><span class="dot"></span>'
            + '<span class="call">'+p.peer+'</span>'
-           + '<span class="act">'+who+'<div class="meta">'+meta+'</div></span></div>';
+           + '<span class="act">'+who+'<div class="meta">'+meta+'</div></span>'+rm+'</div>';
     }).join("");
   }catch(e){}
 }
+document.getElementById("list").addEventListener("click", function(e){
+  if(e.target.classList.contains("rm")) rmPeer(e.target.getAttribute("data-call"));
+});
 tick(); setInterval(tick, 4000);
 </script></body></html>"""
 
@@ -6746,6 +6798,28 @@ class Handler(BaseHTTPRequestHandler):
                 res = {"ok": False, "error": f"unknown op {op!r}"}
             self._send(json.dumps(res).encode(), "application/json",
                        200 if res.get("ok") else 500)
+            return
+        if self.path == "/api/peers":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 4096:
+                self._send(json.dumps({"ok": False, "error": "bad length"}).encode(),
+                           "application/json", 400)
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except Exception as e:
+                self._send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}).encode(),
+                           "application/json", 400)
+                return
+            op = body.get("op")
+            if op == "add":
+                res = _add_peer(body.get("call"))
+            elif op == "remove":
+                res = _remove_peer(body.get("call"))
+            else:
+                res = {"ok": False, "error": f"unknown op {op!r}"}
+            self._send(json.dumps(res).encode(), "application/json",
+                       200 if res.get("ok") else 400)
             return
         if self.path in ("/api/sync/qrz", "/api/sync/lotw"):
             self._handle_sync("qrz" if self.path.endswith("qrz") else "lotw")
