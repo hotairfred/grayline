@@ -9,6 +9,12 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **Click-to-sort Live-view columns.** Click any column header to sort the spot
+  table by it (Spotter mi, dB, Age, Callsign, Grid, Band, Freq, …); click again
+  to flip ascending/descending, shown by a ▲/▼ on the active column. Sort by
+  **Spotter mi** to snap your locals to the top — handy now that peer-spots share
+  the view. "Calling me" always stays pinned at the very top, and blank ("-")
+  values sort last. The choice persists across the 5-second refresh.
 - **Peer activity page (`/peers`) — see what your crew is working.** From your
   OWN WSJT-X decodes (no cooperation or Grayline install needed on their end —
   it's your RX), Grayline now tracks the transmissions of a configured

@@ -3385,6 +3385,8 @@ h1 { font-size: 1.1em; margin: 0 0 0.3em; color: #0f0; }
 table { border-collapse: collapse; width: 100%; font-size: 0.78em; font-variant-numeric: tabular-nums; }
 th, td { padding: 1px 6px; text-align: left; border-bottom: 1px dotted #1a1a1a; white-space: nowrap; }
 th { color: #ff0; font-weight: normal; font-size: 0.75em; background: #1a1a00; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: #fff; background: #2a2a00; }
 /* GT-style call status colors. Apply to <td> directly so cell heights stay even. */
 .dx { font-weight: 600; }
 .dx.new { color: #f0f; }              /* magenta — never worked */
@@ -4779,6 +4781,46 @@ document.getElementById("settings_reset_scopes").addEventListener("click", () =>
   refresh();
 });
 
+// ---- Live-view column sort: click a header to sort by it; click again to flip
+// direction. Persists across the 5s poll. "Calling me" always pins to the top,
+// and null / "-" values sort last regardless of direction. ----
+let spotSort = { col: null, dir: 1 };
+const SPOT_SORT_KEYS = {
+  call:    s => s.dx_call || "",
+  dxcc:    s => s.country || "",
+  cont:    s => s.continent || "",
+  grid:    s => s.grid || "",
+  beam:    s => s.bearing,
+  band:    s => bandIdx(s.band),
+  mode:    s => s.mode || "",
+  freq:    s => s.freq_khz,
+  snr:     s => s.snr,
+  spotter: s => s.spotter || "",
+  dist:    s => s.distance_mi,
+  age:     s => s.ts,
+};
+function spotCmp(x, y) {
+  if (!!x.calling_me !== !!y.calling_me) return x.calling_me ? -1 : 1;
+  const k = SPOT_SORT_KEYS[spotSort.col];
+  if (!k) {                                   // default: band then freq
+    const bd = bandIdx(x.band) - bandIdx(y.band);
+    return bd !== 0 ? bd : x.freq_khz - y.freq_khz;
+  }
+  let a = k(x), b = k(y);
+  const an = a === null || a === undefined, bn = b === null || b === undefined;
+  if (an && bn) return 0;
+  if (an) return 1;                           // nulls always last
+  if (bn) return -1;
+  const c = (typeof a === "string") ? a.localeCompare(b) : a - b;
+  return c * spotSort.dir;
+}
+function setSpotSort(col) {
+  if (spotSort.col === col) spotSort.dir = -spotSort.dir;
+  else { spotSort.col = col; spotSort.dir = 1; }
+  spotsFreezeUntil = 0;                        // an explicit click applies now
+  refresh();
+}
+
 async function refresh() {
   let data;
   try {
@@ -4950,14 +4992,9 @@ async function refresh() {
       allRows.push(...byBand[activeBand][m]);
     }
   }
-  // Sort: anyone calling ME floats to the very top (time-critical — I want to
-  // click them this cycle), then band order, then freq within band.
-  allRows.sort((x, y) => {
-    if (!!x.calling_me !== !!y.calling_me) return x.calling_me ? -1 : 1;
-    const bd = bandIdx(x.band) - bandIdx(y.band);
-    if (bd !== 0) return bd;
-    return x.freq_khz - y.freq_khz;
-  });
+  // Sort: "calling me" pins to the top (handled in spotCmp), then the active
+  // column sort — default is band then freq; click a header to change it.
+  allRows.sort(spotCmp);
 
   if (allRows.length === 0) {
     html = (activeBand === "*")
@@ -4965,10 +5002,14 @@ async function refresh() {
       : `<div class="empty">No current spots on ${escapeHTML(activeBand)} &mdash; holding this band; they'll show here the moment they arrive.</div>`;
   } else {
     const showBandCol = (activeBand === "*");
+    const _arrow = c => spotSort.col === c ? (spotSort.dir > 0 ? " \\u25B2" : " \\u25BC") : "";
+    const _th = (label, col) => col
+      ? `<th class="sortable" onclick="setSpotSort('${col}')">${label}${_arrow(col)}</th>`
+      : `<th>${label}</th>`;
     let table = '<table><tr>';
-    table += '<th>Callsign</th><th>DXCC</th><th>Cont</th><th>Grid</th><th>Beam</th>';
-    if (showBandCol) table += '<th>Band</th>';
-    table += '<th>Mode</th><th>Award</th><th>Freq</th><th>dB</th><th>Spotter</th><th>Spotter mi</th><th>Age</th></tr>';
+    table += _th('Callsign','call') + _th('DXCC','dxcc') + _th('Cont','cont') + _th('Grid','grid') + _th('Beam','beam');
+    if (showBandCol) table += _th('Band','band');
+    table += _th('Mode','mode') + _th('Award',null) + _th('Freq','freq') + _th('dB','snr') + _th('Spotter','spotter') + _th('Spotter mi','dist') + _th('Age','age') + '</tr>';
     for (const s of allRows) {
       const age = Math.floor(now - s.ts);
       let snrCell = "";
