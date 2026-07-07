@@ -78,11 +78,12 @@ def _encode_qdatetime(year, month, day, hour=0, minute=0, second=0):
     return buf
 
 
-def _header(msg_type, client_id):
-    """Build the common WSJT-X UDP message header."""
+def _header(msg_type, client_id, schema=WSJTX_SCHEMA):
+    """Build the common WSJT-X UDP message header. schema overridable — Configure
+    (type 15) is a schema-3-era message and won't be honored at schema 2."""
     buf = b''
     buf += _encode_quint32(WSJTX_MAGIC)
-    buf += _encode_quint32(WSJTX_SCHEMA)
+    buf += _encode_quint32(schema)
     buf += _encode_quint32(msg_type)
     buf += _encode_utf8_string(client_id)
     return buf
@@ -219,6 +220,29 @@ def reply(client_id="GRAYLINE", time_ms=0, snr=-15, delta_time=0.0,
             + _encode_bool(low_confidence)
             + _encode_quint8(modifiers))
     return _header(4, client_id) + body
+
+
+def configure(client_id="GRAYLINE", mode="", freq_tolerance=0xFFFFFFFF,
+              submode="", fast_mode=False, tr_period=0xFFFFFFFF,
+              rx_df=0xFFFFFFFF, dx_call="", dx_grid="", generate_messages=True):
+    """Encode a Configure message (type 15).
+
+    Unlike reply(), this preloads a DX station into WSJT-X WITHOUT needing a
+    local decode: set dx_call + dx_grid and generate_messages=True, and WSJT-X
+    stages the call and builds the standard Tx1-Tx6 sequence — ready to pounce
+    the moment the signal arrives. Fields left "" or at 0xFFFFFFFF mean "leave
+    unchanged," so only DX call/grid + message generation are touched. Needs a
+    schema-3 header (Configure didn't exist at schema 2)."""
+    body = (_encode_utf8_string(mode)
+            + _encode_quint32(freq_tolerance)
+            + _encode_utf8_string(submode)
+            + _encode_bool(fast_mode)
+            + _encode_quint32(tr_period)
+            + _encode_quint32(rx_df)
+            + _encode_utf8_string(dx_call)
+            + _encode_utf8_string(dx_grid)
+            + _encode_bool(generate_messages))
+    return _header(15, client_id, schema=3) + body
 
 
 def current_time_ms():

@@ -6788,6 +6788,35 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps({"peers": _pa}).encode(), "application/json")
         elif self.path == "/api/rotor":
             self._send(json.dumps(_rotor_status()).encode(), "application/json")
+        elif self.path.startswith("/api/wsjtx_preload"):
+            # TEST: push a Configure (type 15) to WSJT-X to preload a call+grid and
+            # generate the standard Tx1-6 messages WITHOUT a local decode. Confirm
+            # it works before wiring to the peer-spot click. Usage:
+            #   /api/wsjtx_preload?call=W1ABC&grid=FN31
+            from urllib.parse import urlparse, parse_qs
+            import wsjtx_udp, socket
+            _q = parse_qs(urlparse(self.path).query)
+            _call = (_q.get("call", [""])[0] or "").strip().upper()
+            _grid = (_q.get("grid", [""])[0] or "").strip().upper()
+            with _wsjtx_state_lock:
+                _st = next((dict(s) for s in _wsjtx_state.values() if s.get("source_addr")), None)
+            if not _call:
+                _res = {"ok": False, "error": "need ?call=CALL[&grid=GRID]"}
+            elif not _st:
+                _res = {"ok": False, "error": "no WSJT-X client connected (source_addr unknown)"}
+            else:
+                try:
+                    _pkt = wsjtx_udp.configure(client_id=_st["client_id"], dx_call=_call,
+                                               dx_grid=_grid, generate_messages=True)
+                    _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    _s.sendto(_pkt, _st["source_addr"]); _s.close()
+                    _res = {"ok": True, "call": _call, "grid": _grid,
+                            "client": _st["client_id"], "sent_to": list(_st["source_addr"])}
+                    log.info("wsjtx_preload TEST: Configure %s/%s -> %s (client %s)",
+                             _call, _grid, _st["source_addr"], _st["client_id"])
+                except Exception as _e:
+                    _res = {"ok": False, "error": f"send failed: {_e}"}
+            self._send(json.dumps(_res).encode(), "application/json")
         elif self.path == "/api/radar":
             # Compact PPI-scope feed for the /rotor radar overlay: one tiny record
             # per spot that has a bearing (no grid -> no bearing -> can't plot).
@@ -7097,6 +7126,33 @@ class Handler(BaseHTTPRequestHandler):
             cache_key = _spot_dedup_key(spot_band, mode_in, freq_khz, dx_call)
             with _lock:
                 cached = _cache.get(cache_key)
+
+            # Not locally decoded (a peer-spot, or a cluster spot we can't hear):
+            # a Reply can't match a decode we never had, so PRELOAD it via Configure
+            # instead — set DxCall + DX grid and generate the standard messages, so
+            # the operator hits Enable TX the instant the signal arrives. "Stage now,
+            # pounce when it opens." (The Reply path below handles our OWN live decodes.)
+            if not (cached and cached.get("source") == "WSJTX-LOCAL"):
+                import wsjtx_udp, socket
+                dx_grid = (cached.get("grid") if cached else "") or ""
+                try:
+                    pkt = wsjtx_udp.configure(client_id=state["client_id"],
+                                              dx_call=dx_call, dx_grid=dx_grid,
+                                              generate_messages=True)
+                    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sk.sendto(pkt, state["source_addr"]); sk.close()
+                    results["ok"] = True
+                    results["message"] = (f"WSJT-X preloaded {dx_call} "
+                                          f"({dx_grid or 'no grid'}) via Configure — staged, no "
+                                          f"decode needed (src="
+                                          f"{cached.get('source','?') if cached else 'no-cache'})")
+                except Exception as e:
+                    results["message"] = f"WSJT-X preload failed: {e}"
+                    log.warning("preload %s: Configure FAILED: %r (client=%s addr=%s)",
+                                dx_call, e, state.get("client_id"), state.get("source_addr"))
+                self._send(json.dumps(results).encode(), "application/json")
+                return
+
             if cached and cached.get("source") == "WSJTX-LOCAL":
                 msg_text = cached.get("comment") or f"CQ {dx_call}"
                 spot_snr = cached.get("snr")

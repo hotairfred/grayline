@@ -9,6 +9,14 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **Click-to-preload a station you can't hear yet (WSJT-X Configure).** Clicking
+  a spot WSJT-X hasn't locally decoded — a peer-spot, or any cluster spot beyond
+  your own ears — now PRELOADS it into WSJT-X via a Configure (type 15) message:
+  sets DxCall + DX grid and generates the standard Tx1–6 sequence, no decode
+  required. You're staged to hit Enable TX the instant the opening reaches you —
+  "stage now, pounce when it opens." Clicking your own live decodes still uses
+  Reply (tunes to the decode) as before. (`wsjtx_udp.configure()`; `_header`
+  gained a schema override since Configure needs schema 3.)
 - **Click-to-sort Live-view columns.** Click any column header to sort the spot
   table by it (Spotter mi, dB, Age, Callsign, Grid, Band, Freq, …); click again
   to flip ascending/descending, shown by a ▲/▼ on the active column. Sort by
