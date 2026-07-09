@@ -697,6 +697,10 @@ def _wsjtx_state_update(client_id: str, parsed: dict, source_addr: tuple):
             "tx_df": parsed.get("tx_df", 0) or 0,
             "de_call": parsed.get("de_call", "") or "",
             "de_grid": parsed.get("de_grid", "") or "",
+            "dx_call": parsed.get("dx_call", "") or "",     # who WE're working right now
+            "dx_grid": parsed.get("dx_grid", "") or "",
+            "report": parsed.get("report", "") or "",
+            "tx_message": parsed.get("tx_message", "") or "",  # the exact text we're sending
             "tx_enabled": parsed.get("tx_enabled", False),
             "transmitting": parsed.get("transmitting", False),
             "decoding": parsed.get("decoding", False),
@@ -749,6 +753,133 @@ def _wsjtx_state_for_band(band: str, freq_khz: float | None = None) -> dict | No
         if in_window:
             return max(in_window, key=lambda s: s["ts"])
     return max(matches, key=lambda s: s["ts"])
+
+
+def _wsjtx_status_snapshot() -> dict | None:
+    """Compact view of the latest WSJT-X Status, for the live-view header readout:
+    what we're sending, whether Tx is armed/keyed, who we're working, the dial."""
+    st = _wsjtx_state_get_latest()
+    if not st:
+        return None
+    return {
+        "tx_enabled": bool(st.get("tx_enabled")),
+        "transmitting": bool(st.get("transmitting")),
+        "tx_message": st.get("tx_message", "") or "",
+        "tx_df": st.get("tx_df", 0) or 0,
+        "rx_df": st.get("rx_df", 0) or 0,
+        "dx_call": st.get("dx_call", "") or "",
+        "dx_grid": st.get("dx_grid", "") or "",
+        "de_call": st.get("de_call", "") or "",
+        "dial_khz": round((st.get("dial_freq_hz", 0) or 0) / 1000.0, 1),
+        "mode": st.get("mode", "") or "",
+    }
+
+
+# ── Rolling raw-decode log (per-station QSO threads) ─────────────────────────
+# Grayline already ingests every WSJT-X Decode. Here we retain the raw message
+# text in a short rolling window so the live-view "explode-down" can show a
+# station's recent thread (who they're calling, where they are in a QSO) —
+# reconstructed by parsing the FT8 message grammar, no extra WSJT-X hooks.
+_recent_decodes_lock = threading.Lock()
+_recent_decodes: list = []            # dicts: ts, time_ms, snr, df, rf_khz, band, msg, client_id
+RECENT_DECODE_TTL = 360               # keep ~6 min of traffic
+RECENT_DECODE_MAX = 600               # hard cap on buffer length
+
+def _record_recent_decode(parsed: dict, rf_khz: float, band: str):
+    """Retain a decode's raw message for per-station thread reconstruction. Called
+    for EVERY decode (reports/RR73/73 included), before the spottable filter."""
+    msg = (parsed.get("message") or "").strip()
+    if not msg:
+        return
+    entry = {
+        "ts": time.time(),
+        "time_ms": parsed.get("time_ms", 0) or 0,   # ms since 00:00 UTC — the decode's timeslot
+        "snr": parsed.get("snr"),
+        "dt": parsed.get("delta_time", 0.0) or 0.0,  # DT (audio sync offset, seconds)
+        "df": parsed.get("delta_freq", 0) or 0,
+        "rf_khz": rf_khz,
+        "band": band,
+        "msg": msg,
+        "client_id": parsed.get("client_id") or "",
+    }
+    with _recent_decodes_lock:
+        _recent_decodes.append(entry)
+        cut = entry["ts"] - RECENT_DECODE_TTL
+        while _recent_decodes and (_recent_decodes[0]["ts"] < cut
+                                   or len(_recent_decodes) > RECENT_DECODE_MAX):
+            _recent_decodes.pop(0)
+
+
+def _infer_qso_state(call_u: str, involved: list) -> tuple[str, str]:
+    """Infer where `call_u` is in a QSO from the most recent message it sent.
+    Returns (state_key, human_detail). state_key is a CSS-friendly slug."""
+    # Most recent message where call_u is the TRANSMITTER (2nd token), else any.
+    tx_msgs = []
+    for d in involved:
+        parts = d["msg"].split()
+        up = [p.upper() for p in parts]
+        if up and up[0] == "CQ":
+            # CQ [PREFIX] <call> — transmitter is the call after CQ/prefix
+            idx = 2 if (len(up) >= 2 and up[1] in _CQ_PREFIX_WORDS) else 1
+            if len(up) > idx and up[idx] == call_u:
+                tx_msgs.append((d, parts, up, "cq"))
+        elif len(up) >= 2 and up[1] == call_u:
+            tx_msgs.append((d, parts, up, "directed"))
+    if not tx_msgs:
+        return "heard", "Heard on band"
+    d, parts, up, kind = tx_msgs[-1]
+    if kind == "cq":
+        return "cq", "Calling CQ"
+    callee = up[0]
+    token = up[2] if len(up) >= 3 else ""
+    who = callee if callee != "CQ" else ""
+    if token in ("RR73", "RRR", "73"):
+        return "finishing", f"Wrapping up with {who} ({token})".strip()
+    if token.startswith("R") and token[1:].lstrip("+-").isdigit():
+        return "roger", f"Working {who} — sent {token}".strip()
+    if len(parts) >= 3 and _is_grid(parts[2]):
+        return "answering", f"Answering {who} (grid)".strip()
+    if token.lstrip("+-").isdigit():
+        return "report", f"Working {who} — sent report {token}".strip()
+    return "working", (f"Working {who}".strip() or "In a QSO")
+
+
+def _station_thread(call: str, limit: int = 10) -> dict:
+    """Recent decode thread + inferred QSO state for a callsign, for the
+    live-view explode-down. `thread` is chronological (oldest→newest)."""
+    call_u = (call or "").strip().upper()
+    if not call_u:
+        return {"call": call, "thread": [], "state": "", "detail": ""}
+    cutoff = time.time() - RECENT_DECODE_TTL
+    with _recent_decodes_lock:
+        snap = [d for d in _recent_decodes if d["ts"] >= cutoff]
+    involved = [d for d in snap if call_u in d["msg"].upper().split()]
+    involved.sort(key=lambda d: (d["time_ms"], d["ts"]))
+    state, detail = _infer_qso_state(call_u, involved)
+    me = (CALLSIGN or "").upper()
+    thread = []
+    for d in involved[-limit:]:
+        up = d["msg"].upper().split()
+        # transmitter: 2nd token for directed msgs; the CQ-call for a CQ
+        if up and up[0] == "CQ":
+            idx = 2 if (len(up) >= 2 and up[1] in _CQ_PREFIX_WORDS) else 1
+            txr = up[idx] if len(up) > idx else ""
+        else:
+            txr = up[1] if len(up) >= 2 else ""
+        # Time from the decode's own timeslot (time_ms since 00:00 UTC), so it's
+        # second-accurate to the FT8 slot (:00/:15/:30/:45) like WSJT-X — not the
+        # slightly-later moment Grayline ingested it. Fall back to ingest ts if absent.
+        tms = d.get("time_ms") or 0
+        if tms:
+            hh, rem = divmod(tms // 1000, 3600); mm, ss = divmod(rem, 60)
+            hms = "%02d:%02d:%02d" % (hh % 24, mm, ss)
+        else:
+            hms = time.strftime("%H:%M:%S", time.gmtime(d["ts"]))
+        thread.append({
+            "hms": hms, "snr": d["snr"], "dt": d.get("dt", 0.0),
+            "df": d["df"], "msg": d["msg"], "mine": bool(me and txr == me),
+        })
+    return {"call": call_u, "thread": thread, "state": state, "detail": detail}
 
 
 # ── Clear-TX-frequency picker ───────────────────────────────────────────────
@@ -848,6 +979,8 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
 
     # Feed the clear-TX-frequency picker: every decode's audio slot, spottable or not.
     _record_decode_offset(delta_freq, parsed.get("snr"), parsed.get("mode", ""))
+    # Retain the raw message for per-station QSO threads (reports/RR73 included).
+    _record_recent_decode(parsed, freq_khz, dxcluster.freq_to_band(freq_khz))
 
     message = parsed.get("message", "") or ""
     # Peer-group activity: capture the peer's TX regardless of whether it's a
@@ -3955,6 +4088,42 @@ details[open] .gear-icon { color: #fff; }
   .cleartx { margin-left: 1em; font-size: 0.85em; color: #7fd7c0; opacity: 0.9; white-space: nowrap; }
   .cleartx.btn { cursor: pointer; background: #114433; border: 1px solid #22aa66; border-radius: 4px; padding: 2px 9px; color: #9fe6cc; }
   .cleartx.btn:hover { background: #1c9955; color: #012; }
+  /* WSJT-X live TX-state readout */
+  .wsjtxstat { margin-left: 0.8em; font-size: 0.82em; font-family: monospace; padding: 2px 8px; border-radius: 4px; white-space: nowrap; vertical-align: middle; }
+  .wsjtxstat:empty { display: none; }
+  .wsjtxstat.idle { color: #8792a0; border: 1px solid #2a3340; }
+  .wsjtxstat.armed { color: #9fe6cc; border: 1px solid #22aa66; }
+  .wsjtxstat.tx { color: #fff; background: #a11; border: 1px solid #f44; animation: txpulse 1s infinite; }
+  @keyframes txpulse { 50% { background: #d22; } }
+  /* Station explode-down */
+  button.rowexpand { background: none; border: none; color: #5f8a72; cursor: pointer; font-size: 0.95em; padding: 0 5px; line-height: 1; }
+  button.rowexpand:hover { color: #9fe6cc; }
+  button.rowexpand.open { color: #ffd24a; }
+  td.exp { width: 1.4em; text-align: center; padding: 0; }
+  tr.detail-row > td { background: #0a1410; border-bottom: 2px solid #1c3a2c; padding: 8px 14px; }
+  .stn-detail { font-size: 0.9em; }
+  .stn-state { display: inline-block; margin-bottom: 7px; padding: 2px 10px; border-radius: 10px; font-weight: bold; }
+  .stn-state.cq { background: #123048; color: #7cf; }
+  .stn-state.answering, .stn-state.report, .stn-state.roger, .stn-state.working { background: #143a24; color: #7f7; }
+  .stn-state.finishing { background: #3a2a12; color: #fc7; }
+  .stn-state.heard { background: #232323; color: #999; }
+  /* Plain inline-block columns — NOT a table, so it can't inherit the global
+     table{width:100%} and can't couple to / stretch the main live-view table. */
+  .stn-thread { display: inline-block; font-size: 0.9em; margin: 4px 0 2px; }
+  .stn-thread .ln { white-space: nowrap; line-height: 1.5; }
+  .stn-thread .ln > span { display: inline-block; margin-right: 0.6em; vertical-align: baseline; }
+  .stn-thread .c-t  { width: 4.6em; color: #6a90a8; }
+  .stn-thread .c-db { width: 2.3em; text-align: right; font-variant-numeric: tabular-nums; color: #8fa8b4; }
+  .stn-thread .c-dt { width: 2.5em; text-align: right; font-variant-numeric: tabular-nums; color: #8fa8b4; }
+  .stn-thread .c-fq { width: 2.7em; text-align: right; font-variant-numeric: tabular-nums; color: #8fa8b4; }
+  .stn-thread .c-m  { margin-right: 0; color: #d3e6f0; }
+  .stn-thread .hdr > span { color: #56707e; border-bottom: 1px solid #1c3a2c; }
+  .stn-thread .mine > span { color: #ffd24a; font-weight: bold; }
+  .stn-mine { margin-top: 7px; padding-top: 6px; border-top: 1px dashed #244; color: #ffd24a; }
+  .stn-empty { color: #667; }
+  /* Spots table sized to content (not the global table{width:100%}) via an inline
+     style="width:max-content" on the element — 'auto' didn't hold, max-content does.
+     Black space to the right on wide windows; max-width:100% keeps it on a phone. */
   .band-activity-link { display: inline-block; margin: 0.7em 0 0 !important; padding: 0.4em 0; }
   .legend { flex-wrap: wrap; gap: 0.5em 1em; margin-top: 0.6em; }
   /* score cards: single full-width column */
@@ -3997,6 +4166,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
 <div class="header-row">
   <h1>Grayline — live from GoCluster</h1>
   <span id="cleartx" class="cleartx" title="Clearest TX audio slot from live decodes"></span>
+  <span id="wsjtxstat" class="wsjtxstat" title="WSJT-X TX state — what you're sending right now"></span>
   <details class="gear-wrap">
     <summary class="gear-icon">⚙</summary>
     <div class="gear-panel">
@@ -4937,6 +5107,22 @@ async function refresh() {
         el.onclick = null;
       }
     } }
+  // WSJT-X live TX-state readout: what you're sending right now (or armed / idle).
+  { const el = document.getElementById("wsjtxstat"); const w = data.wsjtx;
+    if (el) {
+      if (!w) { el.className = "wsjtxstat"; el.innerHTML = ""; }
+      else if (w.transmitting) {
+        el.className = "wsjtxstat tx";
+        el.innerHTML = "▲ TX " + (w.tx_df ? w.tx_df + "Hz " : "") + escapeHTML(w.tx_message || "(sending)");
+      } else if (w.tx_enabled) {
+        el.className = "wsjtxstat armed";
+        el.innerHTML = "◦ armed" + (w.dx_call ? " → " + escapeHTML(w.dx_call) : "")
+          + (w.tx_message ? " : " + escapeHTML(w.tx_message) : "");
+      } else {
+        el.className = "wsjtxstat idle";
+        el.innerHTML = "TX idle" + (w.dx_call ? " (last: " + escapeHTML(w.dx_call) + ")" : "");
+      }
+    } }
   // Worked-state changed server-side (QSO logged, LoTW/QRZ pull, N1MM mutation)?
   // Pull fresh scores so the FFMA/award scorecard tracks the liveview instead of
   // waiting on the 5-min timer. Skip the first poll — no baseline rev yet.
@@ -5112,7 +5298,8 @@ async function refresh() {
     const _th = (label, col) => col
       ? `<th class="sortable" onclick="setSpotSort('${col}')">${label}${_arrow(col)}</th>`
       : `<th>${label}</th>`;
-    let table = '<table><tr>';
+    let table = '<table class="spots-tbl" style="width:max-content;max-width:100%"><tr>';
+    table += '<th></th>';   // expand caret column
     table += _th('Callsign','call') + _th('DXCC','dxcc') + _th('Cont','cont') + _th('Grid','grid') + _th('Beam','beam');
     if (showBandCol) table += _th('Band','band');
     table += _th('Mode','mode') + _th('Award',null) + _th('Freq','freq') + _th('dB','snr') + _th('Spotter','spotter') + _th('Spotter mi','dist') + _th('Age','age') + '</tr>';
@@ -5161,7 +5348,9 @@ async function refresh() {
           ? `<button class="aim" data-az="${bz}" title="Rotate beam to ${bz}° (${escapeHTML(s.grid)})">${bz}°</button>`
           : `<span class="bearing">${bz}°</span>`;
       }
+      const _open = expandedCalls.has(s.dx_call);
       table += `<tr class="${rowClass} clickable" data-call="${escapeHTML(s.dx_call)}" data-freq="${s.freq_khz}" data-mode="${escapeHTML(s.mode)}" data-source="${escapeHTML(s.source||'')}" title="Click to tune WSJT-X / Flex to this signal">
+        <td class="exp"><button class="rowexpand${_open ? ' open' : ''}" data-call="${escapeHTML(s.dx_call)}" title="Show this station's QSO thread">${_open ? '▾' : '▸'}</button></td>
         <td class="dx ${callStatus}">${escapeHTML(s.dx_call)}${callTag}${heardEye(s)}${ffmaReworkBadge(s)}</td>
         <td class="${dxccCellClass}">${escapeHTML(s.country || "")}${rarityBadge(s)}${lotwBadge(s)}${cqTag(s)}</td>
         <td class="cont">${escapeHTML(s.continent || "")}</td>
@@ -5176,6 +5365,7 @@ async function refresh() {
         <td class="${distClass}">${distCell}</td>
         <td class="age">${fmtAge(age)}</td>
       </tr>`;
+      if (_open) table += `<tr class="detail-row" data-detail="${escapeHTML(s.dx_call)}"><td colspan="${13 + (showBandCol ? 1 : 0)}">${renderStationDetail(s.dx_call)}</td></tr>`;
     }
     table += '</table>';
     html = table;
@@ -5225,6 +5415,92 @@ var spotsFreezeUntil = 0;
   bc.addEventListener("mouseleave", () => setTimeout(refresh, 3100));
 })();
 
+// ============== Station explode-down (per-row QSO thread) ==============
+// Click the caret to expand a station's recent decode thread + inferred QSO
+// state. Open calls live in a Set that the table build re-injects every redraw,
+// so a thread stays LIVE as the QSO progresses. The click also patches the DOM
+// directly, so it responds instantly even while the table is frozen under the
+// pointer.
+var expandedCalls = new Set();
+var stationDetail = {};   // call -> last fetched detail payload
+
+function renderStationDetail(call) {
+  const d = stationDetail[call];
+  if (!d) return '<div class="stn-detail stn-empty">Loading ' + escapeHTML(call) + '…</div>';
+  let h = '<div class="stn-detail">';
+  if (!d.thread || !d.thread.length) {
+    h += '<div class="stn-empty">No recent decodes for ' + escapeHTML(call) + ' — band may be quiet.</div>';
+  } else {
+    // WSJT-X RX-window columns (TIME dB DT FREQ MESSAGE) as a CSS grid: aligns
+    // consistently across devices (unlike monospace, whose char width differs by
+    // platform), in Grayline's normal font, with tabular figures so the numbers
+    // still line up. Your own TX lines stay interleaved in their slot (highlighted).
+    // Inline styles on every cell so NO external stylesheet can override the
+    // column widths/display (the whole CSS-fight this feature went through).
+    // Container is inline-block → sizes to content, can't stretch the page.
+    const CELL = 'display:inline-block;margin-right:0.7em;vertical-align:baseline;';
+    const NUM = CELL + 'text-align:right;font-variant-numeric:tabular-nums;';
+    const thRow = (hms, db, dt, fq, msg, col) =>
+        '<div style="white-space:nowrap;line-height:1.5;' + col + '">'
+      + '<span style="' + CELL + 'width:4.6em">' + hms + '</span>'
+      + '<span style="' + NUM + 'width:2.4em">' + db + '</span>'
+      + '<span style="' + NUM + 'width:2.7em">' + dt + '</span>'
+      + '<span style="' + NUM + 'width:2.9em">' + fq + '</span>'
+      + '<span>' + msg + '</span></div>';
+    h += '<div style="display:inline-block;font-size:0.9em;margin:4px 0 2px">';
+    h += thRow('Time', 'dB', 'DT', 'Freq', 'Message', 'color:#56707e');
+    for (const ln of d.thread) {
+      const snr = (ln.snr === null || ln.snr === undefined) ? "" : ((ln.snr > 0 ? "+" : "") + ln.snr);
+      const dt = (ln.dt === null || ln.dt === undefined) ? "" : ln.dt.toFixed(1);
+      const col = ln.mine ? 'color:#ffd24a;font-weight:bold' : 'color:#cfe3ee';
+      h += thRow(escapeHTML(ln.hms), snr, dt, (ln.df || ""), escapeHTML(ln.msg), col);
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
+function fetchStationDetail(call) {
+  return fetch("/api/station?call=" + encodeURIComponent(call))
+    .then(r => r.json())
+    .then(d => {
+      stationDetail[call] = d;
+      const sel = 'tr.detail-row[data-detail="' + ((window.CSS && CSS.escape) ? CSS.escape(call) : call) + '"] > td';
+      const cell = document.querySelector(sel);
+      if (cell) cell.innerHTML = renderStationDetail(call);
+    })
+    .catch(e => console.warn("station detail fetch failed:", e));
+}
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button.rowexpand");
+  if (!btn) return;
+  ev.stopPropagation();
+  const call = btn.dataset.call;
+  if (!call) return;
+  const tr = btn.closest("tr");
+  const nextIsDetail = tr && tr.nextElementSibling && tr.nextElementSibling.classList.contains("detail-row");
+  if (expandedCalls.has(call)) {
+    expandedCalls.delete(call);
+    btn.classList.remove("open"); btn.textContent = "▸";
+    if (nextIsDetail) tr.nextElementSibling.remove();
+  } else {
+    expandedCalls.add(call);
+    btn.classList.add("open"); btn.textContent = "▾";
+    if (tr && !nextIsDetail) {
+      const dr = document.createElement("tr");
+      dr.className = "detail-row";
+      dr.setAttribute("data-detail", call);
+      dr.innerHTML = '<td colspan="' + tr.children.length + '">' + renderStationDetail(call) + '</td>';
+      tr.parentNode.insertBefore(dr, tr.nextSibling);
+    }
+    fetchStationDetail(call);
+  }
+});
+
+// Keep any open threads live — re-fetch their detail each tick.
+setInterval(() => { expandedCalls.forEach(fetchStationDetail); }, 5000);
+
 // Tune-to-spot fires on mousedown (not click): it triggers the instant you press,
 // so a micro-drag, a text-selection, or the table reflowing between press and
 // release can't swallow it. The old "click" needed a clean down+up on the exact
@@ -5233,6 +5509,7 @@ var spotsFreezeUntil = 0;
 document.addEventListener("mousedown", (ev) => {
   if (ev.button !== 0) return;                    // left button only
   if (ev.target.closest("button.aim")) return;    // the beam-aim button handles its own click
+  if (ev.target.closest("button.rowexpand")) return;  // the expand caret handles its own click
   const tr = ev.target.closest("tr.clickable");
   if (!tr) return;
   const call = tr.dataset.call;
@@ -6789,7 +7066,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         if encoding:
             self.send_header("Content-Encoding", encoding)
             self.send_header("Vary", "Accept-Encoding")
@@ -6818,7 +7097,21 @@ class Handler(BaseHTTPRequestHandler):
             _cthz, _ctinfo = _pick_clear_tx_freq()
             payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV,
                        "clear_tx_hz": _cthz, "clear_tx_reason": _ctinfo.get("reason", ""),
-                       "txhelper_on": bool(CONFIG.get("txhelper_host"))}
+                       "txhelper_on": bool(CONFIG.get("txhelper_host")),
+                       "wsjtx": _wsjtx_status_snapshot()}
+            self._send(json.dumps(payload).encode(), "application/json")
+        elif self.path.startswith("/api/station"):
+            # Per-station QSO thread + inferred state for the live-view explode-down.
+            from urllib.parse import urlparse, parse_qs
+            call = (parse_qs(urlparse(self.path).query).get("call") or [""])[0]
+            payload = _station_thread(call)
+            st = _wsjtx_status_snapshot()
+            if st and st.get("dx_call", "").upper() == payload.get("call", "").upper() and st.get("dx_call"):
+                # This station is who WE're working — attach our own side.
+                payload["mine"] = {
+                    "tx_message": st["tx_message"], "tx_enabled": st["tx_enabled"],
+                    "transmitting": st["transmitting"], "tx_df": st["tx_df"],
+                }
             self._send(json.dumps(payload).encode(), "application/json")
         elif self.path == "/active_bands":
             payload = active_bands_snapshot()
