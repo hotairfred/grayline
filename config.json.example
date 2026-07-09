@@ -25,6 +25,10 @@
   "peer_group": [],
   "wsjtx_forward_targets": [],
 
+  "txhelper_host": "",
+  "txhelper_port": 2299,
+  "txhelper_token": "gl-txhelper-7k2p",
+
   "n1mm_enabled": true,
   "n1mm_listen_port": 12060,
 

@@ -9,6 +9,14 @@ everything lives under `[Unreleased]` until the first tagged release.
 
 ### Added
 
+- **Clear-TX-frequency picker (one-tap clean-slot calling).** Grayline sees every
+  WSJT-X decode's audio offset, so it computes the clearest slice of the waterfall
+  (widest empty gap, or the weakest-SNR occupant to co-exist on) and can set your Tx
+  offset there. Shows as a **readout** in the Live-view header for everyone; becomes a
+  one-tap **Clear TX** button when the Windows session helper is configured
+  (`windows/grayline_txhelper.ps1`, UIAutomation — no WSJT-X rebuild). Human-triggered
+  only. `/api/pick_clear_tx`; `config.json` `txhelper_host/port/token`.
+
 - **Click-to-preload a station you can't hear yet (WSJT-X Configure).** Clicking
   a spot WSJT-X hasn't locally decoded — a peer-spot, or any cluster spot beyond
   your own ears — now PRELOADS it into WSJT-X via a Configure (type 15) message:

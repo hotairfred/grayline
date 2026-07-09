@@ -751,6 +751,80 @@ def _wsjtx_state_for_band(band: str, freq_khz: float | None = None) -> dict | No
     return max(matches, key=lambda s: s["ts"])
 
 
+# ── Clear-TX-frequency picker ───────────────────────────────────────────────
+# Grayline sees every WSJT-X decode's audio offset, so it holds the whole
+# waterfall as data. On operator request, pick the clearest slot to call on and
+# push it to WSJT-X's Tx offset via the session helper (grayline_txhelper.ps1 on
+# the workstation). Human-in-the-loop only — never fired autonomously.
+_decode_offsets_lock = threading.Lock()
+_decode_offsets: list = []            # (offset_hz, snr, width_hz, ts), last ~30 s
+DECODE_OFFSET_TTL = 30
+CLEAR_TX_MIN_HZ = 300
+CLEAR_TX_MAX_HZ = 2900
+
+def _record_decode_offset(offset, snr, glyph):
+    """Log a decode's occupied audio slot. Called for EVERY decode, spottable or
+    not — any signal occupies the waterfall."""
+    if not offset:
+        return
+    width = 90 if glyph == "+" else 50   # FT4 ~90 Hz wide, FT8 ~50 Hz
+    now = time.time()
+    with _decode_offsets_lock:
+        _decode_offsets.append((int(offset), snr if snr is not None else -30, width, now))
+        cut = now - DECODE_OFFSET_TTL
+        while _decode_offsets and _decode_offsets[0][3] < cut:
+            _decode_offsets.pop(0)
+
+def _pick_clear_tx_freq():
+    """Clearest TX audio slot from the last ~30 s of decodes: the widest empty gap
+    in the passband, or (band full) the weakest-SNR occupant to co-exist on.
+    Returns (hz, info_dict)."""
+    now = time.time()
+    with _decode_offsets_lock:
+        recent = [(o, s, w) for (o, s, w, ts) in _decode_offsets if now - ts <= DECODE_OFFSET_TTL]
+    if not recent:
+        return (CLEAR_TX_MIN_HZ + CLEAR_TX_MAX_HZ) // 2, {"reason": "band empty", "signals": 0}
+    occ = []
+    for o, s, w in recent:
+        lo = max(CLEAR_TX_MIN_HZ, o - w // 2); hi = min(CLEAR_TX_MAX_HZ, o + w // 2)
+        if lo < hi:
+            occ.append((lo, hi))
+    occ.sort()
+    merged = []
+    for lo, hi in occ:
+        if merged and lo <= merged[-1][1] + 10:          # +10 Hz guard between signals
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    gaps = []; prev = CLEAR_TX_MIN_HZ
+    for lo, hi in merged:
+        if lo - prev > 0:
+            gaps.append((prev, lo))
+        prev = max(prev, hi)
+    if CLEAR_TX_MAX_HZ - prev > 0:
+        gaps.append((prev, CLEAR_TX_MAX_HZ))
+    good = [(a, b) for (a, b) in gaps if b - a >= 70]     # room for our ~60 Hz signal
+    if good:
+        a, b = max(good, key=lambda g: g[1] - g[0])
+        return (a + b) // 2, {"reason": "clear gap", "gap": [a, b], "signals": len(recent)}
+    weakest = min(recent, key=lambda r: r[1])             # co-exist on the quietest neighbor
+    return int(weakest[0]), {"reason": "coexist on weakest", "snr": weakest[1], "signals": len(recent)}
+
+def _send_txhelper(cmd):
+    """Send a line command to grayline_txhelper.ps1 on the workstation; (ok, response)."""
+    host = CONFIG.get("txhelper_host", "")
+    if not host:
+        return False, "txhelper_host not configured"
+    import socket
+    try:
+        with socket.create_connection((host, int(CONFIG.get("txhelper_port", 2299))), timeout=4) as s:
+            s.sendall((cmd + " " + CONFIG.get("txhelper_token", "") + "\n").encode())
+            resp = s.recv(256).decode(errors="replace").strip()
+        return resp.startswith("OK"), resp
+    except Exception as e:
+        return False, f"txhelper unreachable: {e}"
+
+
 def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
     """Convert a WSJT-X Decode message into a DXSpot and feed it into add_spot()
     with cluster_name='WSJTX-LOCAL' so source-precedence dedup gives our local
@@ -771,6 +845,9 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
     delta_freq = parsed.get("delta_freq", 0) or 0
     rf_hz = dial_hz + delta_freq
     freq_khz = rf_hz / 1000.0
+
+    # Feed the clear-TX-frequency picker: every decode's audio slot, spottable or not.
+    _record_decode_offset(delta_freq, parsed.get("snr"), parsed.get("mode", ""))
 
     message = parsed.get("message", "") or ""
     # Peer-group activity: capture the peer's TX regardless of whether it's a
@@ -3875,6 +3952,9 @@ details[open] .gear-icon { color: #fff; }
   /* controls: stack the checkboxes (kill the inline margin-left) + bigger boxes */
   .controls label { display: block; margin: 0.7em 0 0 !important; line-height: 1.6; }
   .controls input[type="checkbox"] { transform: scale(1.3); margin-right: 0.5em; vertical-align: middle; }
+  .cleartx { margin-left: 1em; font-size: 0.85em; color: #7fd7c0; opacity: 0.9; white-space: nowrap; }
+  .cleartx.btn { cursor: pointer; background: #114433; border: 1px solid #22aa66; border-radius: 4px; padding: 2px 9px; color: #9fe6cc; }
+  .cleartx.btn:hover { background: #1c9955; color: #012; }
   .band-activity-link { display: inline-block; margin: 0.7em 0 0 !important; padding: 0.4em 0; }
   .legend { flex-wrap: wrap; gap: 0.5em 1em; margin-top: 0.6em; }
   /* score cards: single full-width column */
@@ -3916,6 +3996,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
 </head><body>
 <div class="header-row">
   <h1>Grayline — live from GoCluster</h1>
+  <span id="cleartx" class="cleartx" title="Clearest TX audio slot from live decodes"></span>
   <details class="gear-wrap">
     <summary class="gear-icon">⚙</summary>
     <div class="gear-panel">
@@ -4821,6 +4902,15 @@ function setSpotSort(col) {
   refresh();
 }
 
+async function setClearTx(){
+  const el = document.getElementById("cleartx");
+  el.innerHTML = "… setting";
+  try {
+    const r = await (await fetch("/api/pick_clear_tx", {cache:"no-store"})).json();
+    el.innerHTML = r.ok ? ("✓ TX → " + r.hz + " Hz") : ("✗ " + (r.helper || r.error || "failed"));
+  } catch(e){ el.innerHTML = "✗ " + e.message; }
+}
+
 async function refresh() {
   let data;
   try {
@@ -4831,6 +4921,22 @@ async function refresh() {
     return;
   }
   let spots = data.spots, now = data.now;
+  // Clearest-TX indicator: a readout for everyone; a one-tap set only if the helper's on.
+  { const el = document.getElementById("cleartx");
+    if (el) {
+      if (!data.clear_tx_hz) { el.innerHTML = ""; el.onclick = null; }
+      else if (data.txhelper_on) {
+        el.className = "cleartx btn";
+        el.innerHTML = "🎯 Clear TX " + data.clear_tx_hz + " Hz";
+        el.title = "Click to set your WSJT-X TX offset here (" + (data.clear_tx_reason||"") + ")";
+        el.onclick = setClearTx;
+      } else {
+        el.className = "cleartx";
+        el.innerHTML = "🎯 Clearest TX: " + data.clear_tx_hz + " Hz";
+        el.title = "Clearest slot to call on (" + (data.clear_tx_reason||"") + "). Install the helper to one-tap set it.";
+        el.onclick = null;
+      }
+    } }
   // Worked-state changed server-side (QSO logged, LoTW/QRZ pull, N1MM mutation)?
   // Pull fresh scores so the FFMA/award scorecard tracks the liveview instead of
   // waiting on the 5-min timer. Skip the first poll — no baseline rev yet.
@@ -6709,7 +6815,10 @@ class Handler(BaseHTTPRequestHandler):
             for s in snapshot():
                 pc = peer_copies.copies(s.get("dx_call", ""))
                 spots.append({**s, "peer_copies": pc} if pc else s)
-            payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV}
+            _cthz, _ctinfo = _pick_clear_tx_freq()
+            payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV,
+                       "clear_tx_hz": _cthz, "clear_tx_reason": _ctinfo.get("reason", ""),
+                       "txhelper_on": bool(CONFIG.get("txhelper_host"))}
             self._send(json.dumps(payload).encode(), "application/json")
         elif self.path == "/active_bands":
             payload = active_bands_snapshot()
@@ -6788,6 +6897,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(json.dumps({"peers": _pa}).encode(), "application/json")
         elif self.path == "/api/rotor":
             self._send(json.dumps(_rotor_status()).encode(), "application/json")
+        elif self.path.startswith("/api/pick_clear_tx"):
+            # Operator-triggered: pick the clearest TX audio slot from recent decodes
+            # and set it in WSJT-X via the session helper. Human-in-the-loop only.
+            if not CONFIG.get("txhelper_host"):
+                _r = {"ok": False, "error": "txhelper_host not set in config.json"}
+            else:
+                _hz, _info = _pick_clear_tx_freq()
+                _ok, _resp = _send_txhelper("SETTX %d" % _hz)
+                _r = {"ok": _ok, "hz": _hz, "info": _info, "helper": _resp}
+                log.info("pick_clear_tx: %d Hz (%s, %d sigs) -> %s",
+                         _hz, _info.get("reason"), _info.get("signals", 0), _resp)
+            self._send(json.dumps(_r).encode(), "application/json")
         elif self.path.startswith("/api/wsjtx_preload"):
             # TEST: push a Configure (type 15) to WSJT-X to preload a call+grid and
             # generate the standard Tx1-6 messages WITHOUT a local decode. Confirm
