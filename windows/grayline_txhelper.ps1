@@ -3,10 +3,12 @@
 # on request from Grayline, via UIAutomation. Line protocol over TCP:
 #   "SETTX <hz> <token>"   -> sets Tx offset (200..5000), replies "OK settx=<hz>"
 #   "GETTX <token>"        -> replies "OK gettx=<hz>"
-# Lifecycle: self-exits when WSJT-X exits (so no stale copy lingers in a dead/old
-# session after an RDP session shift). Launch it alongside WSJT-X (restart-wsjtx.ps1).
+# Targets the WSJT-X instance whose window title contains $RIG (default SliceA), so
+# multiple --rig-name slices running at once don't confuse it. Self-exits when no
+# WSJT-X remains (no stale copy in a dead/old session after an RDP session shift).
 $PORT  = 2299
 $TOKEN = 'gl-txhelper-7k2p'   # shared secret with Grayline (change in both places)
+$RIG   = 'SliceA'             # target this rig-name's window (title "WSJT-X - SliceA ...")
 $TXID  = 'MainWindow.centralWidget.lower_panel_widget.controls_stack_widget.page.QSO_controls_widget.TxFreqSpinBox'
 $LOG   = "$env:USERPROFILE\txhelper.log"
 
@@ -17,13 +19,22 @@ $TS = [System.Windows.Automation.TreeScope]
 
 function Log($m) { ("{0}  {1}" -f (Get-Date -Format o), $m) | Out-File $LOG -Append -Encoding UTF8 }
 function Get-TxSpin {
-  $p = Get-Process wsjtx -ErrorAction SilentlyContinue
-  if (-not $p) { return $null }
-  $wc = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $p.Id)
-  $win = $AE::RootElement.FindFirst($TS::Children, $wc)
-  if (-not $win) { return $null }
+  # Find the SliceA WSJT-X window among possibly-multiple instances; fall back to
+  # whatever single instance exists if the title doesn't match.
+  $procs = @(Get-Process wsjtx -ErrorAction SilentlyContinue)
+  if ($procs.Count -eq 0) { return $null }
+  $target = $null
+  foreach ($p in $procs) {
+    $wc = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $p.Id)
+    $win = $AE::RootElement.FindFirst($TS::Children, $wc)
+    if ($win) {
+      if ($win.Current.Name -like "*$RIG*") { $target = $win; break }
+      if (-not $target) { $target = $win }
+    }
+  }
+  if (-not $target) { return $null }
   $ic = New-Object System.Windows.Automation.PropertyCondition($AE::AutomationIdProperty, $TXID)
-  return $win.FindFirst($TS::Descendants, $ic)
+  return $target.FindFirst($TS::Descendants, $ic)
 }
 function Rvp($spin) { $spin.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern) }
 function Do-Set($hz) {
@@ -38,10 +49,9 @@ function Do-Get {
 
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $PORT)
 $listener.Start()
-Log "listening on :$PORT  (session $((Get-Process -Id $PID).SessionId))"
+Log "listening on :$PORT  (session $((Get-Process -Id $PID).SessionId), rig $RIG)"
 $sawWsjtx = $false
 while ($true) {
-  # Couple lifecycle to WSJT-X: once we've seen it, exit when it goes away.
   if (Get-Process wsjtx -ErrorAction SilentlyContinue) { $sawWsjtx = $true }
   elseif ($sawWsjtx) { Log 'wsjtx exited -> helper exiting'; break }
   if (-not $listener.Pending()) { Start-Sleep -Milliseconds 400; continue }
