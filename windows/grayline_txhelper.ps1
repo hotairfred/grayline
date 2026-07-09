@@ -19,22 +19,20 @@ $TS = [System.Windows.Automation.TreeScope]
 
 function Log($m) { ("{0}  {1}" -f (Get-Date -Format o), $m) | Out-File $LOG -Append -Encoding UTF8 }
 function Get-TxSpin {
-  # Find the SliceA WSJT-X window among possibly-multiple instances; fall back to
-  # whatever single instance exists if the title doesn't match.
-  $procs = @(Get-Process wsjtx -ErrorAction SilentlyContinue)
-  if ($procs.Count -eq 0) { return $null }
-  $target = $null
-  foreach ($p in $procs) {
+  # WSJT-X opens SEVERAL top-level windows per instance (Main, Wide Graph, Fast/Echo
+  # Graph, ...) and their titles ALL contain the rig name -- so FindFirst can grab the
+  # Wide Graph and miss the control (the intermittency). Enumerate ALL of the target
+  # rig's windows and return the one that actually contains TxFreqSpinBox (the main one).
+  $ic = New-Object System.Windows.Automation.PropertyCondition($AE::AutomationIdProperty, $TXID)
+  foreach ($p in @(Get-Process wsjtx -ErrorAction SilentlyContinue)) {
     $wc = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $p.Id)
-    $win = $AE::RootElement.FindFirst($TS::Children, $wc)
-    if ($win) {
-      if ($win.Current.Name -like "*$RIG*") { $target = $win; break }
-      if (-not $target) { $target = $win }
+    foreach ($win in $AE::RootElement.FindAll($TS::Children, $wc)) {
+      if ($win.Current.Name -notlike "*$RIG*") { continue }
+      $spin = $win.FindFirst($TS::Descendants, $ic)
+      if ($spin) { return $spin }
     }
   }
-  if (-not $target) { return $null }
-  $ic = New-Object System.Windows.Automation.PropertyCondition($AE::AutomationIdProperty, $TXID)
-  return $target.FindFirst($TS::Descendants, $ic)
+  return $null
 }
 function Rvp($spin) { $spin.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern) }
 function Do-Set($hz) {
