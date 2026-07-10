@@ -6709,6 +6709,10 @@ _ROTOR_PAGE = """<!doctype html>
   button:hover { background:#242424; border-color:#3a3a3a; }
   button:active { background:#2f2f2f; }
   .compass .c { color:#444; background:transparent; border:none; cursor:default; }
+  .compass .deg { display:block; font-size:.6em; font-weight:600; color:#777; margin-top:.16em; letter-spacing:.04em; }
+  .gear { color:#666; cursor:pointer; user-select:none; }
+  .gear:hover { color:#3fc7e0; }
+  .gear.on { color:#e0a83c; }
   .gobar { display:flex; gap:.5em; margin-bottom:.9em; }
   .gobar input { flex:1; font-size:1.15em; font-family:inherit; background:#141414; color:#fff;
                  border:1px solid #2a2a2a; border-radius:7px; padding:.6em .7em; text-align:center; }
@@ -6722,7 +6726,7 @@ _ROTOR_PAGE = """<!doctype html>
 <body>
 <div class="wrap">
   <h1>ROTOR</h1>
-  <div class="sub"><a class="back" href="/">&larr; spots</a> &middot; HD-73 &middot; south stop @ 180&deg; (crossing south = long way)</div>
+  <div class="sub"><a class="back" href="/">&larr; spots</a> &middot; <span id="southnote">HD-73 &middot; south stop @ 180&deg; (crossing south = long way)</span> &middot; <span class="gear" id="gear" title="Rotator type">&#9881;</span></div>
   <div class="read">
     <div class="az"><span id="az">--</span><span class="d">&deg;</span></div>
     <div class="tgt" id="tgt">&nbsp;</div>
@@ -6752,11 +6756,7 @@ _ROTOR_PAGE = """<!doctype html>
       <button data-loc="500">500</button><span class="lbl" style="width:auto;flex:0 0 auto">mi</span></div>
   </div>
   <div class="legend"><b>&#9679; needed</b> &middot; <span class="lg-rw">&#9679; re-work</span> &middot; <i>&#9679; heard</i> &middot; size = pile-up &middot; brightness = SNR &middot; <span style="color:#888">&#9650; on rim = beyond range</span> &middot; tap a dot to aim</div>
-  <div class="compass">
-    <button data-az="315">NW</button><button data-az="0">N</button><button data-az="45">NE</button>
-    <button data-az="270">W</button><button class="c">&middot;</button><button data-az="90">E</button>
-    <button data-az="225">SW</button><button data-az="180">S</button><button data-az="135">SE</button>
-  </div>
+  <div class="compass" id="compass"></div>
   <div class="gobar">
     <input id="deg" type="number" min="0" max="360" placeholder="212" inputmode="numeric">
     <button id="go">GO</button>
@@ -6850,7 +6850,26 @@ async function cmd(body){ try{
   const d=await r.json(); if(d.ok===false) $("#err").textContent=d.error||"command failed"; poll();
 }catch(e){ $("#err").textContent=String(e); } }
 function go(az){ cmd({op:"goto", az:az}); }
-document.querySelectorAll("[data-az]").forEach(b=>b.addEventListener("click",()=>go(parseFloat(b.dataset.az))));
+// Quick-aim buttons: default 8-point compass, or a 12-button 30-deg preset grid for
+// TV-antenna rotators (RCA VH226E etc.) that only stop at fixed presets. Toggle via the
+// gear; the choice persists in localStorage. Grayline just sends the true bearing — any
+// 30-deg snapping is the rotator bridge's job (see docs/rotator-tv-ir-control.md).
+const COMPASS8=[{az:315,l:'NW'},{az:0,l:'N'},{az:45,l:'NE'},{az:270,l:'W'},{c:1},{az:90,l:'E'},{az:225,l:'SW'},{az:180,l:'S'},{az:135,l:'SE'}];
+const TV30=[{az:0,l:'N'},{az:30,l:'NNE'},{az:60,l:'ENE'},{az:90,l:'E'},{az:120,l:'ESE'},{az:150,l:'SSE'},{az:180,l:'S'},{az:210,l:'SSW'},{az:240,l:'WSW'},{az:270,l:'W'},{az:300,l:'WNW'},{az:330,l:'NNW'}];
+function rotorType(){ try{ return localStorage.getItem('grayline_rotor_type')||'compass8'; }catch(e){ return 'compass8'; } }
+function renderCompass(){
+  const tv=rotorType()==='tv30', set=tv?TV30:COMPASS8;
+  $("#compass").innerHTML=set.map(b=> b.c
+    ? '<button class="c">&middot;</button>'
+    : '<button data-az="'+b.az+'">'+b.l+(tv?'<span class="deg">'+String(b.az).padStart(3,'0')+'&deg;</span>':'')+'</button>'
+  ).join('');
+  $("#compass").querySelectorAll("[data-az]").forEach(b=>b.addEventListener("click",()=>go(parseFloat(b.dataset.az))));
+  const g=$("#gear"); if(g){ g.classList.toggle("on",tv);
+    g.title="Rotator type: "+(tv?"TV rotator, 30\\u00b0 presets \\u2014 click for continuous":"continuous \\u2014 click for TV rotator (30\\u00b0 presets)"); }
+  const sn=$("#southnote"); if(sn) sn.style.display=tv?"none":"";
+}
+$("#gear").addEventListener("click",()=>{ try{ localStorage.setItem('grayline_rotor_type', rotorType()==='tv30'?'compass8':'tv30'); }catch(e){} renderCompass(); });
+renderCompass();
 $("#go").addEventListener("click",()=>{ const v=parseFloat($("#deg").value); if(!isNaN(v)) go(((v%360)+360)%360); });
 $("#deg").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#go").click(); });
 $("#stop").addEventListener("click",()=>cmd({op:"stop"}));
