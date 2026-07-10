@@ -3027,22 +3027,25 @@ def add_spot(spot, cluster_name, calling_me=False):
     # grid we already deduced from its CQ. Precedence: this decode's grid → the
     # grid we already cached for this call (a prior grid-bearing decode) → the
     # QRZ-cached grid (covers cluster spots that never carry one).
+    # The grid a station actually TRANSMITTED must beat any QRZ home-grid lookup,
+    # so a rover who drops out of his CQ into report exchanges keeps showing the
+    # grid he's really in (e.g. N7PHY in DN38) instead of "reverting" to his QRZ
+    # home grid. Precedence: this decode's grid → grid cached for this exact dedup
+    # key → last grid we EVER decoded for this call (his real, last-spotted grid) →
+    # QRZ home grid (last resort, and NEVER for portables where it's just wrong).
+    _dxc = (spot.dx_call or "").upper()
     eff_grid = _clean_grid(spot.grid)
     if not eff_grid:
         with _lock:
             prev = _cache.get(key)
             if prev:
                 eff_grid = _clean_grid(prev.get("grid", ""))
-    if not eff_grid:
+    if not eff_grid and _dxc:
+        eff_grid = _LAST_GRID.get(_dxc, "")          # last grid actually decoded — beats QRZ for rovers
+    if not eff_grid and "/" not in _dxc:             # QRZ home grid only for non-portables
         with _qrz_cache_lock:
             eff_grid = _clean_grid(_qrz_cache.get(spot.dx_call, ""))
-    # Freq-independent per-call fallback: a gridless decode on a different offset
-    # than the CQ misses the key-scoped prev lookup above, so remember/reuse the
-    # last grid we EVER deduced for this call (keeps the radar dot from flickering).
-    _dxc = (spot.dx_call or "").upper()
-    if not eff_grid and _dxc:
-        eff_grid = _LAST_GRID.get(_dxc, "")
-    elif eff_grid and _dxc:
+    if eff_grid and _dxc:
         _LAST_GRID[_dxc] = eff_grid
 
     # Worked/needed status (against your QRZ logbook)
