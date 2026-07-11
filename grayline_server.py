@@ -687,6 +687,7 @@ def _wsjtx_spotter_label(client_id: str) -> str:
 def _wsjtx_state_update(client_id: str, parsed: dict, source_addr: tuple):
     """Refresh per-client WSJT-X state from a parsed Status message."""
     with _wsjtx_state_lock:
+        prev = _wsjtx_state.get(client_id)
         _wsjtx_state[client_id] = {
             "ts": time.time(),
             "client_id": client_id,
@@ -706,6 +707,8 @@ def _wsjtx_state_update(client_id: str, parsed: dict, source_addr: tuple):
             "decoding": parsed.get("decoding", False),
             "source_addr": source_addr,  # (host, port) — where to send Reply UDP back to
         }
+    # Surface MY outgoing TX in the per-station thread (WSJT-X never decodes its own TX).
+    _maybe_record_my_tx(parsed, prev, client_id)
 
 
 def _wsjtx_state_get_latest() -> dict | None:
@@ -763,7 +766,7 @@ def _wsjtx_status_snapshot() -> dict | None:
         return None
     return {
         "tx_enabled": bool(st.get("tx_enabled")),
-        "transmitting": bool(st.get("transmitting")),
+        "transmitting": bool(st.get("transmitting")) or (time.time() < _tx_latch.get(st.get("client_id", ""), 0)),
         "tx_message": st.get("tx_message", "") or "",
         "tx_df": st.get("tx_df", 0) or 0,
         "rx_df": st.get("rx_df", 0) or 0,
@@ -784,6 +787,9 @@ _recent_decodes_lock = threading.Lock()
 _recent_decodes: list = []            # dicts: ts, time_ms, snr, df, rf_khz, band, msg, client_id
 RECENT_DECODE_TTL = 360               # keep ~6 min of traffic
 RECENT_DECODE_MAX = 600               # hard cap on buffer length
+_tx_latch: dict = {}                  # client_id -> ts until which we hold transmitting=True
+TX_LATCH_SEC = 13                     # FT8 TX is ~12.6s; WSJT-X flags 'transmitting' only briefly,
+                                      # so latch it long enough for the 5s poll to reliably catch it
 
 def _record_recent_decode(parsed: dict, rf_khz: float, band: str):
     """Retain a decode's raw message for per-station thread reconstruction. Called
@@ -808,6 +814,33 @@ def _record_recent_decode(parsed: dict, rf_khz: float, band: str):
         while _recent_decodes and (_recent_decodes[0]["ts"] < cut
                                    or len(_recent_decodes) > RECENT_DECODE_MAX):
             _recent_decodes.pop(0)
+
+
+def _maybe_record_my_tx(parsed: dict, prev: dict | None, client_id: str):
+    """Record MY outgoing TX message into the thread log so it shows interleaved
+    (marked mine → red) in the station thread — WSJT-X never decodes its own TX.
+    Records once per transmission: on the not-transmitting→transmitting edge, or
+    when the sent text changes mid-transmit."""
+    if not parsed.get("transmitting"):
+        return
+    txmsg = (parsed.get("tx_message", "") or "").strip()
+    if not txmsg:
+        return
+    prev_tx = bool(prev and prev.get("transmitting"))
+    prev_msg = (prev.get("tx_message", "").strip() if prev else "")
+    if prev_tx and txmsg == prev_msg:
+        return   # same ongoing transmission — already logged
+    dial_khz = (parsed.get("dial_freq_hz", 0) or 0) / 1000.0
+    band = dxcluster.freq_to_band(dial_khz) if dial_khz else ""
+    _record_recent_decode({
+        "message": txmsg,
+        "time_ms": int((time.time() % 86400) * 1000),   # current UTC timeslot, for interleaving
+        "snr": None,
+        "delta_time": 0.0,
+        "delta_freq": parsed.get("tx_df", 0) or 0,
+        "client_id": client_id or "",
+    }, dial_khz, band)
+    _tx_latch[client_id] = time.time() + TX_LATCH_SEC   # hold 'transmitting' true for the poll
 
 
 def _infer_qso_state(call_u: str, involved: list) -> tuple[str, str]:
@@ -4104,7 +4137,21 @@ details[open] .gear-icon { color: #fff; }
   button.rowexpand.open { color: #ffd24a; }
   td.exp { width: 1.4em; text-align: center; padding: 0; }
   tr.detail-row > td { background: #0a1410; border-bottom: 2px solid #1c3a2c; padding: 8px 14px; }
-  .stn-detail { font-size: 0.9em; }
+  .stn-detail { font-size: 0.9em; display: flex; align-items: flex-start; gap: 1.2em; }
+  .stn-thread { flex: 0 1 auto; min-width: 0; }
+  /* Per-station control panel (MOCKUP — buttons not wired yet). */
+  .stn-ctrls { margin-left: auto; display: flex; flex-direction: row; gap: 6px; flex: 0 0 auto; padding-top: 2px; align-items: flex-start; }
+  .stnbtn { border: 1px solid #3a5563; background: #17242b; color: #cfe3ee; font: inherit; font-size: 0.92em; padding: 5px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; transition: background .12s, border-color .12s; }
+  .stnbtn:hover { background: #1e2f38; }
+  /* Enable TX default = neutral (base .stnbtn). Green = armed toward THIS station,
+     red = transmitting to it — both driven by live WSJT-X Status (dx_call match). */
+  .stnbtn.tx-enable.armed { background: #2f9e44; border-color: #37b24d; color: #04210d; font-weight: bold; }
+  .stnbtn.tx-enable.armed:hover { background: #33ab4a; }
+  .stnbtn.tx-enable.tx { background: #c92a2a; border-color: #ff6b6b; color: #fff; font-weight: bold; }
+  .stnbtn.tx-enable.tx:hover { background: #d63030; }
+  .stnbtn.tx-halt { border-color: #8a4b46; color: #ffb3ab; }
+  .stnbtn.tx-halt:hover { background: #34211f; }
+  .stnbtn.tx-clear:hover { background: #1b2b3a; }
   .stn-state { display: inline-block; margin-bottom: 7px; padding: 2px 10px; border-radius: 10px; font-weight: bold; }
   .stn-state.cq { background: #123048; color: #7cf; }
   .stn-state.answering, .stn-state.report, .stn-state.roger, .stn-state.working { background: #143a24; color: #7f7; }
@@ -5094,6 +5141,7 @@ async function refresh() {
     return;
   }
   let spots = data.spots, now = data.now;
+  lastWsjtx = data.wsjtx || null;   // stash for the per-station Enable-TX button state
   // Clearest-TX indicator: a readout for everyone; a one-tap set only if the helper's on.
   { const el = document.getElementById("cleartx");
     if (el) {
@@ -5287,9 +5335,17 @@ async function refresh() {
       allRows.push(...byBand[activeBand][m]);
     }
   }
-  // Sort: "calling me" pins to the top (handled in spotCmp), then the active
-  // column sort — default is band then freq; click a header to change it.
-  allRows.sort(spotCmp);
+  // Sort: expanded/watched stations pin to the very top and hold a stable
+  // by-call order among themselves, so their open threads don't shuffle around
+  // each refresh cycle (monitoring-first: nail the ones you're watching in place).
+  // Below the pins, spotCmp applies as before ("calling me" pins next, then the
+  // active column sort — default band then freq; click a header to change it).
+  allRows.sort((a, b) => {
+    const pa = expandedCalls.has(a.dx_call), pb = expandedCalls.has(b.dx_call);
+    if (pa !== pb) return pa ? -1 : 1;                                     // watched rows to the top
+    if (pa && pb) return (a.dx_call || "").localeCompare(b.dx_call || ""); // stable order among watched
+    return spotCmp(a, b);
+  });
 
   if (allRows.length === 0) {
     html = (activeBand === "*")
@@ -5426,11 +5482,16 @@ var spotsFreezeUntil = 0;
 // pointer.
 var expandedCalls = new Set();
 var stationDetail = {};   // call -> last fetched detail payload
+var lastWsjtx = null;     // latest WSJT-X Status (tx_enabled/transmitting/dx_call) — drives per-station Enable-TX button state
 
 function renderStationDetail(call) {
   const d = stationDetail[call];
   if (!d) return '<div class="stn-detail stn-empty">Loading ' + escapeHTML(call) + '…</div>';
-  let h = '<div class="stn-detail">';
+  // Layout is INLINE-styled on purpose: the explode-down's hard-won rule is that
+  // classes get clobbered here (e.g. an orphaned .stn-thread{display:inline-block}
+  // collided with a reused name), so no stylesheet can fight inline styles.
+  let h = '<div class="stn-detail" style="display:flex;align-items:flex-start;gap:1.2em">'
+        + '<div style="flex:0 1 auto;min-width:0">';
   if (!d.thread || !d.thread.length) {
     h += '<div class="stn-empty">No recent decodes for ' + escapeHTML(call) + ' — band may be quiet.</div>';
   } else {
@@ -5455,12 +5516,37 @@ function renderStationDetail(call) {
     for (const ln of d.thread) {
       const snr = (ln.snr === null || ln.snr === undefined) ? "" : ((ln.snr > 0 ? "+" : "") + ln.snr);
       const dt = (ln.dt === null || ln.dt === undefined) ? "" : ln.dt.toFixed(1);
-      const col = ln.mine ? 'color:#ffd24a;font-weight:bold' : 'color:#cfe3ee';
+      // Highlight: my interleaved TX lines = red bg / white text; the target's
+      // CQ / RRR / RR73 lines = green bg / black text; everything else normal.
+      const _toks = (ln.msg || '').toUpperCase().split(' ');
+      const _hl = _toks.includes('CQ') || _toks.includes('RRR') || _toks.includes('RR73');
+      let col;
+      if (ln.mine) col = 'background:#c0392b;color:#fff;font-weight:bold';
+      else if (_hl) col = 'background:#37b24d;color:#000';
+      else col = 'color:#cfe3ee';
       h += thRow(escapeHTML(ln.hms), snr, dt, (ln.df || ""), escapeHTML(ln.msg), col);
     }
     h += '</div>';
   }
+  h += '</div>';              // end .stn-thread
+  h += stationCtrls(call);    // per-station control panel (mockup — not wired)
   return h + '</div>';
+}
+
+// Per-station TX control panel. Enable TX / Halt TX are WIRED: Enable = Reply via
+// /api/tune (sets DX, generates Tx1, keys up); Halt = /api/wsjtx_halt (msg 8).
+// Clear TX Freq is still a mockup. The Enable button also reflects LIVE WSJT-X
+// state for THIS station only. Inline grid (3 equal columns) so no class collision.
+function stationCtrls(call) {
+  const w = lastWsjtx;
+  const active = !!(w && (w.dx_call || '').toUpperCase() === (call || '').toUpperCase());
+  const enCls = active && w.transmitting ? ' tx' : (active && w.tx_enabled ? ' armed' : '');
+  const c = escapeHTML(call);
+  return '<div style="margin-left:auto;flex:0 0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">'
+    + '<button type="button" class="stnbtn tx-enable' + enCls + '" data-call="' + c + '" data-act="enable" title="Reply to ' + c + ' — set DX, generate Tx1, key up">Enable TX</button>'
+    + '<button type="button" class="stnbtn tx-halt" data-call="' + c + '" data-act="halt" title="Halt Tx now">Halt TX</button>'
+    + '<button type="button" class="stnbtn tx-clear" onclick="event.stopPropagation()" title="mockup — not wired yet">🎯 Clear TX Freq</button>'
+    + '</div>';
 }
 
 function fetchStationDetail(call) {
@@ -5490,12 +5576,20 @@ document.addEventListener("click", (ev) => {
   } else {
     expandedCalls.add(call);
     btn.classList.add("open"); btn.textContent = "▾";
-    if (tr && !nextIsDetail) {
-      const dr = document.createElement("tr");
-      dr.className = "detail-row";
-      dr.setAttribute("data-detail", call);
-      dr.innerHTML = '<td colspan="' + tr.children.length + '">' + renderStationDetail(call) + '</td>';
-      tr.parentNode.insertBefore(dr, tr.nextSibling);
+    if (tr) {
+      let dr = nextIsDetail ? tr.nextElementSibling : null;
+      if (!dr) {
+        dr = document.createElement("tr");
+        dr.className = "detail-row";
+        dr.setAttribute("data-detail", call);
+        dr.innerHTML = '<td colspan="' + tr.children.length + '">' + renderStationDetail(call) + '</td>';
+      }
+      // Pin to the top INSTANTLY via a DOM move (no fetch, no re-render): the row
+      // and its thread hop under the header row the moment you click. The next 5s
+      // poll's pin-sort formalizes the alphabetical order among pinned rows.
+      const body = tr.parentNode, header = body.firstElementChild;
+      body.insertBefore(tr, header ? header.nextSibling : body.firstChild);
+      body.insertBefore(dr, tr.nextSibling);
     }
     fetchStationDetail(call);
   }
@@ -5553,6 +5647,34 @@ document.addEventListener("click", (ev) => {
   }).then(r => r.json()).then(j => {
     console.log(`aim ${az}°: ${j.ok ? 'ok' : (j.error || 'failed')}`);
   }).catch(e => console.error("aim fetch failed:", e));
+});
+
+// Per-station control buttons (Enable TX / Halt TX). Delegated so it works on the
+// dynamically-rendered detail rows. The buttons don't stopPropagation themselves —
+// they bubble here; the row-tune + caret handlers bail on non-clickable detail rows.
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button.stnbtn[data-act]");
+  if (!btn) return;
+  ev.stopPropagation();
+  const call = btn.dataset.call, act = btn.dataset.act;
+  if (!call) return;
+  btn.classList.add("tuning");
+  setTimeout(() => btn.classList.remove("tuning"), 600);
+  if (act === "enable") {
+    // Enable TX = Configure over UDP (select station + generate Tx1-6), then click
+    // WSJT-X's Enable Tx button via the UIAutomation helper. Backend resolves the
+    // grid from the spot cache, so we just pass the call.
+    fetch("/api/wsjtx_enable?call=" + encodeURIComponent(call))
+      .then(r => r.json())
+      .then(j => console.log("Enable TX " + call + ": " + (j.ok ? 'ok' : (j.error || 'failed'))
+        + " [cfg:" + (j.configure || '?') + " gen:" + (j.gen_msgs || '?') + " en:" + (j.enable_tx || '?') + "]"))
+      .catch(e => console.error("Enable TX fetch failed:", e));
+  } else if (act === "halt") {
+    fetch("/api/wsjtx_halt")
+      .then(r => r.json())
+      .then(j => console.log("Halt TX: " + (j.ok ? 'ok' : (j.error || 'failed'))))
+      .catch(e => console.error("Halt TX fetch failed:", e));
+  }
 });
 
 // ============== View tabs (Live / Scores / Log search) ==============
@@ -7253,6 +7375,65 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as _e:
                     _res = {"ok": False, "error": f"send failed: {_e}"}
             self._send(json.dumps(_res).encode(), "application/json")
+        elif self.path.startswith("/api/wsjtx_halt"):
+            # Halt Tx (msg 8) to the connected WSJT-X — immediate stop. Wired to
+            # the per-station "Halt TX" button. (Enable TX uses the /api/tune reply
+            # path; WSJT-X has no 'enable Tx' UDP message.)
+            import wsjtx_udp, socket
+            with _wsjtx_state_lock:
+                _sth = next((dict(s) for s in _wsjtx_state.values() if s.get("source_addr")), None)
+            if not _sth:
+                _resh = {"ok": False, "error": "no WSJT-X client connected (source_addr unknown)"}
+            else:
+                try:
+                    _pkth = wsjtx_udp.halt_tx(client_id=_sth["client_id"], auto_only=False)
+                    _sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    _sk.sendto(_pkth, _sth["source_addr"]); _sk.close()
+                    _resh = {"ok": True, "sent_to": list(_sth["source_addr"])}
+                    log.info("wsjtx_halt: Halt Tx -> %s (client %s)", _sth["source_addr"], _sth["client_id"])
+                except Exception as _e:
+                    _resh = {"ok": False, "error": f"send failed: {_e}"}
+            self._send(json.dumps(_resh).encode(), "application/json")
+        elif self.path.startswith("/api/wsjtx_enable"):
+            # Enable TX on a selected station: Configure (msg 15) over UDP to set DX
+            # + generate the standard Tx1-6 messages, THEN click WSJT-X's Enable Tx
+            # button via the UIAutomation helper (no UDP command exists to enable Tx).
+            #   /api/wsjtx_enable?call=T77RN[&grid=JN61]
+            from urllib.parse import urlparse, parse_qs
+            import wsjtx_udp, socket
+            _qe = parse_qs(urlparse(self.path).query)
+            _calle = (_qe.get("call", [""])[0] or "").strip().upper()
+            _gride = (_qe.get("grid", [""])[0] or "").strip().upper()
+            if not _gride and _calle:
+                _gride = (_grid_from_spot_cache(_calle) or "").strip().upper()
+            with _wsjtx_state_lock:
+                _ste = next((dict(s) for s in _wsjtx_state.values() if s.get("source_addr")), None)
+            if not _calle:
+                _rese = {"ok": False, "error": "need ?call=CALL[&grid=GRID]"}
+            elif not _ste:
+                _rese = {"ok": False, "error": "no WSJT-X client connected (source_addr unknown)"}
+            else:
+                _rese = {"ok": False, "call": _calle, "grid": _gride}
+                try:  # 1) Configure over UDP: select the station (set DX call + grid).
+                    _pkte = wsjtx_udp.configure(client_id=_ste["client_id"], dx_call=_calle,
+                                                dx_grid=_gride, generate_messages=True)
+                    _ske = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    _ske.sendto(_pkte, _ste["source_addr"]); _ske.close()
+                    _rese["configure"] = "sent"
+                except Exception as _e:
+                    _rese["configure"] = f"failed: {_e}"
+                import time as _time; _time.sleep(0.35)   # let WSJT-X apply the DX call first
+                # 2) Generate Std Msgs via helper — WSJT-X does NOT rebuild Tx1-6 off a UDP
+                #    Configure, so force it (else you'd call A71UN with the prior msg text).
+                _okg, _gresp = _send_txhelper("GENMSGS")
+                _rese["gen_msgs"] = _gresp
+                # 3) Toggle Enable Tx via helper (no UDP path exists for it).
+                _okh, _hresp = _send_txhelper("ENABLETX")
+                _rese["enable_tx"] = _hresp
+                _rese["ok"] = str(_gresp).startswith("OK") and str(_hresp).startswith("OK")
+                log.info("wsjtx_enable: %s/%s configure+GENMSGS+ENABLETX -> gen=%r en=%r",
+                         _calle, _gride, _gresp, _hresp)
+            self._send(json.dumps(_rese).encode(), "application/json")
         elif self.path == "/api/radar":
             # Compact PPI-scope feed for the /rotor radar overlay: one tiny record
             # per spot that has a bearing (no grid -> no bearing -> can't plot).

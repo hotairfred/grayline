@@ -222,6 +222,16 @@ def reply(client_id="GRAYLINE", time_ms=0, snr=-15, delta_time=0.0,
     return _header(4, client_id) + body
 
 
+def halt_tx(client_id="GRAYLINE", auto_only=False):
+    """Encode a Halt Tx message (type 8).
+
+    auto_only=False halts transmission immediately (like clicking Halt Tx).
+    auto_only=True only disables auto-sequencing (like un-checking Enable Tx).
+    WSJT-X has no 'enable Tx' message — TX is enabled by a Reply (type 4) that
+    answers a decode (see reply())."""
+    return _header(8, client_id) + _encode_bool(auto_only)
+
+
 def configure(client_id="GRAYLINE", mode="", freq_tolerance=0xFFFFFFFF,
               submode="", fast_mode=False, tr_period=0xFFFFFFFF,
               rx_df=0xFFFFFFFF, dx_call="", dx_grid="", generate_messages=True):
