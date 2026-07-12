@@ -5203,12 +5203,13 @@ async function refresh() {
         el.innerHTML = "TX idle" + (w.dx_call ? " (last: " + escapeHTML(w.dx_call) + ")" : "");
       }
     } }
-  // Persistent Halt TX button: show whenever WSJT-X is armed or keying (something to stop),
-  // independent of the spot list — the per-station Halt vanishes when a spot ages out, this
-  // one doesn't. Bright-red while actually transmitting. Gated with the other TX controls.
+  // Persistent Halt TX button: ALWAYS visible whenever WSJT-X is connected (a panic button
+  // you can always find, independent of the spot list — the per-station Halt vanishes when a
+  // spot ages out, this one never does). Bright-red while actually transmitting. Gated with
+  // the other TX controls. Halting when idle is a harmless no-op.
   { const el = document.getElementById("halttx"); const w = data.wsjtx;
     if (el) {
-      const show = txControls && w && (w.transmitting || w.tx_enabled);
+      const show = txControls && !!w;
       el.style.display = show ? "" : "none";
       el.className = "halttx" + (w && w.transmitting ? " keying" : "");
     } }
