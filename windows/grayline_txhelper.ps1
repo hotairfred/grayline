@@ -94,11 +94,11 @@ function Do-EnableTx {
   $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
   # Save + restore the cursor so we don't yank the operator's mouse away.
   $save = New-Object W32+POINT; [void][W32]::GetCursorPos([ref]$save)
-  [W32]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 70
+  [void][W32]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 70
   [W32]::mouse_event(0x0002, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 40   # left down
   [W32]::mouse_event(0x0004, 0, 0, 0, [IntPtr]::Zero)                                  # left up
   Start-Sleep -Milliseconds 60
-  [W32]::SetCursorPos($save.X, $save.Y)
+  [void][W32]::SetCursorPos($save.X, $save.Y)
   return ("OK enabletx real-click @" + $x + "," + $y)
 }
 function Do-GenMsgs {

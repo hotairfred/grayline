@@ -4141,7 +4141,7 @@ details[open] .gear-icon { color: #fff; }
   .stn-thread { flex: 0 1 auto; min-width: 0; }
   /* Per-station control panel (MOCKUP — buttons not wired yet). */
   .stn-ctrls { margin-left: auto; display: flex; flex-direction: row; gap: 6px; flex: 0 0 auto; padding-top: 2px; align-items: flex-start; }
-  .stnbtn { border: 1px solid #3a5563; background: #17242b; color: #cfe3ee; font: inherit; font-size: 0.92em; padding: 5px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; transition: background .12s, border-color .12s; }
+  .stnbtn { -webkit-appearance: none; appearance: none; border: 1px solid #3a5563; background: #17242b; color: #cfe3ee; font: inherit; font-size: 0.92em; padding: 5px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; transition: background .12s, border-color .12s; }
   .stnbtn:hover { background: #1e2f38; }
   /* Enable TX default = neutral (base .stnbtn). Green = armed toward THIS station,
      red = transmitting to it — both driven by live WSJT-X Status (dx_call match). */
@@ -5540,12 +5540,22 @@ function renderStationDetail(call) {
 function stationCtrls(call) {
   const w = lastWsjtx;
   const active = !!(w && (w.dx_call || '').toUpperCase() === (call || '').toUpperCase());
-  const enCls = active && w.transmitting ? ' tx' : (active && w.tx_enabled ? ' armed' : '');
   const c = escapeHTML(call);
+  // Style the buttons INLINE: the .stnbtn class rule wasn't applying (buttons render
+  // native — grey, appearance:auto), so force it inline incl. appearance reset, and set
+  // the Enable-TX color from live WSJT-X state. (class kept only for the click handler.)
+  const base = '-webkit-appearance:none;appearance:none;border-radius:5px;padding:5px 12px;font:inherit;font-size:0.92em;cursor:pointer;display:flex;align-items:center;justify-content:center;white-space:nowrap;font-weight:bold;';
+  let enBg, enFg, enBd;
+  if (active && w.transmitting)    { enBg = '#c92a2a'; enFg = '#fff';    enBd = '#ff6b6b'; }   // red = keying
+  else if (active && w.tx_enabled) { enBg = '#2f9e44'; enFg = '#04210d'; enBd = '#37b24d'; }   // green = armed
+  else                             { enBg = '#17242b'; enFg = '#cfe3ee'; enBd = '#3a5563'; }   // neutral
+  const enSty = base + 'background:' + enBg + ';color:' + enFg + ';border:1px solid ' + enBd + ';';
+  const haltSty = base + 'background:#17242b;color:#ffb3ab;border:1px solid #8a4b46;';
+  const clearSty = base + 'background:#17242b;color:#cfe3ee;border:1px solid #3a5563;';
   return '<div style="margin-left:auto;flex:0 0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">'
-    + '<button type="button" class="stnbtn tx-enable' + enCls + '" data-call="' + c + '" data-act="enable" title="Reply to ' + c + ' — set DX, generate Tx1, key up">Enable TX</button>'
-    + '<button type="button" class="stnbtn tx-halt" data-call="' + c + '" data-act="halt" title="Halt Tx now">Halt TX</button>'
-    + '<button type="button" class="stnbtn tx-clear" onclick="event.stopPropagation()" title="mockup — not wired yet">🎯 Clear TX Freq</button>'
+    + '<button type="button" class="stnbtn tx-enable" style="' + enSty + '" data-call="' + c + '" data-act="enable" title="Reply to ' + c + ' — set DX, generate Tx1, key up">Enable TX</button>'
+    + '<button type="button" class="stnbtn tx-halt" style="' + haltSty + '" data-call="' + c + '" data-act="halt" title="Halt Tx now">Halt TX</button>'
+    + '<button type="button" class="stnbtn tx-clear" style="' + clearSty + '" onclick="event.stopPropagation()" title="mockup — not wired yet">🎯 Clear TX Freq</button>'
     + '</div>';
 }
 
