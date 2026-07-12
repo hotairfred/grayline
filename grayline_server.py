@@ -924,7 +924,10 @@ _decode_offsets_lock = threading.Lock()
 _decode_offsets: list = []            # (offset_hz, snr, width_hz, ts), last ~30 s
 DECODE_OFFSET_TTL = 30
 CLEAR_TX_MIN_HZ = 300
-CLEAR_TX_MAX_HZ = 2900
+# Upper bound for the Clear-TX pick. Default 2800 Hz keeps the whole TX signal inside a
+# standard ~2.7-2.8 kHz radio filter (not everyone has a 3 kHz roofing/DSP filter). A
+# narrower-filter station can tighten it via config (clear_tx_max_hz).
+CLEAR_TX_MAX_HZ = int(CONFIG.get("clear_tx_max_hz", 2800))
 
 def _record_decode_offset(offset, snr, glyph):
     """Log a decode's occupied audio slot. Called for EVERY decode, spottable or
@@ -971,8 +974,12 @@ def _pick_clear_tx_freq():
     if good:
         a, b = max(good, key=lambda g: g[1] - g[0])
         return (a + b) // 2, {"reason": "clear gap", "gap": [a, b], "signals": len(recent)}
-    weakest = min(recent, key=lambda r: r[1])             # co-exist on the quietest neighbor
-    return int(weakest[0]), {"reason": "coexist on weakest", "snr": weakest[1], "signals": len(recent)}
+    # Co-exist on the quietest neighbor — but only one inside the filter (co-existing on a
+    # signal above the cap would put us outside our own passband). Clamp for safety.
+    in_band = [r for r in recent if CLEAR_TX_MIN_HZ <= r[0] <= CLEAR_TX_MAX_HZ]
+    weakest = min(in_band or recent, key=lambda r: r[1])
+    hz = max(CLEAR_TX_MIN_HZ, min(CLEAR_TX_MAX_HZ, int(weakest[0])))
+    return hz, {"reason": "coexist on weakest", "snr": weakest[1], "signals": len(recent)}
 
 def _send_txhelper(cmd):
     """Send a line command to grayline_txhelper.ps1 on the workstation; (ok, response)."""
