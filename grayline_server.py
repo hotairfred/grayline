@@ -5535,10 +5535,10 @@ function renderStationDetail(call) {
   return h + '</div>';
 }
 
-// Per-station TX control panel. Enable TX / Halt TX are WIRED: Enable = Reply via
-// /api/tune (sets DX, generates Tx1, keys up); Halt = /api/wsjtx_halt (msg 8).
-// Clear TX Freq is still a mockup. The Enable button also reflects LIVE WSJT-X
-// state for THIS station only. Inline grid (3 equal columns) so no class collision.
+// Per-station TX control panel — all three WIRED: Enable = Reply (sets DX, generates
+// Tx1, keys up); Halt = /api/wsjtx_halt (msg 8); Clear TX Freq = /api/pick_clear_tx
+// (moves the TX offset to the clearest audio slot via the helper). The Enable button
+// also reflects LIVE WSJT-X state for THIS station only. Inline grid (3 equal columns).
 function stationCtrls(call) {
   if (!txControls) return '';   // helper not configured / disabled in config -> no TX buttons
   const w = lastWsjtx;
@@ -5558,7 +5558,7 @@ function stationCtrls(call) {
   return '<div style="margin-left:auto;flex:0 0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">'
     + '<button type="button" class="stnbtn tx-enable" style="' + enSty + '" data-call="' + c + '" data-act="enable" title="Reply to ' + c + ' — set DX, generate Tx1, key up">Enable TX</button>'
     + '<button type="button" class="stnbtn tx-halt" style="' + haltSty + '" data-call="' + c + '" data-act="halt" title="Halt Tx now">Halt TX</button>'
-    + '<button type="button" class="stnbtn tx-clear" style="' + clearSty + '" onclick="event.stopPropagation()" title="mockup — not wired yet">🎯 Clear TX Freq</button>'
+    + '<button type="button" class="stnbtn tx-clear" style="' + clearSty + '" data-act="clear" title="Move your WSJT-X TX offset to the clearest audio slot">🎯 Clear TX Freq</button>'
     + '</div>';
 }
 
@@ -5670,9 +5670,21 @@ document.addEventListener("click", (ev) => {
   if (!btn) return;
   ev.stopPropagation();
   const call = btn.dataset.call, act = btn.dataset.act;
-  if (!call) return;
   btn.classList.add("tuning");
   setTimeout(() => btn.classList.remove("tuning"), 600);
+  if (act === "clear") {
+    // Clear TX Freq = same action as the header 🎯 button: pick the clearest audio slot
+    // and set WSJT-X's TX offset there via the helper. Not station-specific; no call needed.
+    const orig = btn.innerHTML;
+    btn.innerHTML = "… setting";
+    fetch("/api/pick_clear_tx", {cache:"no-store"})
+      .then(r => r.json())
+      .then(j => { btn.innerHTML = j.ok ? ("✓ " + j.hz + " Hz") : ("✗ " + (j.helper || j.error || "failed")); })
+      .catch(e => { btn.innerHTML = "✗ " + e.message; })
+      .finally(() => setTimeout(() => { btn.innerHTML = orig; }, 2500));
+    return;
+  }
+  if (!call) return;
   if (act === "enable") {
     // Enable TX = Configure over UDP (select station + generate Tx1-6), then click
     // WSJT-X's Enable Tx button via the UIAutomation helper. Backend resolves the
