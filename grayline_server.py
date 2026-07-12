@@ -5142,6 +5142,7 @@ async function refresh() {
   }
   let spots = data.spots, now = data.now;
   lastWsjtx = data.wsjtx || null;   // stash for the per-station Enable-TX button state
+  txControls = !!data.station_tx_controls;   // whether to show the per-station TX buttons
   // Clearest-TX indicator: a readout for everyone; a one-tap set only if the helper's on.
   { const el = document.getElementById("cleartx");
     if (el) {
@@ -5483,6 +5484,7 @@ var spotsFreezeUntil = 0;
 var expandedCalls = new Set();
 var stationDetail = {};   // call -> last fetched detail payload
 var lastWsjtx = null;     // latest WSJT-X Status (tx_enabled/transmitting/dx_call) — drives per-station Enable-TX button state
+var txControls = false;   // show the per-station Enable/Halt TX panel? (UIAutomation helper configured + not disabled in config)
 
 function renderStationDetail(call) {
   const d = stationDetail[call];
@@ -5538,6 +5540,7 @@ function renderStationDetail(call) {
 // Clear TX Freq is still a mockup. The Enable button also reflects LIVE WSJT-X
 // state for THIS station only. Inline grid (3 equal columns) so no class collision.
 function stationCtrls(call) {
+  if (!txControls) return '';   // helper not configured / disabled in config -> no TX buttons
   const w = lastWsjtx;
   const active = !!(w && (w.dx_call || '').toUpperCase() === (call || '').toUpperCase());
   const c = escapeHTML(call);
@@ -7252,6 +7255,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV,
                        "clear_tx_hz": _cthz, "clear_tx_reason": _ctinfo.get("reason", ""),
                        "txhelper_on": bool(CONFIG.get("txhelper_host")),
+                       # Per-station Enable/Halt TX panel: shown only when the UIAutomation
+                       # helper is configured (Enable TX needs it) AND not disabled in config.
+                       # Someone who clones Grayline without the helper never sees the buttons.
+                       "station_tx_controls": bool(CONFIG.get("station_tx_controls_enabled", True)
+                                                   and CONFIG.get("txhelper_host")),
                        "wsjtx": _wsjtx_status_snapshot()}
             self._send(json.dumps(payload).encode(), "application/json")
         elif self.path.startswith("/api/station"):
