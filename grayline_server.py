@@ -4131,6 +4131,13 @@ details[open] .gear-icon { color: #fff; }
   .cleartx { margin-left: 1em; font-size: 0.85em; color: #7fd7c0; opacity: 0.9; white-space: nowrap; }
   .cleartx.btn { cursor: pointer; background: #114433; border: 1px solid #22aa66; border-radius: 4px; padding: 2px 9px; color: #9fe6cc; }
   .cleartx.btn:hover { background: #1c9955; color: #012; }
+  /* Persistent header Halt TX — a stop control must never live only inside a spot row
+     that can age out mid-transmit. Dark-red when armed, bright-red while keying. */
+  .halttx { margin-left: 0.8em; font-size: 0.85em; cursor: pointer; white-space: nowrap;
+            font-weight: bold; border-radius: 4px; padding: 2px 11px;
+            background: #2a1414; color: #ffb3ab; border: 1px solid #8a4b46; }
+  .halttx:hover { background: #7a2018; color: #fff; }
+  .halttx.keying { background: #c92a2a; color: #fff; border-color: #ff6b6b; }
   /* WSJT-X live TX-state readout */
   .wsjtxstat { margin-left: 0.8em; font-size: 0.82em; font-family: monospace; padding: 2px 8px; border-radius: 4px; white-space: nowrap; vertical-align: middle; }
   .wsjtxstat:empty { display: none; }
@@ -4223,6 +4230,8 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
 <div class="header-row">
   <h1>Grayline — live from GoCluster</h1>
   <span id="cleartx" class="cleartx" title="Clearest TX audio slot from live decodes"></span>
+  <button id="halttx" class="halttx" type="button" onclick="haltTxMain()" style="display:none"
+    title="Halt WSJT-X TX now — works even if the station's spot has scrolled off the list">⏹ Halt TX</button>
   <span id="wsjtxstat" class="wsjtxstat" title="WSJT-X TX state — what you're sending right now"></span>
   <details class="gear-wrap">
     <summary class="gear-icon">⚙</summary>
@@ -5138,6 +5147,18 @@ async function setClearTx(){
   } catch(e){ el.innerHTML = "✗ " + e.message; }
 }
 
+// Persistent header Halt TX — pure-UDP stop (/api/wsjtx_halt), independent of any spot row.
+async function haltTxMain(){
+  const el = document.getElementById("halttx");
+  const orig = el.innerHTML;
+  el.innerHTML = "… halting";
+  try {
+    const r = await (await fetch("/api/wsjtx_halt", {cache:"no-store"})).json();
+    el.innerHTML = r.ok ? "✓ halted" : ("✗ " + (r.error || "failed"));
+  } catch(e){ el.innerHTML = "✗ " + e.message; }
+  setTimeout(() => { el.innerHTML = orig; }, 1800);
+}
+
 async function refresh() {
   let data;
   try {
@@ -5181,6 +5202,15 @@ async function refresh() {
         el.className = "wsjtxstat idle";
         el.innerHTML = "TX idle" + (w.dx_call ? " (last: " + escapeHTML(w.dx_call) + ")" : "");
       }
+    } }
+  // Persistent Halt TX button: show whenever WSJT-X is armed or keying (something to stop),
+  // independent of the spot list — the per-station Halt vanishes when a spot ages out, this
+  // one doesn't. Bright-red while actually transmitting. Gated with the other TX controls.
+  { const el = document.getElementById("halttx"); const w = data.wsjtx;
+    if (el) {
+      const show = txControls && w && (w.transmitting || w.tx_enabled);
+      el.style.display = show ? "" : "none";
+      el.className = "halttx" + (w && w.transmitting ? " keying" : "");
     } }
   // Worked-state changed server-side (QSO logged, LoTW/QRZ pull, N1MM mutation)?
   // Pull fresh scores so the FFMA/award scorecard tracks the liveview instead of
