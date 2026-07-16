@@ -1813,6 +1813,7 @@ def _build_scores_payload() -> dict:
             "target": ffma_target,
         },
         "ffma_chase": ffma_chase,
+        "recent_confirmations": _build_recent_confirmations(),
         "grid_discrepancies": _build_grid_discrepancies(),
         "five_band_dxcc": {
             "by_band": five_dxcc_by_band,
@@ -1951,6 +1952,76 @@ def _adif_field(record: str, tag: str) -> str:
         return ""
     start = m.end()
     return record[start:start + int(m.group(1))]
+
+
+_RECENT_CONF_CACHE: dict = {"mtime": None, "data": []}
+
+
+def _build_recent_confirmations(limit: int = 12) -> list:
+    """The most recent 6 m LoTW confirmations (ordered by APP_LOTW_RXQSL), each
+    flagged new_grid / new_dxcc — i.e. whether THIS confirmation is the FIRST
+    one for that grid / entity on six. Feeds the FFMA tab's 'Latest
+    confirmations' strip so the greens announce themselves.
+
+    Parsed straight from lotw_qsl.adi and cached on its mtime: the full ADIF is
+    only re-walked when a LoTW fetch actually rewrites the file, never on every
+    /api/scores poll."""
+    path = LOGBOOK_PATH.parent / "lotw_qsl.adi"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    if _RECENT_CONF_CACHE["mtime"] == mtime:
+        return _RECENT_CONF_CACHE["data"]
+    try:
+        txt = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    recs = []              # (ms, rx_str, call, grid4, country, state)
+    first_grid: dict = {}  # grid4   -> earliest confirmation ms (its "new grid" moment)
+    first_dxcc: dict = {}  # country -> earliest confirmation ms (its "new entity" moment)
+    for rec in re.split(r"(?i)<eor>", txt):
+        if (_adif_field(rec, "band") or "").upper() != "6M":
+            continue
+        rx = (_adif_field(rec, "app_lotw_rxqsl") or _adif_field(rec, "qslrdate")).strip()
+        if not rx:
+            continue
+        try:
+            dt = datetime.datetime.strptime(rx[:19], "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+        ms = int(dt.timestamp() * 1000)
+        g4 = (_adif_field(rec, "gridsquare") or "")[:4].upper()
+        country = (_adif_field(rec, "country") or "").strip()
+        state = (_adif_field(rec, "state") or "").strip().upper()
+        call = (_adif_field(rec, "call") or "").strip().upper()
+        recs.append((ms, rx, call, g4, country, state))
+        if g4 and (g4 not in first_grid or ms < first_grid[g4]):
+            first_grid[g4] = ms
+        if country and (country not in first_dxcc or ms < first_dxcc[country]):
+            first_dxcc[country] = ms
+    recs.sort(key=lambda r: r[0], reverse=True)
+    out = []
+    for ms, rx, call, g4, country, state in recs[:limit]:
+        rar = _FFMA_RARITY.get(g4) or {}
+        out.append({
+            "ts": ms,
+            "date": rx[:10],
+            "call": call,
+            "grid": g4,
+            "country": country,
+            "state": state,
+            "ffma": g4 in _FFMA_GRID_SET,
+            "tier": rar.get("tier"),
+            "pct": rar.get("pct_needed"),
+            # this confirmation IS the first for its grid / entity (== a new one)
+            "new_grid": bool(g4) and first_grid.get(g4) == ms,
+            "new_dxcc": bool(country) and first_dxcc.get(country) == ms,
+        })
+    _RECENT_CONF_CACHE["mtime"] = mtime
+    _RECENT_CONF_CACHE["data"] = out
+    return out
 
 
 def _remove_qso_from_adif(n1mm_id: str) -> bool:
@@ -3818,6 +3889,11 @@ table.ff-atno-tbl { margin-top: 0.55em; }
 .ff-common { background: #1f1f1f; color: #777; }
 .ff-conf { color: #4caf50; font-weight: 700; font-size: 0.82em; }
 .ff-pend { color: #e0a83c; font-weight: 700; font-size: 0.82em; }
+.ff-newdxcc { color: #7ec8ff; font-weight: 700; font-size: 0.82em; }
+.ff-newffma { color: #4caf50; font-weight: 700; font-size: 0.82em; }
+.ff-newgrid { color: #8bc34a; font-weight: 600; font-size: 0.8em; }
+.ff-reconf { color: #777; font-size: 0.8em; }
+table.ff-table tr.ff-conf-new td { background: #10230f; }  /* a confirmation that was a new grid/entity */
 .ff-rover { font-size: 0.9em; }
 .ff-count { float: right; color: #888; font-weight: 400; }
 /* selector qualified with `table.` so it outranks the later `.score-card th`
@@ -4627,9 +4703,10 @@ let lastScores = null;          // most recent /api/scores payload — for insta
 let lastWorkedRev = null;       // server worked-state revision from /spots.json; change => re-fetch scores
 let scoresSetupOpen = false;    // keep the "Scores setup" panel open across re-renders
 let wajaGridOpen = false;       // keep the WAJA prefecture grid open across re-renders
-let ffAtnoOpen = true;          // FFMA tab collapsible sections — default expanded,
-let ffPendOpen = true;          // collapse state persists across re-renders so the
-let ffRaresOpen = true;         // headers act as anchors on a long scroll
+let ffConfOpen = true;          // FFMA tab collapsible sections — default expanded,
+let ffAtnoOpen = true;          // collapse state persists across re-renders so the
+let ffPendOpen = true;          // headers act as anchors on a long scroll
+let ffRaresOpen = true;
 let ffDiscOpen = true;
 
 // WAJA — the 47 Japanese prefectures by ADIF code → [kanji (with 都/道/府/県
@@ -6212,6 +6289,25 @@ function ffmaFmtDate(d) {
   if (!d || d.length < 8) return d || "";
   return d.slice(0,4) + "-" + d.slice(4,6) + "-" + d.slice(6,8);
 }
+function ffmaAgo(ts) {
+  if (!ts) return "";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 0) return "now";
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s/60) + "m ago";
+  if (s < 86400) return Math.floor(s/3600) + "h ago";
+  return Math.floor(s/86400) + "d ago";
+}
+function ffmaConfWhat(c) {
+  const isUS = /UNITED STATES|USA|CANADA/i.test(c.country||"");
+  if (c.new_dxcc && c.country && !isUS)
+    return `<span class="ff-newdxcc" title="first time this DXCC entity is confirmed on 6 m — a new country toward 6m DXCC / 10-band">\u{1F30D} NEW DXCC &middot; ${c.country}</span>`;
+  if (c.new_grid && c.ffma)
+    return `<span class="ff-newffma" title="first confirmation of this FFMA grid — advances the 488">\u{1F3AF} NEW FFMA GRID</span>`;
+  if (c.new_grid)
+    return `<span class="ff-newgrid" title="first confirmation of this grid on 6 m (VUCC credit) — not one of the 488 FFMA grids">NEW GRID</span>`;
+  return `<span class="ff-reconf" title="re-confirmation — this grid/entity was already confirmed (often a rework landing, or a second op)">re-confirm</span>`;
+}
 function ffmaRover(call) {
   if (!call) return "";
   if (call.endsWith("/R")) return ` <span class="ff-rover" title="rover">🚐</span>`;
@@ -6267,6 +6363,26 @@ function renderFfma(j) {
     <div class="ff-bar"><div class="ff-fill" style="width:${pct}%"></div></div>
     <div class="ff-pctlabel">${pct}% of the grail &middot; FFMA = all 488 CONUS grids on 6 m</div>
   </div>`);
+
+  // latest confirmations — the live "who greened" ticker off the LoTW mirror,
+  // so the confirmations announce themselves (new grid / new entity flagged)
+  const rc = j.recent_confirmations || [];
+  if (rc.length) {
+    const rows = rc.map(c => `<tr class="${(c.new_dxcc || c.new_grid) ? "ff-conf-new" : ""}">
+      <td class="ff-when" title="${c.date} ${c.state||""}">${ffmaAgo(c.ts)}</td>
+      <td class="ff-g">${c.grid||"?"}</td>
+      <td>${ffmaTierBadge(c.tier, c.pct)}</td>
+      <td class="ff-who">${c.call||"?"}${ffmaRover(c.call)}</td>
+      <td>${ffmaConfWhat(c)}</td>
+    </tr>`).join("");
+    cards.push(`<details class="score-card ff-confirms ff-collapse" ${ffConfOpen ? "open" : ""}>
+      <summary>&#x2705; Latest confirmations <span class="ff-count">last ${rc.length}</span></summary>
+      <table class="ff-table">
+        <tr><th>when</th><th>grid</th><th>rarity</th><th>via</th><th>what</th></tr>
+        ${rows}</table>
+      <div class="mode-hint">Newest LoTW confirmations off your mirror, so they announce themselves. &#x1F30D; <b>NEW DXCC</b> = a new entity on six &middot; &#x1F3AF; <b>NEW FFMA GRID</b> = advances the 488 &middot; the rest are re-confirms (a grid/entity you already had — usually a rework landing or a second op).</div>
+    </details>`);
+  }
 
   // recent ATNOs — newest featured big, then the previous few
   const atnos = ch.recent_atnos || (ch.recent_atno ? [ch.recent_atno] : []);
@@ -6387,6 +6503,7 @@ function renderFfma(j) {
     const dt = el.querySelector("details." + cls);
     if (dt) dt.addEventListener("toggle", () => set(dt.open));
   };
+  bindFf("ff-confirms", o => ffConfOpen = o);
   bindFf("ff-atno",    o => ffAtnoOpen = o);
   bindFf("ff-pending", o => ffPendOpen = o);
   bindFf("ff-rares",   o => ffRaresOpen = o);
