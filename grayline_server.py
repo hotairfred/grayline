@@ -6306,7 +6306,11 @@ function ffmaConfWhat(c) {
     return `<span class="ff-newffma" title="first confirmation of this FFMA grid — advances the 488">\u{1F3AF} NEW FFMA GRID</span>`;
   if (c.new_grid)
     return `<span class="ff-newgrid" title="first confirmation of this grid on 6 m (VUCC credit) — not one of the 488 FFMA grids">NEW GRID</span>`;
-  return `<span class="ff-reconf" title="re-confirmation — this grid/entity was already confirmed (often a rework landing, or a second op)">re-confirm</span>`;
+  // already had it — a duplicate, nothing to chase (don't say "re-confirm", it
+  // reads like a to-do and tugs Fred back to re-work a grid he already owns)
+  if (c.country && !isUS)
+    return `<span class="ff-reconf" title="dupe — this DXCC entity is already confirmed on 6 m; nothing to chase, no need to re-work">Dupe DXCC</span>`;
+  return `<span class="ff-reconf" title="dupe — this grid is already confirmed on 6 m; nothing to chase, no need to re-work">Dupe Grid</span>`;
 }
 function ffmaRover(call) {
   if (!call) return "";
@@ -6380,7 +6384,7 @@ function renderFfma(j) {
       <table class="ff-table">
         <tr><th>when</th><th>grid</th><th>rarity</th><th>via</th><th>what</th></tr>
         ${rows}</table>
-      <div class="mode-hint">Newest LoTW confirmations off your mirror, so they announce themselves. &#x1F30D; <b>NEW DXCC</b> = a new entity on six &middot; &#x1F3AF; <b>NEW FFMA GRID</b> = advances the 488 &middot; the rest are re-confirms (a grid/entity you already had — usually a rework landing or a second op).</div>
+      <div class="mode-hint">Newest LoTW confirmations off your mirror, so they announce themselves. &#x1F30D; <b>NEW DXCC</b> = a new entity on six &middot; &#x1F3AF; <b>NEW FFMA GRID</b> = advances the 488 &middot; the rest are <b>dupes</b> (a grid/entity you already own — usually a rework landing or a second op; nothing to chase).</div>
     </details>`);
   }
 
