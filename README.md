@@ -22,6 +22,14 @@ full **award scoreboard** (DXCC and its variants, WAS, VUCC, FFMA, and more).
 DX, why QRZ lookups are what make that work, the strict/lenient spotter gate, and
 how confirmation-source tracking keeps each award counting by its own rules.
 
+> ⚠️ **Safety — Grayline can key your transmitter.** The optional FlexRadio
+> integration commands your radio's tuning and can initiate transmit (slice QSY,
+> click-to-tune, WSJT-X Reply). A bug, misconfiguration, or unexpected state
+> could key your rig, move it out of band, or tune into a bad load — with an
+> amplifier in line, that risks real damage to your equipment. **Use entirely at
+> your own risk:** test with low power into a dummy load first, and keep your TX
+> interlocks in place. Provided AS-IS with no warranty — see [LICENSE](LICENSE).
+
 ## Features
 
 - **Award scoreboard** — DXCC (Mixed/CW/Phone/Digital/Satellite), DXCC
