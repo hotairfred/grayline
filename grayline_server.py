@@ -1045,9 +1045,11 @@ def _ingest_wsjtx_decode(parsed: dict, source_addr: tuple):
     calling_me = bool(len(mp) >= 2 and mp[0].upper() == CALLSIGN.upper()
                       and _looks_like_call(mp[1]))
 
-    # WSJT-X mode glyph maps to a printable mode string. ~ = FT8, + = FT4.
+    # WSJT-X mode glyph → printable mode. ~ = FT8, + = FT4. Any OTHER glyph (Q65,
+    # MSK144, JT65, …) falls back to the instance's Status mode (full name) rather
+    # than being mislabeled "FT8" — fixes Q65 decodes from a slice showing as FT8.
     glyph = parsed.get("mode", "") or ""
-    mode_str = {"~": "FT8", "+": "FT4"}.get(glyph, "FT8")
+    mode_str = {"~": "FT8", "+": "FT4"}.get(glyph) or (state.get("mode") or "").upper() or "FT8"
 
     spot = dxcluster.DXSpot(
         spotter=_wsjtx_spotter_label(client_id),  # 'SliceA' from 'WSJT-X - SliceA'
@@ -2993,6 +2995,22 @@ def _maybe_alert(s: dict, calling_me: bool = False):
     cfg = _ALERTS
     if not cfg.get("enabled"):
         return
+    # TOP-WANTED "scream": a top-N most-wanted FFMA grid we still NEED pings at
+    # high priority independent of the per-cell config — rarest grids on the board,
+    # brutally narrow window. Scope = my own decode, or a nearby spotter within band
+    # radius (so it fires even before I decode it myself and I can aim the beam).
+    if s.get("ffma_scream"):
+        src_local = (s.get("source") or "").endswith("-LOCAL")
+        d = s.get("distance_mi")
+        near = d is not None and d <= _telnet_feed_radius_mi(band)
+        if src_local or near:
+            ck = ("scream", (s.get("grid") or "")[:4])
+            sc_cd = max(1, int(cfg.get("cooldown_min", 30))) * 60
+            if now - _alert_cooldown.get(ck, 0) >= sc_cd:
+                _alert_cooldown[ck] = now
+                _p = (s.get("ffma_rarity") or {}).get("pct_needed")
+                _fire_alert(s, "\U0001F3C6 MOST-WANTED" + (f" {round(_p)}%" if _p is not None else ""), priority=1)
+        return
     cell = cfg.get("cells", {}).get(band, {}).get(mt)
     if not cell or not (cell.get("needed") or cell.get("open")):
         return
@@ -3208,6 +3226,11 @@ def add_spot(spot, cluster_name, calling_me=False):
                 return
         # FFMA grid rarity (Tier 0, global): only meaningful on 6m (FFMA is a 6m award).
         ffma_rarity = _FFMA_RARITY.get(eff_grid[:4].upper()) if (band == "6m" and eff_grid) else None
+        ffma_rank = _FFMA_RANK.get(eff_grid[:4].upper()) if (band == "6m" and eff_grid) else None
+        # "Scream" = a top-N most-wanted grid we still NEED. Rank drives the trigger
+        # only; the badge/push show just the trophy + the raw pct_needed — no rank,
+        # no tier (FFMA rarity is source-dependent, so any exact position overclaims).
+        _scream = bool(ffma_rank and ffma_rank <= SCREAM_TOP_N and grid_band_status == "new")
         heard_me = psk_heard.heard(spot.dx_call)   # this station reported decoding ME to PSKReporter
         _cache[key] = {
             "ts": time.time(),
@@ -3230,6 +3253,8 @@ def add_spot(spot, cluster_name, calling_me=False):
             "wae_status": wae_status,                        # WAE need: 'new'|'worked'|'confirmed'|None
             "wae_name": wae_name,                            # WAE country name (pill tooltip)
             "ffma_rarity": ffma_rarity,                     # FFMA grid rarity (6m only): {pct_needed,leaders_needing,tier} or None
+            "ffma_rank": ffma_rank,                          # FFMA most-wanted rank (source-dependent; kept for sorting/debug, NOT shown as an exact position)
+            "ffma_scream": _scream,                          # top-N most-wanted AND still needed → high-priority scream (trophy + % badge/push)
             "ffma_tier": _ffma_rework_tier(band, eff_grid, spot.dx_call),  # 6m re-work flag: 'dead'/'ghost' worked-but-unconfirmed FFMA grid, else None
             "heard_me": heard_me,                           # this station reported decoding ME to PSKReporter (eye badge) or None
             "continent": continent,
@@ -3440,6 +3465,24 @@ log.info("FFMA rarity loaded: %d grids (%d rare, %d uncommon)",
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "rare"),
          sum(1 for v in _FFMA_RARITY.values() if v.get("tier") == "uncommon"))
 
+# --- TOP-WANTED "scream" ranking ---------------------------------------------
+# Rank every FFMA grid by global rarity (pct_needed, desc) so rank 1 = the single
+# most-wanted grid in the award. The top SCREAM_TOP_N most-wanted grids we still
+# NEED earn a high-priority phone push + a distinct pulsing badge — rarest grids
+# on the board, brutally narrow window (CN75 = #2, worked via a 100 W Moxon at
+# -24 dB and gone in minutes). Recomputed on every rarity reload.
+SCREAM_TOP_N = int(CONFIG.get("scream_top_n", 25))
+
+
+def _compute_ffma_ranks(rarity: dict) -> dict:
+    ordered = sorted(
+        (g for g, v in rarity.items() if v.get("pct_needed") is not None),
+        key=lambda g: rarity[g].get("pct_needed") or 0.0, reverse=True)
+    return {g: i + 1 for i, g in enumerate(ordered)}
+
+
+_FFMA_RANK = _compute_ffma_ranks(_FFMA_RARITY)
+
 # mtime of data/ffma_rarity.json when last loaded, so the reload loop can pick up
 # the daily gridzilla_ffma_fetch.py cron rewrite without a server restart.
 try:
@@ -3452,7 +3495,7 @@ def _maybe_reload_ffma_rarity() -> bool:
     """If the daily cron (gridzilla_ffma_fetch.py) rewrote data/ffma_rarity.json,
     reload the in-memory map and recompute the HOME_GRID reachability overlay.
     mtime-gated, so a no-change tick is one stat() call. Returns True on reload."""
-    global _FFMA_RARITY, _FFMA_RARITY_MTIME
+    global _FFMA_RARITY, _FFMA_RARITY_MTIME, _FFMA_RANK
     path = Path(__file__).parent / "data" / "ffma_rarity.json"
     try:
         mtime = path.stat().st_mtime
@@ -3461,6 +3504,7 @@ def _maybe_reload_ffma_rarity() -> bool:
     if mtime == _FFMA_RARITY_MTIME:
         return False
     _FFMA_RARITY = {k.upper(): v for k, v in _load_ffma_rarity().items()}
+    _FFMA_RANK = _compute_ffma_ranks(_FFMA_RARITY)
     _augment_ffma_reachability()   # re-overlay distance/es_band/personal_tier
     _FFMA_RARITY_MTIME = mtime
     log.info("FFMA rarity reloaded from disk: %d grids (%d rare, %d uncommon)",
@@ -3844,6 +3888,12 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: 0.66em; font-weight: 800; letter-spacing: 0.02em; vertical-align: middle; }
 .ffr-rare { background: #d4af37; color: #1a1a1a; }   /* top-tier rare — grail gold */
 .ffr-unc  { background: #6b5a1a; color: #f5d76e; }   /* uncommon — muted gold */
+/* TOP-WANTED scream — a top-N most-wanted grid we still need. Pulsing red so it's
+   unmissable against the gold rarity badges; pairs with the priority phone push. */
+.ffr-scream { background: #ff3b30; color: #fff; font-weight: 800;
+  box-shadow: 0 0 3px #ff3b30, 0 0 6px #ff6b00; animation: ffrScream 1.1s ease-in-out infinite; }
+@keyframes ffrScream { 0%,100% { box-shadow: 0 0 3px #ff3b30, 0 0 6px #ff6b00; }
+  50% { box-shadow: 0 0 7px #ff3b30, 0 0 15px #ffb000; } }
 /* FFMA re-work flags. Live spot: skull = dead (op uploaded without you, re-work only),
    ghost = op not on LoTW / silent (re-work or card). Glow so they read as action cues. */
 .rework { margin-left: 0.3em; font-size: 0.92em; vertical-align: middle; cursor: help; }
@@ -4882,6 +4932,13 @@ function peerCopiesBadge(s) {
 function ffmaRarityBadge(s) {
   const r = s.ffma_rarity;
   if (!r) return "";
+  // TOP-WANTED "scream": server flags top-N most-wanted grids we still NEED. Just the
+  // trophy + the raw % — no rank, no tier (FFMA rarity is source-dependent, so any
+  // exact position would overclaim). The pulsing red + 🏆 carry the "drop everything".
+  if (s.ffma_scream) {
+    const p = (r.pct_needed != null) ? Math.round(r.pct_needed) + "%" : "";
+    return ` <span class="ffr ffr-scream" title="Top-wanted FFMA grid — ${r.pct_needed}% of leaders still need it (${r.leaders_needing}). Drop everything.">&#x1F3C6; ${p}</span>`;
+  }
   // Tier 1 overlay: when "rare for my QTH" is on, color by the reachability-adjusted
   // personal tier and append the Es-hop band; otherwise the global Tier-0 view.
   const personal = ffmaQthCB.checked && r.personal_tier;
@@ -7277,6 +7334,21 @@ _FFMA_MAP_PAGE = """<!doctype html>
   .foot{color:#777;font-size:0.82em;margin-top:8px}
   #tip{position:fixed;pointer-events:none;background:#000;border:1px solid #444;padding:5px 8px;border-radius:4px;font-size:0.82em;display:none;z-index:9;white-space:nowrap}
   #tip b{color:#fff}
+  .viewtoggle{margin:8px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .vt{background:#1a1a1a;color:#bbb;border:1px solid #2a2a2a;border-radius:4px;padding:4px 11px;cursor:pointer;font-size:0.85em}
+  .vt.active{background:#22343d;color:#fff;border-color:#3fc7e0}
+  .vt:hover{border-color:#3fc7e0}
+  #matrix{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+  .fieldblk{border:1px solid #1c1c1c;border-radius:5px;padding:6px 7px;background:#0e0e0e}
+  .fieldttl{font-size:0.86em;font-weight:700;color:#e8e8e8;margin-bottom:4px;letter-spacing:0.03em}
+  .fieldttl small{color:#7a7a7a;font-weight:400;letter-spacing:0}
+  .fieldttl .nd{color:#e2705f;font-weight:700}
+  .fgrid{display:grid;grid-template-columns:repeat(10,1fr);gap:2px}
+  .fcell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:0.56em;border-radius:2px;background:#141414;color:#2f2f2f;user-select:none}
+  .fcell.ffma{font-weight:700}
+  .fcell.ffma:hover{outline:1px solid #fff}
+  .fcell.dim{opacity:0.16}
+  @media(max-width:760px){ #matrix{grid-template-columns:repeat(2,1fr)} }
 </style></head>
 <body><div id="wrap">
   <h1>FFMA &mdash; 488 Grid Map</h1>
@@ -7287,35 +7359,46 @@ _FFMA_MAP_PAGE = """<!doctype html>
     <span><i class="sw" style="background:hsl(0,60%,30%)"></i>needed</span>
     <span style="color:#888">brighter red = rarer &middot; hover a cell for detail</span>
   </div>
+  <div class="viewtoggle">
+    <button id="btnMap" class="vt active">Geographic Map</button>
+    <button id="btnMatrix" class="vt">Field Matrix</button>
+    <label id="ndWrap" style="display:none;margin-left:10px;font-size:0.85em;color:#bbb"><input type="checkbox" id="ndOnly"> Needed only</label>
+    <span id="matrixHint" style="display:none;color:#777;font-size:0.8em;margin-left:6px">each field = 100 squares; only the FFMA-eligible ones are colored (north up, east right)</span>
+  </div>
   <svg id="map" viewBox="0 0 1000 440" preserveAspectRatio="xMidYMid meet"></svg>
+  <div id="matrix" style="display:none"></div>
   <div class="foot"><a href="/">&larr; dashboard</a> &middot; <a href="/rotor">rotor / radar</a> &middot; sourced from your LoTW mirror (the truth &mdash; not QRZ flags). refreshes every 60s.</div>
 </div>
 <div id="tip"></div>
 <script>
 const SVGNS="http://www.w3.org/2000/svg";
-const map=document.getElementById("map"), tip=document.getElementById("tip");
+const map=document.getElementById("map"), tip=document.getElementById("tip"), matrix=document.getElementById("matrix");
 const COL={confirmed:"#2ecc71", worked:"#f1c40f"};
 function needColor(pct){ var p=Math.min(1,(pct||0)/30); return "hsl(0,60%,"+(27+p*38).toFixed(0)+"%)"; }
-async function load(){
-  var d; try{ d=await (await fetch("/api/ffma_map",{cache:"no-store"})).json(); }catch(e){ return; }
-  var gs=d.grids; if(!gs||!gs.length) return;
+var GS=null, VIEW="map";
+function showTip(e,g){
+  tip.style.display="block"; tip.style.left=(e.clientX+13)+"px"; tip.style.top=(e.clientY+13)+"px";
+  const st=g.s==="new"?"NEEDED":(g.s==="worked"?"worked, pending":"CONFIRMED");
+  let html="<b>"+g.g+"</b> &mdash; "+st+"<br>"+g.tier+(g.pct?(" &middot; "+g.pct+"% need it"):"");
+  if(g.s==="worked" && g.paths && g.paths.length){
+    html+="<div style='margin-top:4px;border-top:1px solid #333;padding-top:3px'>";
+    for(const p of g.paths){ html+=p.t+" <b>"+p.c+"</b><br>"; }
+    html+="<i style='color:#8fce8f'>"+(g.pred||"")+"</i></div>";
+  }
+  tip.innerHTML=html;
+}
+function attachTip(el,g){
+  el.addEventListener("mousemove",function(e){ showTip(e,g); });
+  el.addEventListener("click",function(e){ showTip(e,g); });
+  el.addEventListener("mouseleave",function(){ tip.style.display="none"; });
+}
+function renderMap(gs){
   var loMin=1e9,loMax=-1e9,laMin=1e9,laMax=-1e9;
   for(const g of gs){ loMin=Math.min(loMin,g.lon);loMax=Math.max(loMax,g.lon);laMin=Math.min(laMin,g.lat);laMax=Math.max(laMax,g.lat); }
   loMin-=1;loMax+=1;laMin-=0.5;laMax+=0.5;
   var W=1000,H=440,pad=8;
   var sx=(W-2*pad)/(loMax-loMin), sy=(H-2*pad)/(laMax-laMin);
   map.innerHTML="";
-  function showTip(e,g){
-    tip.style.display="block"; tip.style.left=(e.clientX+13)+"px"; tip.style.top=(e.clientY+13)+"px";
-    const st=g.s==="new"?"NEEDED":(g.s==="worked"?"worked, pending":"CONFIRMED");
-    let html="<b>"+g.g+"</b> &mdash; "+st+"<br>"+g.tier+(g.pct?(" &middot; "+g.pct+"% need it"):"");
-    if(g.s==="worked" && g.paths && g.paths.length){
-      html+="<div style='margin-top:4px;border-top:1px solid #333;padding-top:3px'>";
-      for(const p of g.paths){ html+=p.t+" <b>"+p.c+"</b><br>"; }
-      html+="<i style='color:#8fce8f'>"+(g.pred||"")+"</i></div>";
-    }
-    tip.innerHTML=html;
-  }
   for(const g of gs){
     const x=pad+((g.lon-1)-loMin)*sx, y=pad+(laMax-(g.lat+0.5))*sy;
     const col=g.s==="new"?needColor(g.pct):(COL[g.s]||"#444");
@@ -7324,13 +7407,65 @@ async function load(){
     r.setAttribute("x",x.toFixed(1)); r.setAttribute("y",y.toFixed(1));
     r.setAttribute("width",(2*sx).toFixed(1)); r.setAttribute("height",(1*sy).toFixed(1));
     r.setAttribute("fill",col);
-    r.addEventListener("mousemove",function(e){ showTip(e,g); });
-    r.addEventListener("click",function(e){ showTip(e,g); });
-    r.addEventListener("mouseleave",function(){ tip.style.display="none"; });
+    attachTip(r,g);
     map.appendChild(r);
   }
+}
+function renderMatrix(gs){
+  const nd=document.getElementById("ndOnly").checked;
+  const byGrid={}; for(const g of gs) byGrid[g.g.toUpperCase()]=g;
+  const fields={}; for(const g of gs){ const f=g.g.slice(0,2).toUpperCase(); (fields[f]=fields[f]||[]).push(g); }
+  const colIdx={C:1,D:2,E:3,F:4}, rowIdx={N:1,M:2,L:3};
+  matrix.innerHTML="";
+  for(const f of Object.keys(fields).sort()){
+    const blk=document.createElement("div"); blk.className="fieldblk";
+    if(colIdx[f[0]]) blk.style.gridColumn=colIdx[f[0]];
+    if(rowIdx[f[1]]) blk.style.gridRow=rowIdx[f[1]];
+    const nNeed=fields[f].filter(g=>g.s==="new").length;
+    const ttl=document.createElement("div"); ttl.className="fieldttl";
+    ttl.innerHTML=f+' <small>'+fields[f].length+' grids &middot; <span class="nd">'+nNeed+' needed</span></small>';
+    blk.appendChild(ttl);
+    const grid=document.createElement("div"); grid.className="fgrid";
+    for(let rd=9; rd>=0; rd--){
+      for(let cd=0; cd<=9; cd++){
+        const cell=document.createElement("div"); cell.className="fcell";
+        const g=byGrid[f+cd+rd];
+        if(g){
+          cell.classList.add("ffma");
+          const isNeed=g.s==="new";
+          if(nd && !isNeed){ cell.classList.add("dim"); }
+          else { cell.style.background=isNeed?needColor(g.pct):(COL[g.s]||"#444"); cell.style.color=isNeed?"#f2e2e0":"#0b0b0b"; }
+          cell.textContent=""+cd+rd;
+          attachTip(cell,g);
+        }
+        grid.appendChild(cell);
+      }
+    }
+    blk.appendChild(grid);
+    matrix.appendChild(blk);
+  }
+}
+function renderActive(){ if(!GS) return; if(VIEW==="map") renderMap(GS); else renderMatrix(GS); }
+function setView(v){
+  VIEW=v;
+  document.getElementById("btnMap").classList.toggle("active",v==="map");
+  document.getElementById("btnMatrix").classList.toggle("active",v==="matrix");
+  map.style.display=(v==="map")?"":"none";
+  matrix.style.display=(v==="matrix")?"grid":"none";
+  document.getElementById("ndWrap").style.display=(v==="matrix")?"inline-flex":"none";
+  document.getElementById("matrixHint").style.display=(v==="matrix")?"inline":"none";
+  renderActive();
+}
+document.getElementById("btnMap").addEventListener("click",function(){ setView("map"); });
+document.getElementById("btnMatrix").addEventListener("click",function(){ setView("matrix"); });
+document.getElementById("ndOnly").addEventListener("change",function(){ if(VIEW==="matrix") renderMatrix(GS); });
+async function load(){
+  var d; try{ d=await (await fetch("/api/ffma_map",{cache:"no-store"})).json(); }catch(e){ return; }
+  var gs=d.grids; if(!gs||!gs.length) return;
+  GS=gs;
   var c=d.counts, pct=(100*c.confirmed/d.total).toFixed(1);
   document.getElementById("counts").innerHTML="<b>"+c.confirmed+"</b> confirmed &middot; <b>"+c.worked+"</b> worked-pending &middot; <b>"+c.new+"</b> needed &middot; of "+d.total+" &nbsp;|&nbsp; <b>"+pct+"%</b> complete";
+  renderActive();
 }
 load(); setInterval(load,60000);
 </script></body></html>"""
