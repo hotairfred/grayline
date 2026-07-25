@@ -7362,7 +7362,7 @@ _FFMA_MAP_PAGE = """<!doctype html>
   <div class="viewtoggle">
     <button id="btnMap" class="vt active">Geographic Map</button>
     <button id="btnMatrix" class="vt">Field Matrix</button>
-    <label id="ndWrap" style="display:none;margin-left:10px;font-size:0.85em;color:#bbb"><input type="checkbox" id="ndOnly"> Needed only</label>
+    <label id="ndWrap" style="display:none;margin-left:10px;font-size:0.85em;color:#bbb"><input type="checkbox" id="ndOnly"> Unconfirmed only</label>
     <span id="matrixHint" style="display:none;color:#777;font-size:0.8em;margin-left:6px">each field = 100 squares; only the FFMA-eligible ones are colored (north up, east right)</span>
   </div>
   <svg id="map" viewBox="0 0 1000 440" preserveAspectRatio="xMidYMid meet"></svg>
@@ -7432,10 +7432,13 @@ function renderMatrix(gs){
         const g=byGrid[f+cd+rd];
         if(g){
           cell.classList.add("ffma");
-          const isNeed=g.s==="new";
-          if(nd && !isNeed){ cell.classList.add("dim"); }
-          else { cell.style.background=isNeed?needColor(g.pct):(COL[g.s]||"#444"); cell.style.color=isNeed?"#f2e2e0":"#0b0b0b"; }
+          const isNew=g.s==="new";
+          cell.style.background=isNew?needColor(g.pct):(COL[g.s]||"#444");
+          cell.style.color=isNew?"#f2e2e0":"#0b0b0b";
           cell.textContent=""+cd+rd;
+          // "Unconfirmed only" fades the confirmed (green); keeps BOTH needed (red)
+          // and worked-pending (yellow) — everything still to be closed out.
+          if(nd && g.s==="confirmed"){ cell.classList.add("dim"); }
           attachTip(cell,g);
         }
         grid.appendChild(cell);
