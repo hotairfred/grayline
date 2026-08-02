@@ -1959,6 +1959,68 @@ def _adif_field(record: str, tag: str) -> str:
 _RECENT_CONF_CACHE: dict = {"mtime": None, "data": []}
 
 
+_ALL_CONF_CACHE = {"mtime": 0.0, "data": []}
+
+
+def _build_all_confirmations() -> list:
+    """ALL-band LoTW confirmations, newest-confirmed-first (by APP_LOTW_RXQSL).
+    Each flagged new_dxcc (first-ever confirm for that entity, any band),
+    new_band (first confirm for that entity on THAT band = a new Challenge slot),
+    and new_grid (first confirm for that grid). Feeds the log-search 'Recent
+    confirmations' filter. Parsed from lotw_qsl.adi, cached on its mtime."""
+    path = LOGBOOK_PATH.parent / "lotw_qsl.adi"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    if _ALL_CONF_CACHE["mtime"] == mtime:
+        return _ALL_CONF_CACHE["data"]
+    try:
+        txt = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    recs = []
+    first_dxcc: dict = {}     # country        -> earliest confirm ms (new-entity moment)
+    first_band: dict = {}     # (country,band) -> earliest confirm ms (new-band-slot moment)
+    first_grid: dict = {}     # grid4          -> earliest confirm ms (new-grid moment)
+    for rec in re.split(r"(?i)<eor>", txt):
+        rx = (_adif_field(rec, "app_lotw_rxqsl") or _adif_field(rec, "qslrdate")).strip()
+        if not rx:
+            continue
+        try:
+            dt = datetime.datetime.strptime(rx[:19], "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+        ms = int(dt.timestamp() * 1000)
+        country = (_adif_field(rec, "country") or "").strip()
+        band = (_adif_field(rec, "band") or "").strip().lower()
+        g4 = (_adif_field(rec, "gridsquare") or "")[:4].upper()
+        recs.append({
+            "ts": ms, "confirm_date": rx[:10],
+            "call": (_adif_field(rec, "call") or "").strip().upper(),
+            "band": band, "mode": (_adif_field(rec, "mode") or "").strip().upper(),
+            "grid": g4, "country": country,
+            "state": (_adif_field(rec, "state") or "").strip().upper(),
+            "qso_date": (_adif_field(rec, "qso_date") or "").strip(),
+        })
+        if country and (country not in first_dxcc or ms < first_dxcc[country]):
+            first_dxcc[country] = ms
+        bk = (country, band)
+        if country and (bk not in first_band or ms < first_band[bk]):
+            first_band[bk] = ms
+        if g4 and (g4 not in first_grid or ms < first_grid[g4]):
+            first_grid[g4] = ms
+    recs.sort(key=lambda r: r["ts"], reverse=True)
+    for r in recs:
+        r["new_dxcc"] = bool(r["country"]) and first_dxcc.get(r["country"]) == r["ts"]
+        r["new_band"] = bool(r["country"]) and first_band.get((r["country"], r["band"])) == r["ts"]
+        r["new_grid"] = bool(r["grid"]) and first_grid.get(r["grid"]) == r["ts"]
+    _ALL_CONF_CACHE["mtime"] = mtime
+    _ALL_CONF_CACHE["data"] = recs
+    return recs
+
+
 def _build_recent_confirmations(limit: int = 12) -> list:
     """The most recent 6 m LoTW confirmations (ordered by APP_LOTW_RXQSL), each
     flagged new_grid / new_dxcc — i.e. whether THIS confirmation is the FIRST
@@ -4218,6 +4280,11 @@ details[open] .gear-icon { color: #fff; }
 }
 .log-search-filters label { color: #888; font-size: 0.8em; }
 .log-search-meta { color: #888; font-size: 0.85em; margin-left: 0.6em; flex: 1; }
+.conf-date { color: #7fe0a0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.conf-new { display: inline-block; padding: 0 0.4em; border-radius: 3px; font-size: 0.72em; font-weight: 800; letter-spacing: 0.02em; margin-right: 0.25em; }
+.conf-new.nd { background: #2ecc71; color: #063a1a; }   /* new entity */
+.conf-new.nb { background: #2a4a6a; color: #cfe6ff; }   /* new band-slot */
+.conf-new.ng { background: #6b5a1a; color: #f5d76e; }   /* new grid */
 .log-search-pager { display: flex; gap: 0.4em; align-items: center; font-size: 0.85em; color: #aaa; }
 .log-search-pager button {
   background: #1a1a1a; color: #ccc; border: 1px solid #333;
@@ -4485,6 +4552,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <input type="text" id="lf_dxcc" class="log-search-input wide" placeholder="entity (e.g. Russia)" autocomplete="off">
     <input type="text" id="lf_grid" class="log-search-input" placeholder="grid (e.g. FN31)" autocomplete="off">
     <span class="log-search-clear" id="lf_clear">clear</span>
+    <label id="lf_confirm_wrap" style="color:#aaa;font-size:0.82em;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="lf_confirmed"> &#x1F7E2; recent confirmations</label>
     <span class="log-search-meta" id="log_search_meta"></span>
   </div>
   <div class="log-search-pager">
@@ -6761,6 +6829,7 @@ function buildLogQuery() {
   if (mode) params.set("mode", mode);
   if (dxcc) params.set("dxcc", dxcc);
   if (grid) params.set("grid", grid);
+  if (document.getElementById("lf_confirmed").checked) params.set("confirmed", "1");
   params.set("offset", String(_logOffset));
   params.set("limit", String(limit));
   return { qs: params.toString(), limit };
@@ -6790,25 +6859,50 @@ function renderLogSearch(j) {
   document.getElementById("lf_last").disabled = curPage >= totalPages;
 
   if (!j.qsos.length) { out.innerHTML = `<div class="empty">no matches</div>`; return; }
-  const rows = [`<table><tr>
-    <th>Date UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>Freq</th>
-    <th>Country</th><th>Grid</th><th>State</th><th>Zone</th><th>QSL</th>
-  </tr>`];
-  for (const q of j.qsos) {
-    const qsl = fmtQslMethod(q);
-    const cls = q.lotw ? "lotw" : (q.confirmed ? "" : "unconf");
-    rows.push(`<tr>
-      <td>${fmtQsoTime(q.qso_date, q.time_on)}</td>
-      <td class="q-call">${q.call}</td>
-      <td class="band">${q.band}</td>
-      <td class="mode">${q.mode}</td>
-      <td class="freq">${q.freq || ""}</td>
-      <td>${q.country}</td>
-      <td class="grid">${q.grid || ""}</td>
-      <td>${q.state || ""}</td>
-      <td>${q.cqz || ""}</td>
-      <td class="q-conf ${cls}">${qsl}</td>
-    </tr>`);
+  let rows;
+  if (j.confirmed_mode) {
+    rows = [`<table><tr>
+      <th>Confirmed</th><th>Call</th><th>Band</th><th>Mode</th>
+      <th>Country</th><th>Grid</th><th>State</th><th>QSO Date</th><th>What it gave you</th>
+    </tr>`];
+    for (const q of j.qsos) {
+      const badges = [];
+      if (q.new_dxcc) badges.push(`<span class="conf-new nd">NEW ENTITY</span>`);
+      else if (q.new_band) badges.push(`<span class="conf-new nb">new band-slot</span>`);
+      if (q.new_grid) badges.push(`<span class="conf-new ng">new grid</span>`);
+      rows.push(`<tr>
+        <td class="conf-date">${q.confirm_date || ""}</td>
+        <td class="q-call">${q.call}</td>
+        <td class="band">${q.band}</td>
+        <td class="mode">${q.mode}</td>
+        <td>${q.country}</td>
+        <td class="grid">${q.grid || ""}</td>
+        <td>${q.state || ""}</td>
+        <td>${fmtQsoTime(q.qso_date, "")}</td>
+        <td>${badges.join(" ") || "&mdash;"}</td>
+      </tr>`);
+    }
+  } else {
+    rows = [`<table><tr>
+      <th>Date UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>Freq</th>
+      <th>Country</th><th>Grid</th><th>State</th><th>Zone</th><th>QSL</th>
+    </tr>`];
+    for (const q of j.qsos) {
+      const qsl = fmtQslMethod(q);
+      const cls = q.lotw ? "lotw" : (q.confirmed ? "" : "unconf");
+      rows.push(`<tr>
+        <td>${fmtQsoTime(q.qso_date, q.time_on)}</td>
+        <td class="q-call">${q.call}</td>
+        <td class="band">${q.band}</td>
+        <td class="mode">${q.mode}</td>
+        <td class="freq">${q.freq || ""}</td>
+        <td>${q.country}</td>
+        <td class="grid">${q.grid || ""}</td>
+        <td>${q.state || ""}</td>
+        <td>${q.cqz || ""}</td>
+        <td class="q-conf ${cls}">${qsl}</td>
+      </tr>`);
+    }
   }
   rows.push(`</table>`);
   out.innerHTML = rows.join("");
@@ -6831,7 +6925,7 @@ function debouncedFetchLog() {
 for (const id of ["lf_call","lf_dxcc","lf_grid"]) {
   document.getElementById(id).addEventListener("input", debouncedFetchLog);
 }
-for (const id of ["lf_band","lf_mode","lf_pagesize"]) {
+for (const id of ["lf_band","lf_mode","lf_pagesize","lf_confirmed"]) {
   document.getElementById(id).addEventListener("change", () => { _logOffset = 0; fetchLog(); });
 }
 document.getElementById("lf_clear").addEventListener("click", () => {
@@ -7946,9 +8040,46 @@ class Handler(BaseHTTPRequestHandler):
             offset = max(0, int(qs.get("offset", ["0"])[0]))
         except ValueError:
             offset = 0
+        confirmed_only = (qs.get("confirmed", [""])[0] or "").strip() in ("1", "true", "yes")
 
         dxcc_is_id = dxcc.isdigit()
         dxcc_lower = dxcc.lower()
+
+        # "Recent confirmations" filter: source is the ALL-band LoTW confirmation
+        # feed (newest-confirmed-first), carrying the confirm date + new-entity /
+        # new-band-slot / new-grid flags. Same call/band/mode/dxcc/grid filters apply.
+        if confirmed_only:
+            src = _build_all_confirmations()
+
+            def cmatch(c):
+                if call and call not in c["call"]:
+                    return False
+                if band and c["band"] != band:
+                    return False
+                if mode and c["mode"] != mode:
+                    return False
+                if dxcc and dxcc_lower not in (c["country"] or "").lower():
+                    return False
+                if grid and grid not in (c["grid"] or ""):
+                    return False
+                return True
+
+            matches = [c for c in src if cmatch(c)]
+            page = matches[offset:offset + limit]
+            outc = [{
+                "call": c["call"], "qso_date": c["qso_date"], "time_on": "",
+                "band": c["band"], "mode": c["mode"], "freq": "",
+                "country": c["country"], "grid": c["grid"], "state": c["state"], "cqz": "",
+                "confirmed": True, "lotw": True, "eqsl": False, "paper": False,
+                "confirm_date": c["confirm_date"], "new_dxcc": c["new_dxcc"],
+                "new_band": c["new_band"], "new_grid": c["new_grid"],
+            } for c in page]
+            self._send(json.dumps({
+                "filters": {"call": call, "band": band, "mode": mode, "dxcc": dxcc, "grid": grid},
+                "count": len(matches), "offset": offset, "limit": limit,
+                "returned": len(outc), "qsos": outc, "confirmed_mode": True,
+            }).encode(), "application/json")
+            return
 
         def matches(q: dict) -> bool:
             if call and call not in (q.get("call") or "").upper():
