@@ -5519,14 +5519,19 @@ async function refresh() {
         modeCounts[m] = (modeCounts[m] || 0) + byBand[b][m].length;
       }
     }
-    const modesAll = Object.keys(modeCounts).sort();
+    // Always include DISABLED modes too — they have no visible spots precisely
+    // *because* they're hidden, so building the list only from visible modes made
+    // a hidden mode's checkbox vanish (and hiding them all emptied the box, with
+    // no way back — the "No modes in current view" dead-end). A disabled mode
+    // shows as an unchecked box with (0) so it can always be re-enabled.
+    const modesAll = [...new Set([...Object.keys(modeCounts), ...disabledModes])].sort();
     if (modesAll.length === 0) {
       modeTogglesBox.innerHTML = '<span class="empty">No modes in current view.</span>';
     } else {
       modeTogglesBox.innerHTML = `<strong style="color:#ff0;margin-right:0.8em">All modes:</strong>` +
         modesAll.map(m => {
           const enabled = !disabledModes.has(m);
-          return `<label><input type="checkbox" data-allmode="${m}" ${enabled ? "checked" : ""}>${escapeHTML(m)} (${modeCounts[m]})</label>`;
+          return `<label><input type="checkbox" data-allmode="${m}" ${enabled ? "checked" : ""}>${escapeHTML(m)} (${modeCounts[m] || 0})</label>`;
         }).join("");
       modeTogglesBox.querySelectorAll("input[data-allmode]").forEach(el => {
         el.addEventListener("change", () => {
@@ -5540,10 +5545,13 @@ async function refresh() {
   } else if (!byBand[activeBand]) {
     modeTogglesBox.innerHTML = `<span class="empty">No current spots on ${escapeHTML(activeBand)}.</span>`;
   } else {
-    const modesInBand = Object.keys(byBand[activeBand]).sort();
+    // Include this band's DISABLED modes too, so a hidden band-mode keeps its
+    // checkbox and can be re-enabled (same dead-end fix as the All view).
+    const disForBand = bandModesDisabled[activeBand] || [];
+    const modesInBand = [...new Set([...Object.keys(byBand[activeBand]), ...disForBand])].sort();
     modeTogglesBox.innerHTML = `<strong style="color:#ff0;margin-right:0.8em">${escapeHTML(activeBand)} modes:</strong>` +
       modesInBand.map(m => {
-        const rows = byBand[activeBand][m];
+        const rows = byBand[activeBand][m] || [];
         const enabled = !isBandModeDisabled(activeBand, m);
         return `<label><input type="checkbox" data-band="${activeBand}" data-mode="${m}" ${enabled ? "checked" : ""}>${escapeHTML(m)} (${rows.length})</label>`;
       }).join("");
