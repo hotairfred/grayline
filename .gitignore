@@ -30,5 +30,8 @@ data/clublog_matches.json
 # M0OXO OQRS callsign-search results (personal QSO data, manual paste)
 data/m0oxo_matches.json
 
+# NG3K ADXO announced-operations cache — re-fetched daily (last-good)
+data/adxo.json
+
 # per-install push-alert matrix (runtime config)
 alerts.json

@@ -3796,6 +3796,287 @@ def dxcc_rarity_refresh_loop():
         time.sleep(86400)  # re-check daily; refetch only when cache >= 14 days old
 
 
+# ---------------- Announced DX Operations (NG3K ADXO) ----------------
+# A daily-parsed calendar of announced DXpeditions, cross-referenced against the
+# live worked/confirmed state so the DXpedition-watch tab shows only the entities
+# and band-slots WF8Z still needs. The source is HTML-only (no CSV/RSS), so we
+# fetch + parse once a day and cache last-good; the needs-match recomputes per
+# request off _worked, so it tracks the current log without waiting for a fetch.
+ADXO_URL = CONFIG.get("adxo_url", "https://www.ng3k.com/Misc/adxoplain.html")
+ADXO_REFRESH_HRS = float(CONFIG.get("adxo_refresh_hrs", 24))
+_ADXO_UA = "grayline-adxo/1.0 (+https://github.com/hotairfred/grayline)"
+_ADXO_CACHE = Path(__file__).parent / "data" / "adxo.json"
+_ADXO_OPS: list = []          # last parsed op list (raw, pre-needs-match)
+_ADXO_STAMP: float = 0.0      # epoch of last successful parse
+_ADXO_LOCK = threading.Lock()
+
+# Band chain for expanding spans like "160-10m"/"80-6m". 60m is NOT in the chain:
+# ADXO writes "incl 60m" explicitly, so a bare span must not over-claim it.
+_ADXO_BAND_CHAIN = [160, 80, 40, 30, 20, 17, 15, 12, 10, 6, 4, 2]
+_ADXO_HF = [160, 80, 40, 30, 20, 17, 15, 12, 10]   # what a bare "HF" implies
+_ADXO_MODES = ["FT8", "FT4", "RTTY", "PSK", "JS8", "SSTV", "MSK144", "Q65",
+               "CW", "SSB", "AM", "USB", "LSB"]
+_ADXO_MONTHS = {m: i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], start=1)}
+_ADXO_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _adxo_strip(s: str) -> str:
+    import html as _html
+    return _html.unescape(_ADXO_TAG_RE.sub("", s)).strip()
+
+
+def _adxo_dates(raw: str):
+    """(start_iso, end_iso) or (None, None). Handles same-month, cross-month,
+    cross-year, and single-day ADXO date strings."""
+    raw = raw.strip()
+
+    def _iso(y, mo, d):
+        try:
+            return datetime.date(y, _ADXO_MONTHS[mo], int(d)).isoformat()
+        except (KeyError, ValueError):
+            return None
+    m = re.match(r"([A-Z][a-z]{2}) (\d{1,2})(?:,\s*(\d{4}))?\s*-\s*"
+                 r"([A-Z][a-z]{2}) (\d{1,2}),\s*(\d{4})", raw)
+    if m:
+        sm, sd, sy, em, ed, ey = m.groups()
+        return _iso(int(sy or ey), sm, sd), _iso(int(ey), em, ed)
+    m = re.match(r"([A-Z][a-z]{2}) (\d{1,2})\s*-\s*(\d{1,2}),\s*(\d{4})", raw)
+    if m:
+        mo, sd, ed, yr = m.groups()
+        return _iso(int(yr), mo, sd), _iso(int(yr), mo, ed)
+    m = re.match(r"([A-Z][a-z]{2}) (\d{1,2}),\s*(\d{4})", raw)
+    if m:
+        mo, d, yr = m.groups()
+        s = _iso(int(yr), mo, d)
+        return s, s
+    return None, None
+
+
+def _adxo_bands(info: str):
+    """Expand band tokens: spans (160-10m), bare HF, and shorthand runs that
+    share one trailing 'm' (40 20 15 10m). Whitelist guards stray numbers."""
+    bands = set()
+    for a, b in re.findall(r"(\d{1,3})\s*-\s*(\d{1,3})m", info):
+        a, b = int(a), int(b)
+        if a in _ADXO_BAND_CHAIN and b in _ADXO_BAND_CHAIN:
+            i, j = _ADXO_BAND_CHAIN.index(a), _ADXO_BAND_CHAIN.index(b)
+            bands.update(_ADXO_BAND_CHAIN[min(i, j):max(i, j) + 1])
+    if re.search(r"\bHF\b", info):
+        bands.update(_ADXO_HF)
+    for run in re.findall(r"((?:\d{1,3}[ ,]+)*\d{1,3})\s*m\b", info):
+        for n in re.findall(r"\d{1,3}", run):
+            n = int(n)
+            if n in _ADXO_BAND_CHAIN or n == 60:
+                bands.add(n)
+    return sorted(bands, reverse=True)
+
+
+def _adxo_parse(html_text: str):
+    """Parse the ADXO plain-text HTML into structured op records."""
+    ops = []
+    for m in re.finditer(r"<p>(.*?)</p>", html_text, re.IGNORECASE | re.DOTALL):
+        block = m.group(1)
+        if "DXCC:" not in block or "Callsign:" not in block:
+            continue
+        head, _, rest = block.partition("<br>")
+        date_raw = _adxo_strip(head)
+        active = "<strong>" in block.split("Callsign:")[1].split("<br>")[0]
+        fields = {}
+        for chunk in re.split(r"<br\s*/?>", rest, flags=re.IGNORECASE):
+            lm = re.match(r"(DXCC|Callsign|QSL|Source|Info):\s*(.*)",
+                          _adxo_strip(chunk), re.DOTALL)
+            if lm:
+                fields[lm.group(1).lower()] = lm.group(2).strip()
+        call = fields.get("callsign", "")
+        if not call:
+            continue
+        info = fields.get("info", "")
+        src = fields.get("source", "")
+        sm = re.match(r"(.*?)\s*\(([^)]+)\)\s*$", src)
+        start, end = _adxo_dates(date_raw)
+        ops.append({
+            "callsign": call, "entity": fields.get("dxcc", ""),
+            "date_raw": date_raw, "start": start, "end": end,
+            "adxo_active": active, "qsl": fields.get("qsl", ""),
+            "source": (sm.group(1) if sm else src).strip(),
+            "source_date": sm.group(2) if sm else "",
+            "bands": _adxo_bands(info),
+            "modes": [t for t in _ADXO_MODES
+                      if re.search(r"\b" + re.escape(t) + r"\b", info)],
+            "info": info,
+        })
+    return ops
+
+
+def _adxo_load_cache():
+    global _ADXO_OPS, _ADXO_STAMP
+    try:
+        d = json.loads(_ADXO_CACHE.read_text())
+        _ADXO_OPS = d.get("ops", [])
+        _ADXO_STAMP = d.get("stamp", 0.0)
+        return True
+    except Exception:
+        return False
+
+
+def _adxo_match():
+    """Cross-reference parsed ops against live worked/confirmed state. Returns
+    only ops with >=1 needed band, each band tagged needed/pending/done plus
+    new_entity / live flags. Recomputed per request so it tracks the log."""
+    today = time.strftime("%Y-%m-%d")
+    conf_slot = getattr(_worked, "confirmed_dxcc_band", set()) if _worked else set()
+    work_slot = getattr(_worked, "worked_dxcc_band", set()) if _worked else set()
+    work_ent = getattr(_worked, "worked_dxcc", set()) if _worked else set()
+    conf_ent = getattr(_worked, "confirmed_dxcc", set()) if _worked else set()
+    with _ADXO_LOCK:
+        ops = list(_ADXO_OPS)
+    if not _cty:
+        return {"ops": [], "stamp": _ADXO_STAMP, "ready": False, "total": len(ops)}
+    out = []
+    for op in ops:
+        e = _cty.lookup(op["callsign"])
+        dxcc = str(e.dxcc) if e and e.dxcc else ""
+        if not dxcc:
+            continue
+        needed, pending, done = [], [], []
+        for b in op["bands"]:
+            key = (dxcc, "%dm" % b)
+            if key in conf_slot:
+                done.append(b)
+            elif key in work_slot:
+                pending.append(b)
+            else:
+                needed.append(b)
+        if not needed:
+            continue
+        live = bool(op["adxo_active"] or (op["start"] and op["end"]
+                                          and op["start"] <= today <= op["end"]))
+        out.append({
+            "call": op["callsign"], "entity": e.entity, "dxcc": dxcc,
+            "start": op["start"], "end": op["end"], "date_raw": op["date_raw"],
+            "needed": needed, "pending": pending, "done": done,
+            "modes": op["modes"], "qsl": op["qsl"], "source": op["source"],
+            "new_entity": dxcc not in work_ent,
+            "unconfirmed_entity": dxcc not in conf_ent,
+            "need6": 6 in needed, "live": live,
+        })
+    out.sort(key=lambda a: (not a["live"], a["start"] or "9999"))
+    return {"ops": out, "stamp": _ADXO_STAMP, "ready": True, "total": len(ops)}
+
+
+def adxo_refresh_loop():
+    """Fetch + parse NG3K ADXO every ADXO_REFRESH_HRS, cache last-good. Loads the
+    cache on boot so the tab is populated instantly; a failed fetch keeps the
+    prior list (windows are multi-day, so a day-stale list is still usable)."""
+    global _ADXO_OPS, _ADXO_STAMP
+    _adxo_load_cache()
+    interval = ADXO_REFRESH_HRS * 3600
+    while True:
+        if (time.time() - _ADXO_STAMP) >= interval:
+            try:
+                req = urllib.request.Request(ADXO_URL, headers={"User-Agent": _ADXO_UA})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    html_text = r.read().decode("iso-8859-1", errors="replace")
+                ops = _adxo_parse(html_text)
+                if len(ops) >= 5:
+                    with _ADXO_LOCK:
+                        _ADXO_OPS = ops
+                    _ADXO_STAMP = time.time()
+                    tmp = _ADXO_CACHE.with_suffix(".json.tmp")
+                    tmp.write_text(json.dumps({"ops": ops, "stamp": _ADXO_STAMP}))
+                    tmp.replace(_ADXO_CACHE)
+                    log.info("ADXO refreshed: %d announced operations", len(ops))
+                else:
+                    log.warning("ADXO refresh: only %d ops parsed, kept cache", len(ops))
+            except Exception as e:
+                log.warning("ADXO refresh failed (kept cache): %s", e)
+        time.sleep(min(interval, 6 * 3600))   # re-check periodically; fetch when stale
+
+
+_DXPEDITION_PAGE = r"""<!doctype html>
+<html><head><meta charset="utf-8"><title>DXpedition Watch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ body{background:#0b0f14;color:#cdd6e0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:12px}
+ h1{font-size:15px;color:#8fb7ff;margin:0 0 4px;font-weight:600}
+ .sub{color:#5f7085;font-size:12px;margin:0 0 10px}
+ .sub a{color:#8fb7ff;text-decoration:none}
+ .bar{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 10px;font-size:13px}
+ .bar label{color:#9fb2c8;cursor:pointer;user-select:none}
+ .legend{color:#5f7085;font-size:11.5px;margin:0 0 12px;line-height:1.6}
+ .op{background:#141b24;border:1px solid #1f2b38;border-radius:8px;padding:9px 12px;margin:7px 0}
+ .op.live{border-color:#2f5a41;box-shadow:0 0 0 1px #2f5a41 inset}
+ .r1{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+ .call{font-weight:700;font-size:16px;color:#e6edf5}
+ .ent{color:#cdd6e0;font-size:14px}
+ .flags{font-size:13px}
+ .win{color:#9fb2c8;font-size:12px;margin-left:auto}
+ .win.now{color:#7ee0a8;font-weight:600}
+ .chips{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+ .chip{border-radius:5px;padding:1px 7px;font-size:12px;font-weight:600}
+ .need{background:#3a1f24;border:1px solid #6a2f38;color:#ff9aa6}
+ .need.six{background:#5a2f1f;border-color:#8a4f2f;color:#ffcf9a}
+ .pend{background:#2a2413;border:1px solid #5a4f2f;color:#e6cf7e;font-weight:500}
+ .lab{color:#5f7085;font-size:11.5px;margin-right:2px}
+ .qsl{color:#7ee0a8;font-size:12px;margin-left:4px}
+ .qsl.paper{color:#e6cf7e}
+ .meta{color:#5f7085;font-size:11.5px;margin-top:5px}
+ .empty{color:#5f7085;font-style:italic;padding:24px 0;text-align:center}
+</style></head>
+<body>
+<h1>&#x1F30D; DXpedition Watch</h1>
+<div class="sub"><a href="/">&larr; spots</a> &middot; <span id="count">loading&hellip;</span> &middot; <span id="stamp"></span> &middot; <a href="#" id="reload">reload</a></div>
+<div class="bar">
+ <label><input type="checkbox" id="f6"> &#x2B50; 6m needs only</label>
+ <label><input type="checkbox" id="flive"> &#x25B6; live now only</label>
+ <label><input type="checkbox" id="fnew"> &#x1F534; new entities only</label>
+</div>
+<div class="legend">&#x25B6; on the air now &middot; &#x1F534; never worked (any band) &middot; &#x1F7E1; worked but never confirmed &middot; &#x2B50; needs 6m<br>Red chip = needed slot &middot; amber chip = worked-pending (waiting on confirm) &middot; green QSL = LoTW route</div>
+<div id="list"></div>
+<script>
+let OPS=[];
+function ago(ts){if(!ts)return"";const s=Date.now()/1000-ts;if(s<3600)return Math.round(s/60)+"m ago";if(s<86400)return Math.round(s/3600)+"h ago";return Math.round(s/86400)+"d ago";}
+function bandChips(o){
+ let h="";
+ o.needed.forEach(b=>{h+='<span class="chip need'+(b==6?' six':'')+'">'+b+'m</span>';});
+ if(o.pending.length){h+='<span class="lab">pend</span>';o.pending.forEach(b=>{h+='<span class="chip pend">'+b+'m</span>';});}
+ return h;
+}
+function render(){
+ const f6=document.getElementById('f6').checked,fl=document.getElementById('flive').checked,fn=document.getElementById('fnew').checked;
+ const ops=OPS.filter(o=>(!f6||o.need6)&&(!fl||o.live)&&(!fn||o.new_entity));
+ const L=document.getElementById('list');
+ if(!ops.length){L.innerHTML='<div class="empty">Nothing matches these filters right now.</div>';return;}
+ L.innerHTML=ops.map(o=>{
+  const flags=(o.live?'&#x25B6; ':'')+(o.new_entity?'&#x1F534; ':(o.unconfirmed_entity?'&#x1F7E1; ':''))+(o.need6?'&#x2B50;':'');
+  const win=o.start?(o.start+' &rarr; '+o.end):o.date_raw;
+  const paper=/lotw/i.test(o.qsl)?'':'paper';
+  return '<div class="op'+(o.live?' live':'')+'">'+
+   '<div class="r1"><span class="call">'+o.call+'</span><span class="ent">'+o.entity+'</span>'+
+   '<span class="flags">'+flags+'</span>'+
+   '<span class="win'+(o.live?' now':'')+'">'+win+'</span></div>'+
+   '<div class="chips">'+bandChips(o)+'<span class="qsl '+paper+'">QSL: '+(o.qsl||'?')+'</span></div>'+
+   '<div class="meta">'+(o.modes.join(' ')||'')+(o.source?' &middot; '+o.source:'')+'</div>'+
+  '</div>';
+ }).join('');
+}
+function load(){
+ fetch('/api/dxpedition').then(r=>r.json()).then(d=>{
+  OPS=d.ops||[];
+  document.getElementById('count').textContent=OPS.length+' of '+(d.total||0)+' announced ops you still need';
+  document.getElementById('stamp').textContent=d.stamp?('list '+ago(d.stamp)):'';
+  render();
+ }).catch(e=>{document.getElementById('list').innerHTML='<div class="empty">Load failed.</div>';});
+}
+['f6','flive','fnew'].forEach(id=>document.getElementById(id).addEventListener('change',render));
+document.getElementById('reload').addEventListener('click',e=>{e.preventDefault();load();});
+load();
+</script>
+</body></html>"""
+
+
 # ---------------- HTML ----------------
 HTML_PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8">
@@ -4496,6 +4777,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <a href="/rotor" target="_blank" rel="noopener" class="band-activity-link" title="Manual beam control (HD-73 via rotctld) — compass buttons, degree entry, stop. Opens in a new tab.">&#x1F9ED; Rotor &#x2197;</a>
     <a href="/ffma_map" target="_blank" rel="noopener" class="band-activity-link" title="The 488 FFMA grids as a wall map — green = confirmed (LoTW), amber = worked-pending, red = needed (brighter = rarer). Sourced from your LoTW mirror. Opens in a new tab.">&#x1F5FA; Grid Map &#x2197;</a>
     <a href="/peers" target="_blank" rel="noopener" class="band-activity-link" title="What your peer group is working — who each local is calling/working, from your own decodes (no tuning to their freq). Add/remove calls right on the page. Opens in a new tab.">&#x1F4E1; Peers &#x2197;</a>
+    <a href="/dxpedition" target="_blank" rel="noopener" class="band-activity-link" title="Announced DXpeditions (NG3K ADXO) cross-referenced against your worked/confirmed log — only entities and band-slots you still need, with live ones flagged and QSL route shown. Opens in a new tab.">&#x1F30D; DXpeditions &#x2197;</a>
     <span class="legend">
       <span style="color:#f0f">callsign new</span> ·
       <span style="color:#ff5">worked</span> ·
@@ -7714,6 +7996,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(_ROTOR_PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/ffma_map":
             self._send(_FFMA_MAP_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/dxpedition":
+            self._send(_DXPEDITION_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/dxpedition":
+            self._send(json.dumps(_adxo_match()).encode(), "application/json")
         elif self.path == "/api/ffma_map":
             # Per-grid FFMA status for the 488-grid wall map. Status comes from
             # worked_state.grid_band_status (confirmed = LoTW mirror, worked =
@@ -8453,6 +8739,7 @@ async def main():
             log.info("peer-spots: synthesizing Live-view spots from local-peer receptions (source PEER)")
     threading.Thread(target=dxcc_rarity_refresh_loop, daemon=True).start()
     threading.Thread(target=clublog_matches_refresh_loop, daemon=True).start()
+    threading.Thread(target=adxo_refresh_loop, daemon=True).start()
     if LOTW_FETCH_ENABLED:
         threading.Thread(target=lotw_fetch_loop, daemon=True).start()
 
