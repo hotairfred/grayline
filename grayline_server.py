@@ -3921,10 +3921,17 @@ def _adxo_load_cache():
         return False
 
 
+def _adxo_band_int(b):
+    m = re.match(r"(\d+)m$", (b or "").strip().lower())
+    return int(m.group(1)) if m else None
+
+
 def _adxo_match():
-    """Cross-reference parsed ops against live worked/confirmed state. Returns
-    only ops with >=1 needed band, each band tagged needed/pending/done plus
-    new_entity / live flags. Recomputed per request so it tracks the log."""
+    """Cross-reference parsed ops against live worked/confirmed state AND the live
+    global spot cache. Returns only ops with >=1 needed band, each tagged
+    needed/pending/done, new_entity, in_window (announced calendar) and spotted
+    (actually being heard now) + the recent spots showing WHERE. Recomputed per
+    request so it tracks both the log and the spot stream."""
     today = time.strftime("%Y-%m-%d")
     conf_slot = getattr(_worked, "confirmed_dxcc_band", set()) if _worked else set()
     work_slot = getattr(_worked, "worked_dxcc_band", set()) if _worked else set()
@@ -3934,6 +3941,16 @@ def _adxo_match():
         ops = list(_ADXO_OPS)
     if not _cty:
         return {"ops": [], "stamp": _ADXO_STAMP, "ready": False, "total": len(ops)}
+    # Index the live global spot cache by DXCC entity so each op can show WHERE
+    # it's being heard right now — any spotter, pre-radius (the whole point: a
+    # DXpedition spotted anywhere is worth surfacing). Entity-matched, so a bare
+    # ADXO prefix like "4K" catches 4K/DL4XT and any other resolved-Azerbaijan.
+    now = time.time()
+    by_ent: dict = {}
+    for s in snapshot():
+        d = str(s.get("dxcc") or "")
+        if d:
+            by_ent.setdefault(d, []).append(s)
     out = []
     for op in ops:
         e = _cty.lookup(op["callsign"])
@@ -3951,8 +3968,19 @@ def _adxo_match():
                 needed.append(b)
         if not needed:
             continue
-        live = bool(op["adxo_active"] or (op["start"] and op["end"]
-                                          and op["start"] <= today <= op["end"]))
+        need_set = set(needed)
+        spots = [{
+            "call": s.get("dx_call", ""),
+            "freq": round(s.get("freq_khz") or 0, 1),
+            "band": s.get("band", ""), "mode": s.get("mode", ""),
+            "spotter": s.get("spotter", ""), "snr": s.get("snr"),
+            "src": s.get("source", ""),
+            "age": int(now - (s.get("ts") or now)),
+            "need": _adxo_band_int(s.get("band", "")) in need_set,
+        } for s in sorted(by_ent.get(dxcc, []),
+                          key=lambda r: r.get("ts", 0), reverse=True)[:10]]
+        in_window = bool(op["adxo_active"] or (op["start"] and op["end"]
+                                               and op["start"] <= today <= op["end"]))
         out.append({
             "call": op["callsign"], "entity": e.entity, "dxcc": dxcc,
             "start": op["start"], "end": op["end"], "date_raw": op["date_raw"],
@@ -3960,9 +3988,10 @@ def _adxo_match():
             "modes": op["modes"], "qsl": op["qsl"], "source": op["source"],
             "new_entity": dxcc not in work_ent,
             "unconfirmed_entity": dxcc not in conf_ent,
-            "need6": 6 in needed, "live": live,
+            "need6": 6 in needed,
+            "in_window": in_window, "spotted": bool(spots), "spots": spots,
         })
-    out.sort(key=lambda a: (not a["live"], a["start"] or "9999"))
+    out.sort(key=lambda a: (not a["spotted"], not a["in_window"], a["start"] or "9999"))
     return {"ops": out, "stamp": _ADXO_STAMP, "ready": True, "total": len(ops)}
 
 
@@ -4023,6 +4052,17 @@ _DXPEDITION_PAGE = r"""<!doctype html>
  .qsl{color:#7ee0a8;font-size:12px;margin-left:4px}
  .qsl.paper{color:#e6cf7e}
  .meta{color:#5f7085;font-size:11.5px;margin-top:5px}
+ .spots{margin-top:7px;border-top:1px solid #1f2b38;padding-top:5px}
+ .sp{font-size:12px;color:#8fa0b3;padding:1.5px 0;font-variant-numeric:tabular-nums;display:flex;gap:7px;flex-wrap:wrap;align-items:baseline}
+ .sp.spneed{color:#e6edf5}
+ .spf{color:#cdd6e0;font-weight:600;min-width:64px}
+ .sp.spneed .spf{color:#ffcf9a}
+ .spb{color:#7fa8d8}
+ .spc{color:#b7c4d4}
+ .spby{color:#5f7085;margin-left:auto}
+ .spage{color:#5f7085}
+ .spsnr{color:#6b7d90}
+ .nospot{color:#5f7085;font-size:11.5px;font-style:italic;margin-top:6px}
  .empty{color:#5f7085;font-style:italic;padding:24px 0;text-align:center}
 </style></head>
 <body>
@@ -4030,7 +4070,7 @@ _DXPEDITION_PAGE = r"""<!doctype html>
 <div class="sub"><a href="/">&larr; spots</a> &middot; <span id="count">loading&hellip;</span> &middot; <span id="stamp"></span> &middot; <a href="#" id="reload">reload</a></div>
 <div class="bar">
  <label><input type="checkbox" id="f6"> &#x2B50; 6m needs only</label>
- <label><input type="checkbox" id="flive"> &#x25B6; live now only</label>
+ <label><input type="checkbox" id="flive"> &#x25B6; on the air now only</label>
  <label><input type="checkbox" id="fnew"> &#x1F534; new entities only</label>
 </div>
 <div class="legend">&#x25B6; on the air now &middot; &#x1F534; never worked (any band) &middot; &#x1F7E1; worked but never confirmed &middot; &#x2B50; needs 6m<br>Red chip = needed slot &middot; amber chip = worked-pending (waiting on confirm) &middot; green QSL = LoTW route</div>
@@ -4044,28 +4084,45 @@ function bandChips(o){
  if(o.pending.length){h+='<span class="lab">pend</span>';o.pending.forEach(b=>{h+='<span class="chip pend">'+b+'m</span>';});}
  return h;
 }
+function fmtAge(s){if(s<90)return s+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d';}
+function spotLines(o){
+ if(o.spots&&o.spots.length){
+  return '<div class="spots">'+o.spots.map(s=>
+   '<div class="sp'+(s.need?' spneed':'')+'">'+
+   '<span class="spf">'+(s.freq||'?')+'</span>'+
+   '<span class="spb">'+s.band+(s.mode?' '+s.mode:'')+'</span>'+
+   '<span class="spc">'+s.call+'</span>'+
+   (s.snr!=null?'<span class="spsnr">'+(s.snr>0?'+':'')+s.snr+'</span>':'')+
+   '<span class="spby">'+(s.spotter?('de '+s.spotter):(s.src||''))+'</span>'+
+   '<span class="spage">'+fmtAge(s.age)+'</span></div>').join('')+'</div>';
+ }
+ if(o.in_window)return '<div class="nospot">in announced window &mdash; not spotted right now</div>';
+ return '';
+}
 function render(){
  const f6=document.getElementById('f6').checked,fl=document.getElementById('flive').checked,fn=document.getElementById('fnew').checked;
- const ops=OPS.filter(o=>(!f6||o.need6)&&(!fl||o.live)&&(!fn||o.new_entity));
+ const ops=OPS.filter(o=>(!f6||o.need6)&&(!fl||o.spotted)&&(!fn||o.new_entity));
  const L=document.getElementById('list');
  if(!ops.length){L.innerHTML='<div class="empty">Nothing matches these filters right now.</div>';return;}
  L.innerHTML=ops.map(o=>{
-  const flags=(o.live?'&#x25B6; ':'')+(o.new_entity?'&#x1F534; ':(o.unconfirmed_entity?'&#x1F7E1; ':''))+(o.need6?'&#x2B50;':'');
+  const flags=(o.spotted?'&#x25B6; ':'')+(o.new_entity?'&#x1F534; ':(o.unconfirmed_entity?'&#x1F7E1; ':''))+(o.need6?'&#x2B50;':'');
   const win=o.start?(o.start+' &rarr; '+o.end):o.date_raw;
   const paper=/lotw/i.test(o.qsl)?'':'paper';
-  return '<div class="op'+(o.live?' live':'')+'">'+
+  return '<div class="op'+(o.spotted?' live':'')+'">'+
    '<div class="r1"><span class="call">'+o.call+'</span><span class="ent">'+o.entity+'</span>'+
    '<span class="flags">'+flags+'</span>'+
-   '<span class="win'+(o.live?' now':'')+'">'+win+'</span></div>'+
+   '<span class="win'+(o.spotted?' now':'')+'">'+win+'</span></div>'+
    '<div class="chips">'+bandChips(o)+'<span class="qsl '+paper+'">QSL: '+(o.qsl||'?')+'</span></div>'+
    '<div class="meta">'+(o.modes.join(' ')||'')+(o.source?' &middot; '+o.source:'')+'</div>'+
+   spotLines(o)+
   '</div>';
  }).join('');
 }
 function load(){
  fetch('/api/dxpedition').then(r=>r.json()).then(d=>{
   OPS=d.ops||[];
-  document.getElementById('count').textContent=OPS.length+' of '+(d.total||0)+' announced ops you still need';
+  const air=OPS.filter(o=>o.spotted).length;
+  document.getElementById('count').textContent=OPS.length+' of '+(d.total||0)+' needed'+(air?(' · '+air+' on the air now'):'');
   document.getElementById('stamp').textContent=d.stamp?('list '+ago(d.stamp)):'';
   render();
  }).catch(e=>{document.getElementById('list').innerHTML='<div class="empty">Load failed.</div>';});
@@ -4073,6 +4130,7 @@ function load(){
 ['f6','flive','fnew'].forEach(id=>document.getElementById(id).addEventListener('change',render));
 document.getElementById('reload').addEventListener('click',e=>{e.preventDefault();load();});
 load();
+setInterval(load,45000);   // keep the on-air spots fresh
 </script>
 </body></html>"""
 
