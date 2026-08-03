@@ -3995,6 +3995,87 @@ def _adxo_match():
     return {"ops": out, "stamp": _ADXO_STAMP, "ready": True, "total": len(ops)}
 
 
+# ---------------- DXpedition needed-spot roster injection ----------------
+# Fred's refinement over the top-of-page slice: don't show a "what's on" board —
+# inject NEEDED-band DXpedition spots straight into the main roster, UNFILTERABLE
+# (bypass radius/band/mode/wanted, same path as CALLS-YOU) and STICKY for a short
+# window so they don't blink out between the many spots a DXpedition draws. Heard
+# by ANY spotter globally counts (the spot cache is pre-radius).
+DXP_STICKY_SECS = float(CONFIG.get("dxp_sticky_min", 10)) * 60
+_dxp_active: dict = {}          # (dxcc,band) -> {"spot": copy, "last": heard-ts}
+_DXP_ACTIVE_LOCK = threading.Lock()
+_DXP_SLOTS_CACHE: dict = {}
+_DXP_SLOTS_TS: float = 0.0
+
+
+def _dxp_needed_slots():
+    """{(dxcc, band): {entity, six}} for every NEEDED announced slot — never
+    worked (excludes confirmed AND worked-pending). 60s TTL cache; self-updates
+    when ADXO refreshes or the worked state reloads (working a slot drops it)."""
+    global _DXP_SLOTS_CACHE, _DXP_SLOTS_TS
+    now = time.time()
+    if _DXP_SLOTS_CACHE and now - _DXP_SLOTS_TS < 60:
+        return _DXP_SLOTS_CACHE
+    slots: dict = {}
+    if _cty:
+        conf = getattr(_worked, "confirmed_dxcc_band", set()) if _worked else set()
+        work = getattr(_worked, "worked_dxcc_band", set()) if _worked else set()
+        with _ADXO_LOCK:
+            ops = list(_ADXO_OPS)
+        for op in ops:
+            e = _cty.lookup(op["callsign"])
+            dxcc = str(e.dxcc) if e and e.dxcc else ""
+            if not dxcc:
+                continue
+            for b in op["bands"]:
+                key = (dxcc, "%dm" % b)
+                if key in conf or key in work:
+                    continue
+                slots[key] = {"entity": e.entity, "six": b == 6}
+    _DXP_SLOTS_CACHE, _DXP_SLOTS_TS = slots, now
+    return slots
+
+
+def _dxp_annotate_and_merge(spots):
+    """Tag live needed-DXpedition spots (dxp_needed) and append sticky ones that
+    were heard within DXP_STICKY_SECS, are still needed, and aren't currently
+    live. Capture happens here (path-independent) so any spot passing through the
+    roster refreshes its sticky timer. dxp_needed makes the frontend never hide it."""
+    now = time.time()
+    slots = _dxp_needed_slots()
+    live_keys = set()
+    out = []
+    for s in spots:
+        key = (str(s.get("dxcc") or ""), s.get("band") or "")
+        if key in slots:
+            info = slots[key]
+            s = {**s, "dxp_needed": True, "dxp_entity": info["entity"], "dxp_six": info["six"]}
+            live_keys.add(key)
+            with _DXP_ACTIVE_LOCK:
+                _dxp_active[key] = {
+                    "spot": {k: v for k, v in s.items() if k != "peer_copies"},
+                    "last": s.get("ts", now)}
+        out.append(s)
+    with _DXP_ACTIVE_LOCK:
+        items = list(_dxp_active.items())
+    expired = []
+    for key, entry in items:
+        if now - entry["last"] > DXP_STICKY_SECS or key not in slots:
+            expired.append(key)
+            continue
+        if key in live_keys:
+            continue
+        sp = dict(entry["spot"])
+        sp["dxp_needed"] = True
+        sp["dxp_sticky"] = True
+        out.append(sp)
+    if expired:
+        with _DXP_ACTIVE_LOCK:
+            for k in expired:
+                _dxp_active.pop(k, None)
+    return out
+
+
 def adxo_refresh_loop():
     """Fetch + parse NG3K ADXO every ADXO_REFRESH_HRS, cache last-good. Loads the
     cache on boot so the tab is populated instantly; a failed fetch keeps the
@@ -4848,20 +4929,11 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <div id="alerts_body" class="alerts-body">Loading…</div>
   </details>
   <style>
-  .dxpslice{background:#141b24;border:1px solid #2f5a41;border-radius:8px;margin:0 0 10px;padding:8px 11px}
-  .dxpslice h4{margin:0 0 5px;font-size:12px;color:#7ee0a8;font-weight:700;letter-spacing:.3px}
-  .dxprow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:3px 4px;cursor:pointer;border-radius:5px}
-  .dxprow:hover{background:#1b2531}
-  .dxprow .c{font-weight:700;color:#e6edf5;font-size:14px}
-  .dxprow .e{color:#cdd6e0;font-size:13px}
-  .dxprow .nb{color:#ff9aa6;font-size:12px;font-weight:600}
-  .dxprow .nb.six{color:#ffcf9a}
-  .dxprow .sp{margin-left:auto;font-size:12px;color:#8fa0b3;font-variant-numeric:tabular-nums}
-  .dxprow .sp.need{color:#ffcf9a;font-weight:600}
-  .dxprow .loc{color:#39d98a;font-weight:700;font-size:11px}
-  .dxprow.tuning{background:#243b52}
+  .dxp-badge{background:#1c3a2a;border:1px solid #2f5a41;border-radius:4px;color:#8ff0be;font-size:10px;font-weight:700;padding:1px 5px;margin-left:5px;letter-spacing:.3px;white-space:nowrap}
+  .dxp-badge.six{background:#5a2f1f;border-color:#8a4f2f;color:#ffcf9a}
+  tr.dxp-row td{background:#111e18}
+  tr.dxp-row.dxp-sticky td{background:#0e1a14}
   </style>
-  <div id="dxpslice" class="dxpslice" style="display:none"></div>
   <div class="tab-strip" id="tab_strip"></div>
   <div class="band-mode-toggles" id="band_mode_toggles"></div>
   <div class="band-content" id="band_content"></div>
@@ -5675,6 +5747,7 @@ const SPOT_SORT_KEYS = {
 };
 function spotCmp(x, y) {
   if (!!x.calling_me !== !!y.calling_me) return x.calling_me ? -1 : 1;
+  if (!!x.dxp_needed !== !!y.dxp_needed) return x.dxp_needed ? -1 : 1;
   const k = SPOT_SORT_KEYS[spotSort.col];
   if (!k) {                                   // default: band then freq
     const bd = bandIdx(x.band) - bandIdx(y.band);
@@ -5787,6 +5860,7 @@ async function refresh() {
   // Apply filters in order: band/mode visibility, show-wanted (any enabled scope is new), 300mi
   spots = spots.filter(s => {
     if (s.calling_me) return true;   // someone calling ME always shows — bypass all filters
+    if (s.dxp_needed) return true;   // needed-band DXpedition — pinned past every filter
     if (disabledBands.has(s.band)) { filteredOut++; return false; }
     if (disabledModes.has(s.mode)) { filteredOut++; return false; }
     if (showWanted && !anyScopeNeeded(s)) { filteredOut++; return false; }
@@ -5995,9 +6069,10 @@ async function refresh() {
       // infrastructure spots) so they still highlight as "us".
       const isUs = (s.source || "").endsWith("-LOCAL")
                 || (s.spotter || "").toUpperCase().startsWith(MY_CALLSIGN);
-      const rowClass = (s.calling_me ? "calling-me " : "") + (isUs ? "us-spotted" : "");
+      const rowClass = (s.calling_me ? "calling-me " : "") + (s.dxp_needed ? "dxp-row " + (s.dxp_sticky ? "dxp-sticky " : "") : "") + (isUs ? "us-spotted" : "");
       const spotterClass = isUs ? "spotter us" : "spotter";
-      const callTag = s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "";
+      const callTag = (s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "")
+        + (s.dxp_needed ? ` <span class="dxp-badge${s.dxp_six ? " six" : ""}" title="Announced DXpedition on a band you NEED${s.dxp_entity ? " — " + escapeHTML(s.dxp_entity) : ""}${s.dxp_sticky ? " (last heard)" : ""} — pinned past every filter">🌍 DXPED</span>` : "");
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
       ).join("") + marathonBadge(s) + waeBadge(s);   // Marathon + WAE live with the other award pills
@@ -7348,39 +7423,6 @@ document.addEventListener("contextmenu", (ev) => {
   fetchLog();
   inp.focus();
 });
-
-// ===== DXpedition on-air slice: announced+needed ops being spotted, promoted here =====
-function dxpAge(s){if(s<90)return s+'s';if(s<5400)return Math.round(s/60)+'m';return Math.round(s/3600)+'h';}
-function dxpRenderSlice(ops){
-  const el=document.getElementById('dxpslice'); if(!el) return;
-  const FRESH=1800;   // "on the air" = a spot younger than 30 min
-  const live=(ops||[]).filter(o=>o.spotted && o.spots.some(s=>s.age<FRESH));
-  if(!live.length){el.style.display='none'; el.innerHTML=''; return;}
-  let h='<h4>&#x1F30D; DXpedition on the air &mdash; needed</h4>';
-  h+=live.map(o=>{
-    const fresh=o.spots.filter(s=>s.age<FRESH);
-    const need=fresh.filter(s=>s.need);
-    const s=need[0]||fresh[0];   // freshest needed-band spot, else freshest overall
-    const loc=/LOCAL/i.test(s.src||'')||(s.spotter||'').toUpperCase().startsWith(MY_CALLSIGN);
-    const nb=o.needed.map(b=>'<span class="nb'+(b==6?' six':'')+'">'+b+'m</span>').join(' ');
-    return '<div class="dxprow" data-call="'+escapeHTML(s.call)+'" data-freq="'+s.freq+'" data-mode="'+escapeHTML(s.mode)+'" title="Click to tune WSJT-X / Flex to this spot">'
-      +'<span class="c">'+escapeHTML(o.call)+'</span><span class="e">'+escapeHTML(o.entity)+'</span>'
-      +'<span>needs '+nb+'</span>'
-      +'<span class="sp'+(s.need?' need':'')+'">'+(loc?'<span class="loc">&#x1F3AF; LOCAL</span> ':'')+'&#x25B6; '+s.freq+' '+s.band+' '+escapeHTML(s.mode)+' de '+escapeHTML(s.spotter||s.src)+' ('+dxpAge(s.age)+')</span>'
-      +'</div>';
-  }).join('');
-  el.innerHTML=h; el.style.display='';
-}
-document.getElementById('dxpslice').addEventListener('click',ev=>{
-  const row=ev.target.closest('.dxprow'); if(!row) return;
-  const call=row.dataset.call, freq=parseFloat(row.dataset.freq), mode=row.dataset.mode||'';
-  if(!call||!freq) return;
-  row.classList.add('tuning'); setTimeout(()=>row.classList.remove('tuning'),600);
-  fetch('/api/tune',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dx_call:call,freq_khz:freq,mode:mode})}).catch(e=>{});
-});
-function dxpTick(){ fetch('/api/dxpedition',{cache:'no-store'}).then(r=>r.json()).then(d=>dxpRenderSlice(d.ops)).catch(e=>{}); }
-dxpTick(); setInterval(dxpTick,30000);
 </script>
 </body></html>
 """
@@ -8050,6 +8092,8 @@ class Handler(BaseHTTPRequestHandler):
             for s in snapshot():
                 pc = peer_copies.copies(s.get("dx_call", ""))
                 spots.append({**s, "peer_copies": pc} if pc else s)
+            # Tag needed-DXpedition spots + merge sticky ones the filters can't hide.
+            spots = _dxp_annotate_and_merge(spots)
             _cthz, _ctinfo = _pick_clear_tx_freq()
             payload = {"spots": spots, "now": time.time(), "worked_rev": _WORKED_REV,
                        "clear_tx_hz": _cthz, "clear_tx_reason": _ctinfo.get("reason", ""),
