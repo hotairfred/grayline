@@ -4847,6 +4847,21 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <summary>&#x1F514; Push alerts <span id="alerts_state" class="ff-count"></span></summary>
     <div id="alerts_body" class="alerts-body">Loading…</div>
   </details>
+  <style>
+  .dxpslice{background:#141b24;border:1px solid #2f5a41;border-radius:8px;margin:0 0 10px;padding:8px 11px}
+  .dxpslice h4{margin:0 0 5px;font-size:12px;color:#7ee0a8;font-weight:700;letter-spacing:.3px}
+  .dxprow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:3px 4px;cursor:pointer;border-radius:5px}
+  .dxprow:hover{background:#1b2531}
+  .dxprow .c{font-weight:700;color:#e6edf5;font-size:14px}
+  .dxprow .e{color:#cdd6e0;font-size:13px}
+  .dxprow .nb{color:#ff9aa6;font-size:12px;font-weight:600}
+  .dxprow .nb.six{color:#ffcf9a}
+  .dxprow .sp{margin-left:auto;font-size:12px;color:#8fa0b3;font-variant-numeric:tabular-nums}
+  .dxprow .sp.need{color:#ffcf9a;font-weight:600}
+  .dxprow .loc{color:#39d98a;font-weight:700;font-size:11px}
+  .dxprow.tuning{background:#243b52}
+  </style>
+  <div id="dxpslice" class="dxpslice" style="display:none"></div>
   <div class="tab-strip" id="tab_strip"></div>
   <div class="band-mode-toggles" id="band_mode_toggles"></div>
   <div class="band-content" id="band_content"></div>
@@ -7333,6 +7348,39 @@ document.addEventListener("contextmenu", (ev) => {
   fetchLog();
   inp.focus();
 });
+
+// ===== DXpedition on-air slice: announced+needed ops being spotted, promoted here =====
+function dxpAge(s){if(s<90)return s+'s';if(s<5400)return Math.round(s/60)+'m';return Math.round(s/3600)+'h';}
+function dxpRenderSlice(ops){
+  const el=document.getElementById('dxpslice'); if(!el) return;
+  const FRESH=1800;   // "on the air" = a spot younger than 30 min
+  const live=(ops||[]).filter(o=>o.spotted && o.spots.some(s=>s.age<FRESH));
+  if(!live.length){el.style.display='none'; el.innerHTML=''; return;}
+  let h='<h4>&#x1F30D; DXpedition on the air &mdash; needed</h4>';
+  h+=live.map(o=>{
+    const fresh=o.spots.filter(s=>s.age<FRESH);
+    const need=fresh.filter(s=>s.need);
+    const s=need[0]||fresh[0];   // freshest needed-band spot, else freshest overall
+    const loc=/LOCAL/i.test(s.src||'')||(s.spotter||'').toUpperCase().startsWith(MY_CALLSIGN);
+    const nb=o.needed.map(b=>'<span class="nb'+(b==6?' six':'')+'">'+b+'m</span>').join(' ');
+    return '<div class="dxprow" data-call="'+escapeHTML(s.call)+'" data-freq="'+s.freq+'" data-mode="'+escapeHTML(s.mode)+'" title="Click to tune WSJT-X / Flex to this spot">'
+      +'<span class="c">'+escapeHTML(o.call)+'</span><span class="e">'+escapeHTML(o.entity)+'</span>'
+      +'<span>needs '+nb+'</span>'
+      +'<span class="sp'+(s.need?' need':'')+'">'+(loc?'<span class="loc">&#x1F3AF; LOCAL</span> ':'')+'&#x25B6; '+s.freq+' '+s.band+' '+escapeHTML(s.mode)+' de '+escapeHTML(s.spotter||s.src)+' ('+dxpAge(s.age)+')</span>'
+      +'</div>';
+  }).join('');
+  el.innerHTML=h; el.style.display='';
+}
+document.getElementById('dxpslice').addEventListener('click',ev=>{
+  const row=ev.target.closest('.dxprow'); if(!row) return;
+  const call=row.dataset.call, freq=parseFloat(row.dataset.freq), mode=row.dataset.mode||'';
+  if(!call||!freq) return;
+  row.classList.add('tuning'); setTimeout(()=>row.classList.remove('tuning'),600);
+  fetch('/api/tune',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dx_call:call,freq_khz:freq,mode:mode})}).catch(e=>{});
+});
+function dxpTick(){ fetch('/api/dxpedition',{cache:'no-store'}).then(r=>r.json()).then(d=>dxpRenderSlice(d.ops)).catch(e=>{}); }
+dxpTick(); setInterval(dxpTick,30000);
 </script>
 </body></html>
 """
