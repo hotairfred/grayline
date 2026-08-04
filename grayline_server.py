@@ -3747,9 +3747,73 @@ def _award_payload(band, award, mode):
                 seen[g] = "worked"
         for g in sorted(seen):
             add(g, g, seen[g])
-    return {"award": award, "band": band, "mode": mode, "family": fam,
-            "target": cfg["target"], "name": cfg["name"], "overlay": cfg.get("overlay"),
-            "counts": counts, "items": items}
+    out = {"award": award, "band": band, "mode": mode, "family": fam,
+           "target": cfg["target"], "name": cfg["name"], "overlay": cfg.get("overlay"),
+           "counts": counts, "items": items}
+    out.update(_award_panels(cfg, award, band, modeclass, items))
+    return out
+
+
+def _award_panels(cfg, award, band, modeclass, items):
+    """Latest confirmations, recent ATNOs, and rares-worked for the selected
+    award+band+mode — reuses the cached confirmations feed + rarity data."""
+    fam = cfg["family"]
+    recs = _build_all_confirmations()
+    states = set(_AWARD_STATES_50)
+
+    def mode_ok(r):
+        return (not cfg["modes"] or modeclass == "Mixed"
+                or mode_class(r.get("mode", "")) == modeclass)
+
+    def label(r):
+        return (r.get("grid", "") if fam == "grid"
+                else r.get("state", "") if fam == "state" else r.get("country", ""))
+
+    def relevant(r):
+        if r.get("band") != band or not mode_ok(r):
+            return False
+        if fam == "grid":
+            g = r.get("grid", "")
+            return (g.upper() in _FFMA_GRID_SET) if award == "ffma" else bool(g)
+        if fam == "state":
+            return r.get("state", "") in states
+        return bool(r.get("country"))
+
+    rel = [r for r in recs if relevant(r)]
+    if fam == "state":                       # state ATNO = earliest confirm per state on this band
+        earliest = {}
+        for r in rel:                        # feed is newest-first → last write per state = earliest
+            earliest[r["state"]] = r["ts"]
+        for r in rel:
+            r["_new_state"] = earliest.get(r["state"]) == r["ts"]
+
+    def newflag(r):
+        return (r.get("new_grid") if fam == "grid"
+                else r.get("_new_state") if fam == "state"
+                else (r.get("new_band") or r.get("new_dxcc")))
+
+    def kind(r):
+        if fam == "grid":
+            return "new-grid" if r.get("new_grid") else ""
+        if fam == "state":
+            return "new-state" if r.get("_new_state") else ""
+        return "new-entity" if r.get("new_dxcc") else "new-band" if r.get("new_band") else ""
+
+    confs = [{"label": label(r), "call": r["call"], "date": r["confirm_date"],
+              "atno": bool(newflag(r)), "kind": kind(r)} for r in rel[:14]]
+    atnos = [{"label": label(r), "call": r["call"], "date": r["confirm_date"], "kind": kind(r)}
+             for r in rel if newflag(r)][:14]
+
+    have = [i for i in items if i["status"] in ("confirmed", "worked")]
+    rares = []
+    if award == "ffma":
+        for i in sorted([i for i in have if i.get("pct")], key=lambda x: -x["pct"])[:16]:
+            rares.append({"label": i["label"], "rarity": str(i["pct"]) + "%", "status": i["status"]})
+    elif fam == "entity":
+        for i, rank in sorted([(i, _DXCC_RARITY[i["id"]]) for i in have if i["id"] in _DXCC_RARITY],
+                              key=lambda t: t[1])[:16]:
+            rares.append({"label": i["label"], "rarity": "#" + str(rank), "status": i["status"]})
+    return {"confirmations": confs, "atnos": atnos, "rares": rares}
 
 
 _AWARDS_PAGE = r"""<!doctype html>
@@ -3787,6 +3851,20 @@ _AWARDS_PAGE = r"""<!doctype html>
  .rr .p i.done{background:#7ee0a8}
  .rr .n{width:74px;color:#9fb2c8;font-size:12px;font-variant-numeric:tabular-nums}
  .empty{color:#5f7085;font-style:italic;padding:16px 0}
+ .panels{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+ .panel{flex:1;min-width:230px;background:#0e141b;border:1px solid #1f2b38;border-radius:8px;padding:8px 11px}
+ .panel h3{margin:0 0 6px;font-size:12px;color:#8fb7ff;font-weight:700;letter-spacing:.3px}
+ .prow{display:flex;align-items:baseline;gap:7px;font-size:12px;padding:2.5px 0;border-top:1px solid #141b24}
+ .prow:first-child{border-top:0}
+ .prow .l{font-weight:700;color:#e6edf5;min-width:50px}
+ .prow .c{color:#9fb2c8}
+ .prow .d{color:#5f7085;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+ .prow .r{margin-left:auto;color:#ffcf9a;font-weight:600}
+ .badge{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;background:#1c3a2a;color:#8ff0be;text-transform:uppercase}
+ .badge.ne{background:#5a2f1f;color:#ffcf9a}
+ .pdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+ .pdot.confirmed{background:#39d98a}.pdot.worked{background:#e6cf7e}
+ .pempty{color:#5f7085;font-style:italic;font-size:12px}
 </style></head>
 <body>
 <h1>&#x1F3C6; Award Dashboard</h1>
@@ -3801,6 +3879,11 @@ _AWARDS_PAGE = r"""<!doctype html>
 </div>
 <div class="counts" id="counts"></div>
 <div id="rollup"></div>
+<div class="panels" id="panels">
+ <div class="panel"><h3>&#x2705; Latest confirmations</h3><div id="p-conf"></div></div>
+ <div class="panel"><h3>&#x1F3AF; Recent ATNOs</h3><div id="p-atno"></div></div>
+ <div class="panel"><h3>&#x1F3C6; Rares worked</h3><div id="p-rares"></div></div>
+</div>
 <div id="grid"></div>
 <script>
 let CFG=null, MODE='all', DATA=null;
@@ -3825,10 +3908,28 @@ function syncModes(){
   document.getElementById('modes').classList.toggle('off', !(a&&a.modes));
 }
 function pct(a,b){return b?Math.min(100,Math.round(100*a/b)):0;}
+function fmtDate(d){return d?d.slice(5):'';}
+function prow(h){return '<div class="prow">'+h+'</div>';}
+function renderPanels(){
+  const panels=document.getElementById('panels');
+  if(!DATA||DATA.family==='rollup'){panels.style.display='none';return;}
+  panels.style.display='';
+  const badge=k=>k?('<span class="badge'+(k==='new-entity'?' ne':'')+'">'+k.replace('new-','')+'</span>'):'';
+  const cf=DATA.confirmations||[];
+  document.getElementById('p-conf').innerHTML = cf.length? cf.map(c=>prow(
+    '<span class="l">'+c.label+'</span><span class="c">'+c.call+'</span>'+badge(c.kind)+'<span class="d">'+fmtDate(c.date)+'</span>')).join('') : '<div class="pempty">No recent confirmations here.</div>';
+  const at=DATA.atnos||[];
+  document.getElementById('p-atno').innerHTML = at.length? at.map(a=>prow(
+    '<span class="l">'+a.label+'</span><span class="c">'+a.call+'</span>'+badge(a.kind)+'<span class="d">'+fmtDate(a.date)+'</span>')).join('') : '<div class="pempty">No new ones here yet.</div>';
+  const rr=DATA.rares||[];
+  document.getElementById('p-rares').innerHTML = rr.length? rr.map(r=>prow(
+    '<span class="pdot '+r.status+'"></span><span class="l">'+r.label+'</span><span class="r">'+r.rarity+'</span>')).join('') : '<div class="pempty">No rarity ranking for this award.</div>';
+}
 function render(){
   const cnt=document.getElementById('counts'), rl=document.getElementById('rollup'), gr=document.getElementById('grid');
   cnt.innerHTML=''; rl.innerHTML=''; gr.innerHTML='';
   if(!DATA) return;
+  renderPanels();
   if(DATA.family==='rollup'){
     cnt.innerHTML='<span>DXCC confirmed per band &mdash; the 10-band picture (target '+DATA.target+' each)</span>';
     rl.innerHTML=DATA.rows.map(r=>{
