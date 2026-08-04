@@ -3652,6 +3652,231 @@ def _load_dxcc_names() -> dict:
 _DXCC_NAME = _load_dxcc_names()
 
 
+# ---------------- Award dashboard (band × award × mode drill-down) ----------------
+# Generalizes the FFMA tab: one config table + one /api/award endpoint reading the
+# pre-computed worked_state classification API. See docs/award_dashboard_spec.md.
+_AWARD_DEFS = {
+    "dxcc": {"name": "DXCC", "family": "entity", "bands": "all", "modes": True,  "target": 100},
+    "was":  {"name": "WAS",  "family": "state",  "bands": "all", "modes": False, "target": 50},
+    "vucc": {"name": "VUCC", "family": "grid",   "bands": "vhf", "modes": False, "target": 100},
+    "ffma": {"name": "FFMA", "family": "grid",   "bands": "6m",  "modes": False, "target": 488,
+             "overlay": "ffma"},
+}
+_AWARD_BANDS = ["160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "2m", "70cm"]
+_AWARD_VHF = {"6m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm"}
+_AWARD_MODECLASS = {"all": "Mixed", "cw": "CW", "digital": "Digital", "phone": "Phone"}
+_AWARD_STATES_50 = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
+    "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+    "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX",
+    "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
+
+
+def _award_applies(award, band):
+    cfg = _AWARD_DEFS.get(award)
+    if not cfg:
+        return False
+    b = cfg["bands"]
+    return b == "all" or (b == "vhf" and band in _AWARD_VHF) or b == band
+
+
+def _award_config_json():
+    """Award list + per-award applicable bands, for the page's dropdowns."""
+    awards = {}
+    for a, cfg in _AWARD_DEFS.items():
+        awards[a] = {"name": cfg["name"], "family": cfg["family"], "modes": cfg["modes"],
+                     "target": cfg["target"], "overlay": cfg.get("overlay"),
+                     "bands": [b for b in _AWARD_BANDS if _award_applies(a, b)],
+                     "rollup": cfg["family"] == "entity"}  # entity awards get an all-band rollup
+    return json.dumps({"awards": awards, "bands": _AWARD_BANDS})
+
+
+def _award_payload(band, award, mode):
+    cfg = _AWARD_DEFS.get(award)
+    band = (band or "").strip().lower()
+    mode = (mode or "all").strip().lower()
+    if not cfg:
+        return {"error": "unknown award"}
+    if not _worked:
+        return {"error": "not ready", "items": [], "counts": {}}
+    fam = cfg["family"]
+    modeclass = _AWARD_MODECLASS.get(mode, "Mixed") if cfg["modes"] else "Mixed"
+
+    # All-band rollup for entity awards = the 10-band DXCC grail cockpit.
+    if band in ("all", "") and fam == "entity":
+        rows = []
+        for b in _AWARD_BANDS:
+            n = sum(1 for num, nm in _DXCC_NAME.items()
+                    if _worked.entity_band_status(num, nm, b) == "confirmed")
+            rows.append({"band": b, "confirmed": n})
+        return {"award": award, "band": "all", "mode": mode, "family": "rollup",
+                "target": cfg["target"], "name": cfg["name"], "rows": rows}
+
+    counts = {"confirmed": 0, "worked": 0, "new": 0}
+    items = []
+
+    def add(iid, label, status, extra=None):
+        counts[status] = counts.get(status, 0) + 1
+        d = {"id": iid, "label": label, "status": status}
+        if extra:
+            d.update(extra)
+        items.append(d)
+
+    if fam == "entity":
+        for num, name in sorted(_DXCC_NAME.items(), key=lambda kv: kv[1]):
+            st = (_worked.entity_band_status(num, name, band) if modeclass == "Mixed"
+                  else _worked.country_band_modeclass_status(name, band, modeclass))
+            add(num, name, st)
+    elif fam == "state":
+        cs, ws = _worked.confirmed_state_band, _worked.worked_state_band
+        for s in _AWARD_STATES_50:
+            k = (s, band)
+            st = "confirmed" if k in cs else ("worked" if k in ws else "new")
+            add(s, s, st)
+    elif award == "ffma":
+        for g in _FFMA_GRIDS:
+            st = _worked.grid_band_status(g, band)
+            rr = _FFMA_RARITY.get(g.upper()) or {}
+            add(g, g, st, {"tier": rr.get("tier", "common"), "pct": rr.get("pct_needed", 0)})
+    else:  # VUCC — grids seen on this band (no fixed universe; you only show what you have)
+        seen = {}
+        for (g, b) in _worked.confirmed_grid_band:
+            if b == band:
+                seen[g] = "confirmed"
+        for (g, b) in _worked.worked_grid_band:
+            if b == band and g not in seen:
+                seen[g] = "worked"
+        for g in sorted(seen):
+            add(g, g, seen[g])
+    return {"award": award, "band": band, "mode": mode, "family": fam,
+            "target": cfg["target"], "name": cfg["name"], "overlay": cfg.get("overlay"),
+            "counts": counts, "items": items}
+
+
+_AWARDS_PAGE = r"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Award Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ body{background:#0b0f14;color:#cdd6e0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:12px}
+ h1{font-size:15px;color:#8fb7ff;margin:0 0 6px;font-weight:600}
+ .sub{color:#5f7085;font-size:12px}
+ .sub a{color:#8fb7ff;text-decoration:none}
+ .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+ select{background:#0e141b;border:1px solid #26333f;border-radius:6px;color:#e6edf5;padding:6px 9px;font:14px inherit}
+ .modes{display:flex;border:1px solid #26333f;border-radius:6px;overflow:hidden}
+ .modes button{background:#0e141b;border:0;color:#9fb2c8;padding:6px 11px;cursor:pointer;font:13px inherit}
+ .modes button.on{background:#1c3a2a;color:#8ff0be}
+ .modes.off{opacity:.3;pointer-events:none}
+ label.nd{color:#9fb2c8;font-size:13px;cursor:pointer;user-select:none}
+ .counts{font-size:13px;margin:8px 0;color:#9fb2c8;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+ .counts b{font-variant-numeric:tabular-nums}
+ .c-conf{color:#7ee0a8}.c-work{color:#e6cf7e}.c-new{color:#ff9aa6}
+ .prog{flex:1;min-width:140px;max-width:320px;height:8px;background:#1b2531;border-radius:5px;overflow:hidden}
+ .prog i{display:block;height:100%;background:#39d98a}
+ .done{color:#7ee0a8;font-weight:700}
+ #grid{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+ .cell{font-size:11px;padding:2px 5px;border-radius:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+ .cell.big{min-width:34px;text-align:center}
+ .st-confirmed{background:#173a29;color:#8ff0be}
+ .st-worked{background:#3a3315;color:#e6cf7e}
+ .st-new{background:#3a1f24;color:#ff9aa6}
+ #rollup{margin-top:8px}
+ .rr{display:flex;align-items:center;gap:10px;padding:3px 0}
+ .rr .b{width:46px;color:#cdd6e0;font-weight:600}
+ .rr .p{flex:1;max-width:420px;height:12px;background:#1b2531;border-radius:6px;overflow:hidden}
+ .rr .p i{display:block;height:100%;background:#39d98a}
+ .rr .p i.done{background:#7ee0a8}
+ .rr .n{width:74px;color:#9fb2c8;font-size:12px;font-variant-numeric:tabular-nums}
+ .empty{color:#5f7085;font-style:italic;padding:16px 0}
+</style></head>
+<body>
+<h1>&#x1F3C6; Award Dashboard</h1>
+<div class="sub"><a href="/">&larr; spots</a> &middot; band &times; award &times; mode drill-down</div>
+<div class="bar">
+ <select id="band"></select>
+ <select id="award"></select>
+ <div class="modes" id="modes">
+  <button data-m="all" class="on">All</button><button data-m="cw">CW</button><button data-m="digital">Digital</button><button data-m="phone">Phone</button>
+ </div>
+ <label class="nd"><input type="checkbox" id="ndonly"> needed only</label>
+</div>
+<div class="counts" id="counts"></div>
+<div id="rollup"></div>
+<div id="grid"></div>
+<script>
+let CFG=null, MODE='all', DATA=null;
+function opt(v,t){const o=document.createElement('option');o.value=v;o.textContent=t;return o;}
+function fillBands(){
+  const sel=document.getElementById('band'), cur=sel.value; sel.innerHTML='';
+  CFG.bands.forEach(b=>sel.appendChild(opt(b,b)));
+  sel.appendChild(opt('all','All bands (10BDXCC)'));
+  if(cur) sel.value=cur;
+}
+function fillAwards(){
+  const band=document.getElementById('band').value, sel=document.getElementById('award'), cur=sel.value;
+  sel.innerHTML='';
+  Object.entries(CFG.awards).forEach(([a,c])=>{
+    const ok=(band==='all')?c.rollup:c.bands.includes(band);
+    if(ok) sel.appendChild(opt(a,c.name));
+  });
+  if(cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
+}
+function syncModes(){
+  const a=CFG.awards[document.getElementById('award').value];
+  document.getElementById('modes').classList.toggle('off', !(a&&a.modes));
+}
+function pct(a,b){return b?Math.min(100,Math.round(100*a/b)):0;}
+function render(){
+  const cnt=document.getElementById('counts'), rl=document.getElementById('rollup'), gr=document.getElementById('grid');
+  cnt.innerHTML=''; rl.innerHTML=''; gr.innerHTML='';
+  if(!DATA) return;
+  if(DATA.family==='rollup'){
+    cnt.innerHTML='<span>DXCC confirmed per band &mdash; the 10-band picture (target '+DATA.target+' each)</span>';
+    rl.innerHTML=DATA.rows.map(r=>{
+      const p=pct(r.confirmed,DATA.target), done=r.confirmed>=DATA.target;
+      return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+(done?'done':'')+'" style="width:'+p+'%"></i></span><span class="n">'+r.confirmed+(done?' &#x2705;':' / '+DATA.target)+'</span></div>';
+    }).join('');
+    return;
+  }
+  const c=DATA.counts||{}, tot=DATA.target||0, have=c.confirmed||0, p=pct(have,tot), done=have>=tot;
+  cnt.innerHTML='<span class="c-conf">&#9679; <b>'+have+'</b> confirmed</span>'+
+    '<span class="c-work">&#9679; <b>'+(c.worked||0)+'</b> worked</span>'+
+    '<span class="c-new">&#9679; <b>'+(c.new||0)+'</b> needed</span>'+
+    '<span class="prog"><i style="width:'+p+'%"></i></span>'+
+    (done?'<span class="done">'+have+' / '+tot+' &#x2705;</span>':'<span>'+p+'% &rarr; '+tot+'</span>');
+  const nd=document.getElementById('ndonly').checked;
+  let items=(DATA.items||[]);
+  if(nd) items=items.filter(i=>i.status!=='confirmed');
+  if(!items.length){gr.innerHTML='<div class="empty">Nothing to show for these filters.</div>';return;}
+  const big=(DATA.family!=='entity');
+  gr.innerHTML=items.map(i=>{
+    const t=i.status+(i.pct?(' · '+i.pct+'% needed'):'');
+    return '<span class="cell st-'+i.status+(big?' big':'')+'" title="'+t+'">'+i.label+'</span>';
+  }).join('');
+}
+function load(){
+  const band=document.getElementById('band').value, award=document.getElementById('award').value;
+  if(!award) return;
+  const a=CFG.awards[award], m=(a&&a.modes)?MODE:'all';
+  fetch('/api/award?band='+encodeURIComponent(band)+'&award='+encodeURIComponent(award)+'&mode='+m)
+    .then(r=>r.json()).then(d=>{DATA=d;render();}).catch(e=>{});
+}
+document.getElementById('band').addEventListener('change',()=>{fillAwards();syncModes();load();});
+document.getElementById('award').addEventListener('change',()=>{syncModes();load();});
+document.getElementById('ndonly').addEventListener('change',render);
+document.querySelectorAll('#modes button').forEach(b=>b.addEventListener('click',()=>{
+  MODE=b.dataset.m;
+  document.querySelectorAll('#modes button').forEach(x=>x.classList.toggle('on',x===b));
+  load();
+}));
+fetch('/api/award?meta=1').then(r=>r.json()).then(c=>{
+  CFG=c; fillBands();
+  document.getElementById('band').value='6m'; fillAwards();
+  document.getElementById('award').value='ffma'; syncModes(); load();
+}).catch(e=>{document.getElementById('grid').innerHTML='<div class="empty">Load failed.</div>';});
+</script>
+</body></html>"""
+
+
 # ---- Club Log log/OQRS matches (weekly) -> claimable + discrepancy detection ----
 # getmatches.php returns QSOs validated against uploaded logs (log search + OQRS).
 # A worked-not-confirmed slot that IS matched = claimable (do OQRS). Suspect is
@@ -4914,7 +5139,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
     <label style="margin-left:1em"><input type="checkbox" id="filter300"> Local spotters only (HF &le;300 mi, VHF+ &le;150 mi of __MY_GRID__)</label>
     <a href="/bands" target="_blank" rel="noopener" class="band-activity-link" title="Open the Band Activity bar graph (CW/SSB/Digital × contest bands, local-filtered) in a new tab — a contest 'which band is hot' tool, kept off the main page">&#x1F4CA; Band Activity &#x2197;</a>
     <a href="/rotor" target="_blank" rel="noopener" class="band-activity-link" title="Manual beam control (HD-73 via rotctld) — compass buttons, degree entry, stop. Opens in a new tab.">&#x1F9ED; Rotor &#x2197;</a>
-    <a href="/ffma_map" target="_blank" rel="noopener" class="band-activity-link" title="The 488 FFMA grids as a wall map — green = confirmed (LoTW), amber = worked-pending, red = needed (brighter = rarer). Sourced from your LoTW mirror. Opens in a new tab.">&#x1F5FA; Grid Map &#x2197;</a>
+    <a href="/awards" target="_blank" rel="noopener" class="band-activity-link" title="Award Dashboard — band × award × mode drill-down (DXCC / WAS / VUCC / FFMA, per band, per mode) plus the 10-band DXCC rollup. Green=confirmed, amber=worked-pending, red=needed. The FFMA grid map is one selection here. Opens in a new tab.">&#x1F3C6; Awards &#x2197;</a>
     <a href="/peers" target="_blank" rel="noopener" class="band-activity-link" title="What your peer group is working — who each local is calling/working, from your own decodes (no tuning to their freq). Add/remove calls right on the page. Opens in a new tab.">&#x1F4E1; Peers &#x2197;</a>
     <a href="/dxpedition" target="_blank" rel="noopener" class="band-activity-link" title="Announced DXpeditions (NG3K ADXO) cross-referenced against your worked/confirmed log — only entities and band-slots you still need, with live ones flagged and QSL route shown. Opens in a new tab.">&#x1F30D; DXpeditions &#x2197;</a>
     <span class="legend">
@@ -8150,6 +8375,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send(_DXPEDITION_PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/api/dxpedition":
             self._send(json.dumps(_adxo_match()).encode(), "application/json")
+        elif self.path.startswith("/api/award"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            if q.get("meta"):
+                self._send(_award_config_json().encode(), "application/json")
+            else:
+                self._send(json.dumps(_award_payload(
+                    (q.get("band") or [""])[0], (q.get("award") or ["dxcc"])[0],
+                    (q.get("mode") or ["all"])[0])).encode(), "application/json")
+        elif self.path == "/awards":
+            self._send(_AWARDS_PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/api/ffma_map":
             # Per-grid FFMA status for the 488-grid wall map. Status comes from
             # worked_state.grid_band_status (confirmed = LoTW mirror, worked =
