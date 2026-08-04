@@ -3752,6 +3752,9 @@ def _award_payload(band, award, mode):
            "counts": counts, "items": items}
     out.update(_award_panels(cfg, award, band, modeclass, items))
     out.update(_award_chase(cfg, award, band, modeclass))   # rich pending/ATNO/rares (LoTW forensics)
+    if fam == "grid":                                       # rover TQSL grid mismatches — grid-award only
+        out["discrepancies"] = [d for d in _build_grid_discrepancies().get("items", [])
+                                if d.get("band") == band]
     return out
 
 
@@ -3983,6 +3986,16 @@ function render(){
     '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
     '<div class="ff-pctlabel">'+p.toFixed(1)+(done?'% &mdash; complete ✅':'% of '+DATA.name)+'</div></div>';
   const cards=[];
+  const cf=DATA.confirmations||[];
+  if(cf.length){
+    const rows=cf.map(c=>'<tr><td class="ff-g">'+c.label+'</td><td class="ff-who">'+c.call+'</td><td>'+(c.kind?'<span class="ff-'+(c.kind==='new-entity'?'newdxcc':'newffma')+'">NEW '+c.kind.replace('new-','').toUpperCase()+'</span>':'<span class="ff-reconf">dupe</span>')+'</td><td class="ff-when">'+fmtISO(c.date)+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse"><summary>✅ Latest confirmations <span class="ff-count">last '+cf.length+'</span></summary><table class="ff-table"><tr><th></th><th>via</th><th>what</th><th>when</th></tr>'+rows+'</table></details>');
+  }
+  const at=DATA.atnos||[];
+  if(at.length){
+    const rows=at.map(a=>'<tr><td class="ff-g">'+a.item+'</td><td>'+tierBadge(a.tier,a.rarity)+'</td><td class="ff-who">'+(a.call||'')+'</td><td class="ff-when">'+fmtQ(a.date)+'</td><td>'+(a.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">pending</span>')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse"><summary>\u{1F195} Recent ATNOs <span class="ff-count">last '+at.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>'+rows+'</table></details>');
+  }
   const pd=DATA.pending||[],pr=DATA.prognosis||{};
   if(pd.length){
     const brk='<span class="brk">\u{1F525}'+(pr.hot||0)+' \u{1F312}'+(pr.warm||0)+' \u{1F47B}'+(pr.ghost||0)+' \u{1F480}'+(pr.dead||0)+'</span>';
@@ -3991,20 +4004,15 @@ function render(){
       return '<tr class="ct-'+x.conf_tier+'"><td class="ff-g">'+x.item+'</td><td>'+tierBadge(x.tier,x.rarity)+'</td><td class="ff-when">'+fmtQ(x.date)+'</td><td class="ff-who">'+who+'</td><td>'+odds+'</td></tr>';}).join('');
     cards.push('<details class="score-card ff-collapse" open><summary>⏳ Worked &mdash; awaiting confirmation <span class="ff-count">'+pd.length+' &middot; '+brk+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>last</th><th>who to nudge</th><th>odds</th></tr>'+rows+'</table></details>');
   }
-  const at=DATA.atnos||[];
-  if(at.length){
-    const rows=at.map(a=>'<tr><td class="ff-g">'+a.item+'</td><td>'+tierBadge(a.tier,a.rarity)+'</td><td class="ff-who">'+(a.call||'')+'</td><td class="ff-when">'+fmtQ(a.date)+'</td><td>'+(a.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">pending</span>')+'</td></tr>').join('');
-    cards.push('<details class="score-card ff-collapse"><summary>\u{1F195} Recent ATNOs <span class="ff-count">last '+at.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>'+rows+'</table></details>');
-  }
   const rr=DATA.rares||[];
   if(rr.length){
     const rows=rr.map(r=>'<tr><td class="ff-g">'+r.item+'</td><td>'+tierBadge(r.tier,r.rarity)+'</td><td class="ff-who">'+(r.call||'')+'</td><td>'+(r.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">worked</span>')+'</td></tr>').join('');
     cards.push('<details class="score-card ff-collapse" open><summary>\u{1F3C6} Rares worked <span class="ff-count">'+rr.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th></th></tr>'+rows+'</table></details>');
   }
-  const cf=DATA.confirmations||[];
-  if(cf.length){
-    const rows=cf.map(c=>'<tr><td class="ff-g">'+c.label+'</td><td class="ff-who">'+c.call+'</td><td>'+(c.kind?'<span class="ff-'+(c.kind==='new-entity'?'newdxcc':'newffma')+'">NEW '+c.kind.replace('new-','').toUpperCase()+'</span>':'<span class="ff-reconf">dupe</span>')+'</td><td class="ff-when">'+fmtISO(c.date)+'</td></tr>').join('');
-    cards.push('<details class="score-card ff-collapse"><summary>✅ Latest confirmations <span class="ff-count">last '+cf.length+'</span></summary><table class="ff-table"><tr><th></th><th>via</th><th>what</th><th>when</th></tr>'+rows+'</table></details>');
+  const gd=DATA.discrepancies||[];
+  if(gd.length){
+    const rows=gd.map(d=>'<tr class="ff-disc-hot"><td class="ff-g">'+d.logged+'</td><td>'+tierBadge(d.tier,d.pct?(Math.round(d.pct*10)/10+'%'):'')+'</td><td class="ff-who">'+d.call+'</td><td class="ff-when">'+fmtQ(d.date)+'</td><td class="ff-who">credited '+(d.credited||'&mdash;')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse" open><summary>⚠️ Log discrepancies <span class="ff-count">'+gd.length+'</span></summary><table class="ff-table"><tr><th>logged</th><th>rarity</th><th>via</th><th>when</th><th>LoTW credited</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">You logged this grid but LoTW credited a DIFFERENT one (rover TQSL mismatch) &mdash; and you don\'t hold the logged grid another way, so it silently costs the award. Ask them to fix &amp; re-upload.</div></details>');
   }
   cd.innerHTML=cards.join('')||'<div class="ff-empty">No detail for this selection yet.</div>';
 }
