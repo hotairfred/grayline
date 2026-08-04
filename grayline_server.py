@@ -3796,31 +3796,34 @@ def _award_chase(cfg, award, band, modeclass):
                                         _worked.confirmed_dxcc_band, _worked.confirmed_state_band)
     states = set(_AWARD_STATES_50)
     item_qsos: dict = {}
+    first_ever: dict = {}   # item -> earliest qso_date ACROSS ALL BANDS (for the true-ATNO flag)
     for q in _worked.qsos:
         if (q.get("prop_mode") or "").strip().upper() == "SAT":
-            continue
-        b = (q.get("band") or "").strip().lower()
-        if b != band:
-            continue
-        if cfg["modes"] and modeclass != "Mixed" and mode_class(q.get("mode") or "") != modeclass:
             continue
         if fam == "grid":
             key = (q.get("grid") or "").strip().upper()[:4]
             if not key or (award == "ffma" and key not in _FFMA_GRID_SET):
                 continue
-            confirmed = (key, b) in conf_grid
         elif fam == "state":
             key = (q.get("state") or "").strip().upper()
             if key not in states:
                 continue
-            confirmed = (key, b) in conf_state
         else:
             key = (q.get("dxcc") or "").strip()
             if not key:
                 continue
-            confirmed = (key, b) in conf_dxcc
+        qd = q.get("qso_date", "")
+        if qd and (key not in first_ever or qd < first_ever[key]):
+            first_ever[key] = qd          # first-ever any band = when this became an ATNO
+        b = (q.get("band") or "").strip().lower()
+        if b != band:
+            continue
+        if cfg["modes"] and modeclass != "Mixed" and mode_class(q.get("mode") or "") != modeclass:
+            continue
+        confirmed = ((key, b) in conf_grid if fam == "grid"
+                     else (key, b) in conf_state if fam == "state" else (key, b) in conf_dxcc)
         item_qsos.setdefault(key, []).append((
-            q.get("qso_date", ""), (q.get("time_on") or "").zfill(6),
+            qd, (q.get("time_on") or "").zfill(6),
             (q.get("call") or "").strip().upper(), confirmed))
 
     def lbl(k):
@@ -3849,7 +3852,8 @@ def _award_chase(cfg, award, band, modeclass):
             rares.append({"item": lbl(k), "tier": tier, "rarity": rdisp, "rsort": rsort,
                           "confirmed": confirmed, "call": rep[2], "date": rep[0]})
         atnos.append({"item": lbl(k), "date": fd, "call": first_call, "confirmed": confirmed,
-                      "tier": tier, "rarity": rdisp, "rsort": rsort})
+                      "tier": tier, "rarity": rdisp, "rsort": rsort,
+                      "ever": fd == first_ever.get(k)})   # true ATNO = first band-slot WAS first-ever
     _ctp = {"dead": 0, "ghost": 1, "warm": 2, "hot": 3}
     pending.sort(key=lambda p: (_ctp.get(p["conf_tier"], 9), -p["rsort"], -int(p["date"] or 0)))
     rares.sort(key=lambda r: -r["rsort"])
@@ -4021,8 +4025,10 @@ function render(){
   }
   const at=DATA.atnos||[];
   if(at.length){
-    const rows=at.map(a=>'<tr><td class="ff-g">'+a.item+'</td><td>'+tierBadge(a.tier,a.rarity)+'</td><td class="ff-who">'+(a.call||'')+'</td><td class="ff-when">'+fmtQ(a.date)+'</td><td>'+(a.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">pending</span>')+'</td></tr>').join('');
-    cards.push('<details class="score-card ff-collapse"><summary>\u{1F195} Recent ATNOs <span class="ff-count">last '+at.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>'+rows+'</table></details>');
+    const grid=(DATA.family==='grid');
+    const title=grid?'\u{1F195} Recent ATNOs':'\u{1F195} New band slots';
+    const rows=at.map(a=>'<tr><td class="ff-g">'+a.item+((!grid&&a.ever)?' <span class="ff-newdxcc" title="all-time-new — first EVER on any band">🌍 ATNO</span>':'')+'</td><td>'+tierBadge(a.tier,a.rarity)+'</td><td class="ff-who">'+(a.call||'')+'</td><td class="ff-when">'+fmtQ(a.date)+'</td><td>'+(a.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">pending</span>')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse"><summary>'+title+' <span class="ff-count">last '+at.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>'+rows+'</table>'+(grid?'':'<div class="ff-pctlabel" style="margin-top:.3em">First worked on '+DATA.band+' (a new band slot). 🌍 ATNO = it was also a brand-new entity on any band.</div>')+'</details>');
   }
   const pd=DATA.pending||[],pr=DATA.prognosis||{};
   if(pd.length){
