@@ -3705,8 +3705,12 @@ def _award_payload(band, award, mode):
     if band in ("all", "") and fam == "entity":
         rows = []
         for b in _AWARD_BANDS:
-            n = sum(1 for num, nm in _DXCC_NAME.items()
-                    if _worked.entity_band_status(num, nm, b) == "confirmed")
+            if modeclass == "Mixed":
+                n = sum(1 for num, nm in _DXCC_NAME.items()
+                        if _worked.entity_band_status(num, nm, b) == "confirmed")
+            else:
+                n = sum(1 for nm in _DXCC_NAME.values()
+                        if _worked.country_band_modeclass_status(nm, b, modeclass) == "confirmed")
             rows.append({"band": b, "confirmed": n})
         return {"award": award, "band": "all", "mode": mode, "family": "rollup",
                 "target": cfg["target"], "name": cfg["name"], "rows": rows}
@@ -3976,7 +3980,8 @@ function render(){
   st.innerHTML='';rl.innerHTML='';cd.innerHTML='';
   if(!DATA)return;
   if(DATA.family==='rollup'){
-    st.innerHTML='<div class="ff-sub" style="text-align:center;padding:.8em 0">DXCC confirmed on all ten bands &mdash; the 10BDXCC picture (target '+DATA.target+' each)</div>';
+    const ml=(DATA.mode&&DATA.mode!=='all')?('-'+DATA.mode.toUpperCase()):'';
+    st.innerHTML='<div class="ff-sub" style="text-align:center;padding:.8em 0">DXCC'+ml+' confirmed on all ten bands &mdash; the 10BDXCC picture (target '+DATA.target+' each)</div>';
     rl.innerHTML=DATA.rows.map(r=>{const p=Math.min(100,Math.round(100*r.confirmed/DATA.target)),done=r.confirmed>=DATA.target;return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+(done?'done':'')+'" style="width:'+p+'%"></i></span><span class="n">'+r.confirmed+(done?' ✅':' / '+DATA.target)+'</span></div>';}).join('');
     return;
   }
