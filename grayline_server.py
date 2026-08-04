@@ -3751,7 +3751,95 @@ def _award_payload(band, award, mode):
            "target": cfg["target"], "name": cfg["name"], "overlay": cfg.get("overlay"),
            "counts": counts, "items": items}
     out.update(_award_panels(cfg, award, band, modeclass, items))
+    out.update(_award_chase(cfg, award, band, modeclass))   # rich pending/ATNO/rares (LoTW forensics)
     return out
+
+
+def _award_item_rarity(fam, award, item_id):
+    """(tier, display, sort) — higher sort = rarer. FFMA: %-needed; DXCC: Club Log rank."""
+    if award == "ffma":
+        info = _FFMA_RARITY.get(item_id) or {}
+        p = float(info.get("pct_needed", 0))
+        return info.get("tier", "common"), (str(round(p, 1)) + "%" if p else ""), p
+    if fam == "entity":
+        rk = _DXCC_RARITY.get(item_id)
+        if rk:
+            return ("rare" if rk <= 100 else "uncommon" if rk <= 250 else "common"), "#" + str(rk), 1e6 - rk
+    return "common", "", 0.0
+
+
+def _award_chase(cfg, award, band, modeclass):
+    """Generic version of the FFMA chase for ANY award: pending (with the
+    hot/warm/ghost/dead LoTW-forensics prognosis + who-to-nudge + odds), recent
+    ATNOs, and rares worked. Reuses the award-agnostic _ffma_conf_tier /
+    _ffma_call_tier classifiers; groups the QSO log by the family's item key."""
+    fam = cfg["family"]
+    conf_grid, conf_dxcc, conf_state = (_worked.confirmed_grid_band,
+                                        _worked.confirmed_dxcc_band, _worked.confirmed_state_band)
+    states = set(_AWARD_STATES_50)
+    item_qsos: dict = {}
+    for q in _worked.qsos:
+        if (q.get("prop_mode") or "").strip().upper() == "SAT":
+            continue
+        b = (q.get("band") or "").strip().lower()
+        if b != band:
+            continue
+        if cfg["modes"] and modeclass != "Mixed" and mode_class(q.get("mode") or "") != modeclass:
+            continue
+        if fam == "grid":
+            key = (q.get("grid") or "").strip().upper()[:4]
+            if not key or (award == "ffma" and key not in _FFMA_GRID_SET):
+                continue
+            confirmed = (key, b) in conf_grid
+        elif fam == "state":
+            key = (q.get("state") or "").strip().upper()
+            if key not in states:
+                continue
+            confirmed = (key, b) in conf_state
+        else:
+            key = (q.get("dxcc") or "").strip()
+            if not key:
+                continue
+            confirmed = (key, b) in conf_dxcc
+        item_qsos.setdefault(key, []).append((
+            q.get("qso_date", ""), (q.get("time_on") or "").zfill(6),
+            (q.get("call") or "").strip().upper(), confirmed))
+
+    def lbl(k):
+        return _DXCC_NAME.get(k, k) if fam == "entity" else k
+
+    pending, rares, atnos = [], [], []
+    for k, recs in item_qsos.items():
+        confirmed = any(r[3] for r in recs)
+        tier, rdisp, rsort = _award_item_rarity(fam, award, k)
+        fd = min(r[0] for r in recs)
+        first_call = sorted(recs)[0][2]
+        if not confirmed:
+            by_call: dict = {}
+            for r in recs:
+                if r[2]:
+                    by_call.setdefault(r[2], []).append(r)
+            calls = []
+            for c in sorted(by_call, key=lambda cc: max(r[0] for r in by_call[cc]), reverse=True):
+                ct, up = _ffma_call_tier(c, by_call[c])
+                calls.append({"call": c, "tier": ct, "up": up})
+            pending.append({"item": lbl(k), "date": max(r[0] for r in recs), "calls": calls,
+                            "multi_op": len(calls) > 1, "tier": tier, "rarity": rdisp,
+                            "rsort": rsort, "conf_tier": _ffma_conf_tier(recs)})
+        if tier in ("rare", "uncommon"):
+            rep = sorted([r for r in recs if r[3]] or recs)[0]
+            rares.append({"item": lbl(k), "tier": tier, "rarity": rdisp, "rsort": rsort,
+                          "confirmed": confirmed, "call": rep[2], "date": rep[0]})
+        atnos.append({"item": lbl(k), "date": fd, "call": first_call, "confirmed": confirmed,
+                      "tier": tier, "rarity": rdisp, "rsort": rsort})
+    _ctp = {"dead": 0, "ghost": 1, "warm": 2, "hot": 3}
+    pending.sort(key=lambda p: (_ctp.get(p["conf_tier"], 9), -p["rsort"], -int(p["date"] or 0)))
+    rares.sort(key=lambda r: -r["rsort"])
+    atnos.sort(key=lambda a: a["date"], reverse=True)
+    cc = {"hot": 0, "warm": 0, "ghost": 0, "dead": 0}
+    for p in pending:
+        cc[p["conf_tier"]] = cc.get(p["conf_tier"], 0) + 1
+    return {"pending": pending[:40], "rares": rares[:20], "atnos": atnos[:16], "prognosis": cc}
 
 
 def _award_panels(cfg, award, band, modeclass, items):
@@ -3865,6 +3953,20 @@ _AWARDS_PAGE = r"""<!doctype html>
  .pdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
  .pdot.confirmed{background:#39d98a}.pdot.worked{background:#e6cf7e}
  .pempty{color:#5f7085;font-style:italic;font-size:12px}
+ .rb{font-size:10px;font-weight:700;padding:0 5px;border-radius:3px;background:#26333f;color:#9fb2c8}
+ .rb.rb-rare{background:#5a2f1f;color:#ffcf9a}.rb.rb-unc{background:#2a2413;color:#e6cf7e}
+ .ok{color:#7ee0a8}.pend{color:#e6cf7e}
+ #pending{background:#0e141b;border:1px solid #1f2b38;border-radius:8px;padding:8px 11px;margin:0 0 12px}
+ #pending h3{margin:0 0 6px;font-size:12px;color:#8fb7ff;font-weight:700}
+ #pending .brk{margin-left:8px;font-weight:600;color:#9fb2c8}
+ .ptab{width:100%;border-collapse:collapse;font-size:12px}
+ .ptab th{text-align:left;color:#5f7085;font-weight:600;font-size:11px;padding:2px 6px;border-bottom:1px solid #1f2b38}
+ .ptab td{padding:3px 6px;border-top:1px solid #141b24;vertical-align:baseline}
+ .ptab td.l{font-weight:700;color:#e6edf5}
+ .ptab td.d{color:#5f7085;white-space:nowrap;font-variant-numeric:tabular-nums}
+ .ptab td.who{color:#cdd6e0}
+ tr.ct-dead td{background:#2a1418}tr.ct-ghost td{background:#241a2a}tr.ct-warm td{background:#241f14}
+ .odds-good{color:#7ee0a8;font-weight:600}.odds-one{color:#8fa0b3}
 </style></head>
 <body>
 <h1>&#x1F3C6; Award Dashboard</h1>
@@ -3884,6 +3986,7 @@ _AWARDS_PAGE = r"""<!doctype html>
  <div class="panel"><h3>&#x1F3AF; Recent ATNOs</h3><div id="p-atno"></div></div>
  <div class="panel"><h3>&#x1F3C6; Rares worked</h3><div id="p-rares"></div></div>
 </div>
+<div id="pending"></div>
 <div id="grid"></div>
 <script>
 let CFG=null, MODE='all', DATA=null;
@@ -3910,20 +4013,38 @@ function syncModes(){
 function pct(a,b){return b?Math.min(100,Math.round(100*a/b)):0;}
 function fmtDate(d){return d?d.slice(5):'';}
 function prow(h){return '<div class="prow">'+h+'</div>';}
+function fmtQDate(d){return d&&d.length>=8?(d.slice(4,6)+'-'+d.slice(6,8)):(d||'');}
+function symOf(t){return ({dead:'\u{1F480}',ghost:'\u{1F47B}',hot:'\u{1F525}',warm:'\u{1F312}'})[t]||'';}
+function rbadge(tier,rarity){if(!rarity)return '';const c=tier==='rare'?' rb-rare':tier==='uncommon'?' rb-unc':'';return '<span class="rb'+c+'">'+rarity+'</span>';}
+function confMark(c){return c?'<span class="ok">&#x2705;</span>':'<span class="pend">pending</span>';}
 function renderPanels(){
-  const panels=document.getElementById('panels');
-  if(!DATA||DATA.family==='rollup'){panels.style.display='none';return;}
+  const panels=document.getElementById('panels'), pend=document.getElementById('pending');
+  if(!DATA||DATA.family==='rollup'){panels.style.display='none';pend.style.display='none';return;}
   panels.style.display='';
   const badge=k=>k?('<span class="badge'+(k==='new-entity'?' ne':'')+'">'+k.replace('new-','')+'</span>'):'';
   const cf=DATA.confirmations||[];
-  document.getElementById('p-conf').innerHTML = cf.length? cf.map(c=>prow(
-    '<span class="l">'+c.label+'</span><span class="c">'+c.call+'</span>'+badge(c.kind)+'<span class="d">'+fmtDate(c.date)+'</span>')).join('') : '<div class="pempty">No recent confirmations here.</div>';
+  document.getElementById('p-conf').innerHTML=cf.length?cf.map(c=>prow(
+    '<span class="l">'+c.label+'</span><span class="c">'+c.call+'</span>'+badge(c.kind)+'<span class="d">'+fmtDate(c.date)+'</span>')).join(''):'<div class="pempty">None here.</div>';
   const at=DATA.atnos||[];
-  document.getElementById('p-atno').innerHTML = at.length? at.map(a=>prow(
-    '<span class="l">'+a.label+'</span><span class="c">'+a.call+'</span>'+badge(a.kind)+'<span class="d">'+fmtDate(a.date)+'</span>')).join('') : '<div class="pempty">No new ones here yet.</div>';
+  document.getElementById('p-atno').innerHTML=at.length?at.map(a=>prow(
+    '<span class="l">'+a.item+'</span>'+rbadge(a.tier,a.rarity)+'<span class="c">'+(a.call||'')+'</span><span class="d">'+fmtQDate(a.date)+' '+confMark(a.confirmed)+'</span>')).join(''):'<div class="pempty">None here.</div>';
   const rr=DATA.rares||[];
-  document.getElementById('p-rares').innerHTML = rr.length? rr.map(r=>prow(
-    '<span class="pdot '+r.status+'"></span><span class="l">'+r.label+'</span><span class="r">'+r.rarity+'</span>')).join('') : '<div class="pempty">No rarity ranking for this award.</div>';
+  document.getElementById('p-rares').innerHTML=rr.length?rr.map(r=>prow(
+    '<span class="pdot '+(r.confirmed?'confirmed':'worked')+'"></span><span class="l">'+r.item+'</span><span class="c">'+(r.call||'')+'</span><span class="r">'+r.rarity+'</span>')).join(''):'<div class="pempty">No rarity ranking here.</div>';
+  renderPending();
+}
+function renderPending(){
+  const pend=document.getElementById('pending'), p=DATA.pending||[], pr=DATA.prognosis||{};
+  if(!p.length){pend.style.display='none';return;}
+  pend.style.display='';
+  const brk='\u{1F525}'+(pr.hot||0)+' \u{1F312}'+(pr.warm||0)+' \u{1F47B}'+(pr.ghost||0)+' \u{1F480}'+(pr.dead||0);
+  const rows=p.map(x=>{
+    const who=x.calls.map(c=>symOf(c.tier)+' '+c.call).join(', ');
+    const odds=x.multi_op?'<span class="odds-good" title="multiple ops — any one uploading confirms it">'+x.calls.length+' ops &#x2713;</span>':'<span class="odds-one">1 op</span>';
+    return '<tr class="ct-'+x.conf_tier+'"><td class="l">'+x.item+'</td><td>'+rbadge(x.tier,x.rarity)+'</td><td class="d">'+fmtQDate(x.date)+'</td><td class="who">'+who+'</td><td>'+odds+'</td></tr>';
+  }).join('');
+  pend.innerHTML='<h3>&#x23F3; Worked &mdash; awaiting confirmation <span class="brk" title="prognosis of the best op per item: hot=just wait, warm=fading, ghost=re-work or card, dead=they uploaded to LoTW without you (a fresh QSO is the only path)">'+brk+'</span></h3>'+
+    '<table class="ptab"><tr><th></th><th>rarity</th><th>last</th><th>who to nudge</th><th>odds</th></tr>'+rows+'</table>';
 }
 function render(){
   const cnt=document.getElementById('counts'), rl=document.getElementById('rollup'), gr=document.getElementById('grid');
