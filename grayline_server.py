@@ -3712,8 +3712,16 @@ def _award_payload(band, award, mode):
                 n = sum(1 for nm in _DXCC_NAME.values()
                         if _worked.country_band_modeclass_status(nm, b, modeclass) == "confirmed")
             rows.append({"band": b, "confirmed": n})
+        # POOLED total = the REAL award grain: distinct entities on this mode, ANY band
+        # (DXCC / DXCC-CW / DXCC-Phone / DXCC-Digital), target 100.
+        if modeclass == "Mixed":
+            pooled = len(getattr(_worked, "confirmed_dxcc", set()))
+        else:
+            _names = set(_DXCC_NAME.values())
+            pooled = sum(1 for nm in _names if _worked.country_modeclass_status(nm, modeclass) == "confirmed")
         return {"award": award, "band": "all", "mode": mode, "family": "rollup",
-                "target": cfg["target"], "name": cfg["name"], "rows": rows}
+                "target": cfg["target"], "name": cfg["name"], "rows": rows,
+                "pooled": pooled, "modeclass": modeclass}
 
     counts = {"confirmed": 0, "worked": 0, "new": 0}
     items = []
@@ -3753,7 +3761,10 @@ def _award_payload(band, award, mode):
             add(g, g, seen[g])
     out = {"award": award, "band": band, "mode": mode, "family": fam,
            "target": cfg["target"], "name": cfg["name"], "overlay": cfg.get("overlay"),
-           "counts": counts, "items": items}
+           "counts": counts, "items": items,
+           # per-band + a SPECIFIC mode is NOT a sanctioned award (no per-band-mode DXCC) →
+           # show a bare count, not an N/100 with a progress bar toward a fake finish line.
+           "no_target": (fam == "entity" and modeclass != "Mixed")}
     out.update(_award_panels(cfg, award, band, modeclass, items))
     out.update(_award_chase(cfg, award, band, modeclass))   # rich pending/ATNO/rares (LoTW forensics)
     if fam == "grid":                                       # rover TQSL grid mismatches — grid-award only
@@ -3980,16 +3991,28 @@ function render(){
   st.innerHTML='';rl.innerHTML='';cd.innerHTML='';
   if(!DATA)return;
   if(DATA.family==='rollup'){
-    const ml=(DATA.mode&&DATA.mode!=='all')?('-'+DATA.mode.toUpperCase()):'';
-    st.innerHTML='<div class="ff-sub" style="text-align:center;padding:.8em 0">DXCC'+ml+' confirmed on all ten bands &mdash; the 10BDXCC picture (target '+DATA.target+' each)</div>';
-    rl.innerHTML=DATA.rows.map(r=>{const p=Math.min(100,Math.round(100*r.confirmed/DATA.target)),done=r.confirmed>=DATA.target;return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+(done?'done':'')+'" style="width:'+p+'%"></i></span><span class="n">'+r.confirmed+(done?' ✅':' / '+DATA.target)+'</span></div>';}).join('');
+    const isMode=(DATA.mode&&DATA.mode!=='all'),ml=isMode?('-'+DATA.mode.toUpperCase()):'';
+    const pooled=DATA.pooled||0,done=pooled>=100;
+    st.innerHTML='<div class="ff-standing"><div class="ff-big">'+pooled+'<span class="ff-of"> / 100</span></div>'+
+      '<div class="ff-sub">DXCC'+ml+' &middot; distinct entities on '+(isMode?DATA.mode.toUpperCase():'any mode')+', <b>any band</b></div>'+
+      '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,pooled)+'%"></div></div>'+
+      '<div class="ff-pctlabel">'+(done?'complete ✅ &mdash; the DXCC'+ml+' award':(100-pooled)+' to go')+'</div></div>';
+    rl.innerHTML='<div class="ff-sub" style="text-align:center;padding:.3em 0 .5em;color:#666">per-band breakdown '+(isMode?'&mdash; informational (no per-band-'+DATA.mode.toUpperCase()+' award; band slots are any-mode)':'&mdash; the 10-band / Challenge picture, target '+DATA.target+' each')+'</div>'+
+      DATA.rows.map(r=>{const st2=!isMode;const p=Math.min(100,Math.round(100*r.confirmed/DATA.target)),dn=r.confirmed>=DATA.target;return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+((dn&&st2)?'done':'')+'" style="width:'+(st2?p:Math.min(100,r.confirmed))+'%"></i></span><span class="n">'+r.confirmed+(st2?(dn?' ✅':' / '+DATA.target):'')+'</span></div>';}).join('');
     return;
   }
-  const c=DATA.counts||{},tot=DATA.target||0,have=c.confirmed||0,p=(tot?100*have/tot:0),done=have>=tot;
-  st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'<span class="ff-of"> / '+tot+'</span></div>'+
-    '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+
-    '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
-    '<div class="ff-pctlabel">'+p.toFixed(1)+(done?'% &mdash; complete ✅':'% of '+DATA.name)+'</div></div>';
+  const c=DATA.counts||{},tot=DATA.target||0,have=c.confirmed||0;
+  if(DATA.no_target){
+    st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'</div>'+
+      '<div class="ff-sub">'+DATA.name+'-'+DATA.mode.toUpperCase()+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; confirmed entities</div>'+
+      '<div class="ff-pctlabel">count only &mdash; no per-band-'+DATA.mode.toUpperCase()+' award (band slots are any-mode; the real DXCC-'+DATA.mode.toUpperCase()+' is any-band, see "All bands")</div></div>';
+  } else {
+    const p=(tot?100*have/tot:0),done=have>=tot;
+    st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'<span class="ff-of"> / '+tot+'</span></div>'+
+      '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+
+      '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
+      '<div class="ff-pctlabel">'+p.toFixed(1)+(done?'% &mdash; complete ✅':'% of '+DATA.name)+'</div></div>';
+  }
   const cards=[];
   const cf=DATA.confirmations||[];
   if(cf.length){
