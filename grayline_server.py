@@ -3908,193 +3908,111 @@ _AWARDS_PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Award Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
- body{background:#0b0f14;color:#cdd6e0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:12px}
- h1{font-size:15px;color:#8fb7ff;margin:0 0 6px;font-weight:600}
- .sub{color:#5f7085;font-size:12px}
- .sub a{color:#8fb7ff;text-decoration:none}
- .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
- select{background:#0e141b;border:1px solid #26333f;border-radius:6px;color:#e6edf5;padding:6px 9px;font:14px inherit}
- .modes{display:flex;border:1px solid #26333f;border-radius:6px;overflow:hidden}
- .modes button{background:#0e141b;border:0;color:#9fb2c8;padding:6px 11px;cursor:pointer;font:13px inherit}
- .modes button.on{background:#1c3a2a;color:#8ff0be}
+ body{background:#0b0b0b;color:#ccc;font-family:system-ui,-apple-system,sans-serif;margin:0 auto;padding:12px;max-width:760px}
+ a{color:#3fc7e0;text-decoration:none}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0}
+ select{background:#141414;border:1px solid #2a2a2a;border-radius:5px;color:#eee;padding:6px 9px;font:15px inherit}
+ .modes{display:flex;border:1px solid #2a2a2a;border-radius:5px;overflow:hidden}
+ .modes button{background:#141414;border:0;color:#aaa;padding:6px 11px;cursor:pointer;font:13px inherit}
+ .modes button.on{background:#3a3313;color:#f5d76e}
  .modes.off{opacity:.3;pointer-events:none}
- label.nd{color:#9fb2c8;font-size:13px;cursor:pointer;user-select:none}
- .counts{font-size:13px;margin:8px 0;color:#9fb2c8;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
- .counts b{font-variant-numeric:tabular-nums}
- .c-conf{color:#7ee0a8}.c-work{color:#e6cf7e}.c-new{color:#ff9aa6}
- .prog{flex:1;min-width:140px;max-width:320px;height:8px;background:#1b2531;border-radius:5px;overflow:hidden}
- .prog i{display:block;height:100%;background:#39d98a}
- .done{color:#7ee0a8;font-weight:700}
- #grid{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
- .cell{font-size:11px;padding:2px 5px;border-radius:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
- .cell.big{min-width:34px;text-align:center}
- .st-confirmed{background:#173a29;color:#8ff0be}
- .st-worked{background:#3a3315;color:#e6cf7e}
- .st-new{background:#3a1f24;color:#ff9aa6}
- #rollup{margin-top:8px}
+ .ff-standing{text-align:center;padding:.5em 0 1em}
+ .ff-big{font-size:3.4em;font-weight:800;color:#d4af37;line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(212,175,55,.35)}
+ .ff-of{font-size:.4em;color:#888;font-weight:600}
+ .ff-sub{color:#aaa;font-size:.95em;margin-top:.3em}
+ .ff-sub b{color:#f5d76e}
+ .ff-bar{height:8px;background:#1a1a1a;border-radius:4px;margin:.7em auto .3em;max-width:34em;overflow:hidden}
+ .ff-fill{height:100%;background:linear-gradient(90deg,#6b5a1a,#d4af37);border-radius:4px}
+ .ff-pctlabel{color:#777;font-size:.75em}
+ .score-card{background:#0a0a0a;border:1px solid #1a1a1a;padding:.4em .6em;margin:0 0 .7em;border-radius:4px}
+ .ff-collapse>summary{margin:0;font-size:.85em;color:#ff0;font-weight:600;text-transform:uppercase;letter-spacing:.05em;cursor:pointer;border-bottom:1px solid #222;padding-bottom:.2em;list-style:none}
+ .ff-collapse[open]>summary{margin-bottom:.4em}
+ .ff-count{float:right;color:#888;font-weight:400;text-transform:none;letter-spacing:0}
+ table.ff-table{width:100%;border-collapse:collapse;font-size:.95em;font-variant-numeric:tabular-nums}
+ table.ff-table th{font-weight:normal;color:#888;font-size:.78em;text-align:left;border-bottom:1px solid #222;padding:.15em .4em}
+ table.ff-table td{padding:.2em .4em;border-bottom:1px solid #141414;text-align:left;vertical-align:baseline}
+ .ff-g{font-weight:700;color:#d4af37}
+ .ff-when{color:#888;white-space:nowrap}
+ .ff-who{color:#ccc}
+ .ff-tier{display:inline-block;padding:0 .35em;border-radius:3px;font-size:.72em;font-weight:800}
+ .ff-rare{background:#d4af37;color:#1a1a1a}.ff-unc{background:#6b5a1a;color:#f5d76e}.ff-common{background:#1f1f1f;color:#777}
+ .ff-conf{color:#4caf50;font-weight:700;font-size:.82em}.ff-pend{color:#e0a83c;font-weight:700;font-size:.82em}
+ .ff-newdxcc{color:#7ec8ff;font-weight:700;font-size:.8em}.ff-newffma{color:#8bc34a;font-weight:700;font-size:.8em}.ff-reconf{color:#777;font-size:.8em}
+ .ff-odds-good{color:#4caf50;font-size:.8em;font-weight:700;cursor:help}.ff-odds-one{color:#888;font-size:.8em}
+ tr.ct-dead td{background:#2a1410}tr.ct-ghost td{background:#241a2a}tr.ct-warm td{background:#241f10}
+ .brk{font-weight:600;color:#aaa}
+ .ff-empty{color:#6a8d6a;padding:.5em 0;font-size:.9em}
  .rr{display:flex;align-items:center;gap:10px;padding:3px 0}
- .rr .b{width:46px;color:#cdd6e0;font-weight:600}
- .rr .p{flex:1;max-width:420px;height:12px;background:#1b2531;border-radius:6px;overflow:hidden}
- .rr .p i{display:block;height:100%;background:#39d98a}
- .rr .p i.done{background:#7ee0a8}
- .rr .n{width:74px;color:#9fb2c8;font-size:12px;font-variant-numeric:tabular-nums}
- .empty{color:#5f7085;font-style:italic;padding:16px 0}
- .panels{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
- .panel{flex:1;min-width:230px;background:#0e141b;border:1px solid #1f2b38;border-radius:8px;padding:8px 11px}
- .panel h3{margin:0 0 6px;font-size:12px;color:#8fb7ff;font-weight:700;letter-spacing:.3px}
- .prow{display:flex;align-items:baseline;gap:7px;font-size:12px;padding:2.5px 0;border-top:1px solid #141b24}
- .prow:first-child{border-top:0}
- .prow .l{font-weight:700;color:#e6edf5;min-width:50px}
- .prow .c{color:#9fb2c8}
- .prow .d{color:#5f7085;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
- .prow .r{margin-left:auto;color:#ffcf9a;font-weight:600}
- .badge{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;background:#1c3a2a;color:#8ff0be;text-transform:uppercase}
- .badge.ne{background:#5a2f1f;color:#ffcf9a}
- .pdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
- .pdot.confirmed{background:#39d98a}.pdot.worked{background:#e6cf7e}
- .pempty{color:#5f7085;font-style:italic;font-size:12px}
- .rb{font-size:10px;font-weight:700;padding:0 5px;border-radius:3px;background:#26333f;color:#9fb2c8}
- .rb.rb-rare{background:#5a2f1f;color:#ffcf9a}.rb.rb-unc{background:#2a2413;color:#e6cf7e}
- .ok{color:#7ee0a8}.pend{color:#e6cf7e}
- #pending{background:#0e141b;border:1px solid #1f2b38;border-radius:8px;padding:8px 11px;margin:0 0 12px}
- #pending h3{margin:0 0 6px;font-size:12px;color:#8fb7ff;font-weight:700}
- #pending .brk{margin-left:8px;font-weight:600;color:#9fb2c8}
- .ptab{width:100%;border-collapse:collapse;font-size:12px}
- .ptab th{text-align:left;color:#5f7085;font-weight:600;font-size:11px;padding:2px 6px;border-bottom:1px solid #1f2b38}
- .ptab td{padding:3px 6px;border-top:1px solid #141b24;vertical-align:baseline}
- .ptab td.l{font-weight:700;color:#e6edf5}
- .ptab td.d{color:#5f7085;white-space:nowrap;font-variant-numeric:tabular-nums}
- .ptab td.who{color:#cdd6e0}
- tr.ct-dead td{background:#2a1418}tr.ct-ghost td{background:#241a2a}tr.ct-warm td{background:#241f14}
- .odds-good{color:#7ee0a8;font-weight:600}.odds-one{color:#8fa0b3}
+ .rr .b{width:46px;color:#ccc;font-weight:700}
+ .rr .p{flex:1;max-width:400px;height:12px;background:#1a1a1a;border-radius:6px;overflow:hidden}
+ .rr .p i{display:block;height:100%;background:linear-gradient(90deg,#6b5a1a,#d4af37)}
+ .rr .p i.done{background:#4caf50}
+ .rr .n{width:78px;color:#aaa;font-size:12px;font-variant-numeric:tabular-nums}
 </style></head>
 <body>
-<h1>&#x1F3C6; Award Dashboard</h1>
-<div class="sub"><a href="/">&larr; spots</a> &middot; band &times; award &times; mode drill-down</div>
 <div class="bar">
- <select id="band"></select>
- <select id="award"></select>
- <div class="modes" id="modes">
-  <button data-m="all" class="on">All</button><button data-m="cw">CW</button><button data-m="digital">Digital</button><button data-m="phone">Phone</button>
- </div>
- <label class="nd"><input type="checkbox" id="ndonly"> needed only</label>
+ <select id="band"></select><select id="award"></select>
+ <div class="modes" id="modes"><button data-m="all" class="on">All</button><button data-m="cw">CW</button><button data-m="digital">Digital</button><button data-m="phone">Phone</button></div>
+ <a href="/">&larr; spots</a>
 </div>
-<div class="counts" id="counts"></div>
+<div id="standing"></div>
 <div id="rollup"></div>
-<div class="panels" id="panels">
- <div class="panel"><h3>&#x2705; Latest confirmations</h3><div id="p-conf"></div></div>
- <div class="panel"><h3>&#x1F3AF; Recent ATNOs</h3><div id="p-atno"></div></div>
- <div class="panel"><h3>&#x1F3C6; Rares worked</h3><div id="p-rares"></div></div>
-</div>
-<div id="pending"></div>
-<div id="grid"></div>
+<div id="cards"></div>
 <script>
 let CFG=null, MODE='all', DATA=null;
 function opt(v,t){const o=document.createElement('option');o.value=v;o.textContent=t;return o;}
-function fillBands(){
-  const sel=document.getElementById('band'), cur=sel.value; sel.innerHTML='';
-  CFG.bands.forEach(b=>sel.appendChild(opt(b,b)));
-  sel.appendChild(opt('all','All bands (10BDXCC)'));
-  if(cur) sel.value=cur;
-}
-function fillAwards(){
-  const band=document.getElementById('band').value, sel=document.getElementById('award'), cur=sel.value;
-  sel.innerHTML='';
-  Object.entries(CFG.awards).forEach(([a,c])=>{
-    const ok=(band==='all')?c.rollup:c.bands.includes(band);
-    if(ok) sel.appendChild(opt(a,c.name));
-  });
-  if(cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
-}
-function syncModes(){
-  const a=CFG.awards[document.getElementById('award').value];
-  document.getElementById('modes').classList.toggle('off', !(a&&a.modes));
-}
-function pct(a,b){return b?Math.min(100,Math.round(100*a/b)):0;}
-function fmtDate(d){return d?d.slice(5):'';}
-function prow(h){return '<div class="prow">'+h+'</div>';}
-function fmtQDate(d){return d&&d.length>=8?(d.slice(4,6)+'-'+d.slice(6,8)):(d||'');}
-function symOf(t){return ({dead:'\u{1F480}',ghost:'\u{1F47B}',hot:'\u{1F525}',warm:'\u{1F312}'})[t]||'';}
-function rbadge(tier,rarity){if(!rarity)return '';const c=tier==='rare'?' rb-rare':tier==='uncommon'?' rb-unc':'';return '<span class="rb'+c+'">'+rarity+'</span>';}
-function confMark(c){return c?'<span class="ok">&#x2705;</span>':'<span class="pend">pending</span>';}
-function renderPanels(){
-  const panels=document.getElementById('panels'), pend=document.getElementById('pending');
-  if(!DATA||DATA.family==='rollup'){panels.style.display='none';pend.style.display='none';return;}
-  panels.style.display='';
-  const badge=k=>k?('<span class="badge'+(k==='new-entity'?' ne':'')+'">'+k.replace('new-','')+'</span>'):'';
-  const cf=DATA.confirmations||[];
-  document.getElementById('p-conf').innerHTML=cf.length?cf.map(c=>prow(
-    '<span class="l">'+c.label+'</span><span class="c">'+c.call+'</span>'+badge(c.kind)+'<span class="d">'+fmtDate(c.date)+'</span>')).join(''):'<div class="pempty">None here.</div>';
-  const at=DATA.atnos||[];
-  document.getElementById('p-atno').innerHTML=at.length?at.map(a=>prow(
-    '<span class="l">'+a.item+'</span>'+rbadge(a.tier,a.rarity)+'<span class="c">'+(a.call||'')+'</span><span class="d">'+fmtQDate(a.date)+' '+confMark(a.confirmed)+'</span>')).join(''):'<div class="pempty">None here.</div>';
-  const rr=DATA.rares||[];
-  document.getElementById('p-rares').innerHTML=rr.length?rr.map(r=>prow(
-    '<span class="pdot '+(r.confirmed?'confirmed':'worked')+'"></span><span class="l">'+r.item+'</span><span class="c">'+(r.call||'')+'</span><span class="r">'+r.rarity+'</span>')).join(''):'<div class="pempty">No rarity ranking here.</div>';
-  renderPending();
-}
-function renderPending(){
-  const pend=document.getElementById('pending'), p=DATA.pending||[], pr=DATA.prognosis||{};
-  if(!p.length){pend.style.display='none';return;}
-  pend.style.display='';
-  const brk='\u{1F525}'+(pr.hot||0)+' \u{1F312}'+(pr.warm||0)+' \u{1F47B}'+(pr.ghost||0)+' \u{1F480}'+(pr.dead||0);
-  const rows=p.map(x=>{
-    const who=x.calls.map(c=>symOf(c.tier)+' '+c.call).join(', ');
-    const odds=x.multi_op?'<span class="odds-good" title="multiple ops — any one uploading confirms it">'+x.calls.length+' ops &#x2713;</span>':'<span class="odds-one">1 op</span>';
-    return '<tr class="ct-'+x.conf_tier+'"><td class="l">'+x.item+'</td><td>'+rbadge(x.tier,x.rarity)+'</td><td class="d">'+fmtQDate(x.date)+'</td><td class="who">'+who+'</td><td>'+odds+'</td></tr>';
-  }).join('');
-  pend.innerHTML='<h3>&#x23F3; Worked &mdash; awaiting confirmation <span class="brk" title="prognosis of the best op per item: hot=just wait, warm=fading, ghost=re-work or card, dead=they uploaded to LoTW without you (a fresh QSO is the only path)">'+brk+'</span></h3>'+
-    '<table class="ptab"><tr><th></th><th>rarity</th><th>last</th><th>who to nudge</th><th>odds</th></tr>'+rows+'</table>';
-}
+function fillBands(){const s=document.getElementById('band'),cur=s.value;s.innerHTML='';CFG.bands.forEach(b=>s.appendChild(opt(b,b)));s.appendChild(opt('all','All bands (10BDXCC)'));if(cur)s.value=cur;}
+function fillAwards(){const band=document.getElementById('band').value,s=document.getElementById('award'),cur=s.value;s.innerHTML='';Object.entries(CFG.awards).forEach(([a,c])=>{const ok=(band==='all')?c.rollup:c.bands.includes(band);if(ok)s.appendChild(opt(a,c.name));});if(cur&&[...s.options].some(o=>o.value===cur))s.value=cur;}
+function syncModes(){const a=CFG.awards[document.getElementById('award').value];document.getElementById('modes').classList.toggle('off',!(a&&a.modes));}
+function tierBadge(t,r){if(!r)return '';const c=t==='rare'?'ff-rare':t==='uncommon'?'ff-unc':'ff-common';return '<span class="ff-tier '+c+'">'+r+'</span>';}
+function sym(t){return ({dead:'\u{1F480}',ghost:'\u{1F47B}',hot:'\u{1F525}',warm:'\u{1F312}'})[t]||'';}
+function fmtQ(d){return d&&d.length>=8?(d.slice(4,6)+'-'+d.slice(6,8)):(d||'');}
+function fmtISO(d){return d?d.slice(5):'';}
 function render(){
-  const cnt=document.getElementById('counts'), rl=document.getElementById('rollup'), gr=document.getElementById('grid');
-  cnt.innerHTML=''; rl.innerHTML=''; gr.innerHTML='';
-  if(!DATA) return;
-  renderPanels();
+  const st=document.getElementById('standing'),rl=document.getElementById('rollup'),cd=document.getElementById('cards');
+  st.innerHTML='';rl.innerHTML='';cd.innerHTML='';
+  if(!DATA)return;
   if(DATA.family==='rollup'){
-    cnt.innerHTML='<span>DXCC confirmed per band &mdash; the 10-band picture (target '+DATA.target+' each)</span>';
-    rl.innerHTML=DATA.rows.map(r=>{
-      const p=pct(r.confirmed,DATA.target), done=r.confirmed>=DATA.target;
-      return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+(done?'done':'')+'" style="width:'+p+'%"></i></span><span class="n">'+r.confirmed+(done?' &#x2705;':' / '+DATA.target)+'</span></div>';
-    }).join('');
+    st.innerHTML='<div class="ff-sub" style="text-align:center;padding:.8em 0">DXCC confirmed on all ten bands &mdash; the 10BDXCC picture (target '+DATA.target+' each)</div>';
+    rl.innerHTML=DATA.rows.map(r=>{const p=Math.min(100,Math.round(100*r.confirmed/DATA.target)),done=r.confirmed>=DATA.target;return '<div class="rr"><span class="b">'+r.band+'</span><span class="p"><i class="'+(done?'done':'')+'" style="width:'+p+'%"></i></span><span class="n">'+r.confirmed+(done?' ✅':' / '+DATA.target)+'</span></div>';}).join('');
     return;
   }
-  const c=DATA.counts||{}, tot=DATA.target||0, have=c.confirmed||0, p=pct(have,tot), done=have>=tot;
-  cnt.innerHTML='<span class="c-conf">&#9679; <b>'+have+'</b> confirmed</span>'+
-    '<span class="c-work">&#9679; <b>'+(c.worked||0)+'</b> worked</span>'+
-    '<span class="c-new">&#9679; <b>'+(c.new||0)+'</b> needed</span>'+
-    '<span class="prog"><i style="width:'+p+'%"></i></span>'+
-    (done?'<span class="done">'+have+' / '+tot+' &#x2705;</span>':'<span>'+p+'% &rarr; '+tot+'</span>');
-  const nd=document.getElementById('ndonly').checked;
-  let items=(DATA.items||[]);
-  if(nd) items=items.filter(i=>i.status!=='confirmed');
-  if(!items.length){gr.innerHTML='<div class="empty">Nothing to show for these filters.</div>';return;}
-  const big=(DATA.family!=='entity');
-  gr.innerHTML=items.map(i=>{
-    const t=i.status+(i.pct?(' · '+i.pct+'% needed'):'');
-    return '<span class="cell st-'+i.status+(big?' big':'')+'" title="'+t+'">'+i.label+'</span>';
-  }).join('');
+  const c=DATA.counts||{},tot=DATA.target||0,have=c.confirmed||0,p=(tot?100*have/tot:0),done=have>=tot;
+  st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'<span class="ff-of"> / '+tot+'</span></div>'+
+    '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+
+    '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
+    '<div class="ff-pctlabel">'+p.toFixed(1)+(done?'% &mdash; complete ✅':'% of '+DATA.name)+'</div></div>';
+  const cards=[];
+  const pd=DATA.pending||[],pr=DATA.prognosis||{};
+  if(pd.length){
+    const brk='<span class="brk">\u{1F525}'+(pr.hot||0)+' \u{1F312}'+(pr.warm||0)+' \u{1F47B}'+(pr.ghost||0)+' \u{1F480}'+(pr.dead||0)+'</span>';
+    const rows=pd.map(x=>{const who=x.calls.map(cc=>sym(cc.tier)+' '+cc.call).join(', ');
+      const odds=x.multi_op?'<span class="ff-odds-good" title="any one op uploading confirms it">'+x.calls.length+' ops ✓</span>':'<span class="ff-odds-one">1 op</span>';
+      return '<tr class="ct-'+x.conf_tier+'"><td class="ff-g">'+x.item+'</td><td>'+tierBadge(x.tier,x.rarity)+'</td><td class="ff-when">'+fmtQ(x.date)+'</td><td class="ff-who">'+who+'</td><td>'+odds+'</td></tr>';}).join('');
+    cards.push('<details class="score-card ff-collapse" open><summary>⏳ Worked &mdash; awaiting confirmation <span class="ff-count">'+pd.length+' &middot; '+brk+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>last</th><th>who to nudge</th><th>odds</th></tr>'+rows+'</table></details>');
+  }
+  const at=DATA.atnos||[];
+  if(at.length){
+    const rows=at.map(a=>'<tr><td class="ff-g">'+a.item+'</td><td>'+tierBadge(a.tier,a.rarity)+'</td><td class="ff-who">'+(a.call||'')+'</td><td class="ff-when">'+fmtQ(a.date)+'</td><td>'+(a.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">pending</span>')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse"><summary>\u{1F195} Recent ATNOs <span class="ff-count">last '+at.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th>worked</th><th></th></tr>'+rows+'</table></details>');
+  }
+  const rr=DATA.rares||[];
+  if(rr.length){
+    const rows=rr.map(r=>'<tr><td class="ff-g">'+r.item+'</td><td>'+tierBadge(r.tier,r.rarity)+'</td><td class="ff-who">'+(r.call||'')+'</td><td>'+(r.confirmed?'<span class="ff-conf">✅</span>':'<span class="ff-pend">worked</span>')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F3C6} Rares worked <span class="ff-count">'+rr.length+'</span></summary><table class="ff-table"><tr><th></th><th>rarity</th><th>via</th><th></th></tr>'+rows+'</table></details>');
+  }
+  const cf=DATA.confirmations||[];
+  if(cf.length){
+    const rows=cf.map(c=>'<tr><td class="ff-g">'+c.label+'</td><td class="ff-who">'+c.call+'</td><td>'+(c.kind?'<span class="ff-'+(c.kind==='new-entity'?'newdxcc':'newffma')+'">NEW '+c.kind.replace('new-','').toUpperCase()+'</span>':'<span class="ff-reconf">dupe</span>')+'</td><td class="ff-when">'+fmtISO(c.date)+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse"><summary>✅ Latest confirmations <span class="ff-count">last '+cf.length+'</span></summary><table class="ff-table"><tr><th></th><th>via</th><th>what</th><th>when</th></tr>'+rows+'</table></details>');
+  }
+  cd.innerHTML=cards.join('')||'<div class="ff-empty">No detail for this selection yet.</div>';
 }
-function load(){
-  const band=document.getElementById('band').value, award=document.getElementById('award').value;
-  if(!award) return;
-  const a=CFG.awards[award], m=(a&&a.modes)?MODE:'all';
-  fetch('/api/award?band='+encodeURIComponent(band)+'&award='+encodeURIComponent(award)+'&mode='+m)
-    .then(r=>r.json()).then(d=>{DATA=d;render();}).catch(e=>{});
-}
+function load(){const band=document.getElementById('band').value,award=document.getElementById('award').value;if(!award)return;const a=CFG.awards[award],m=(a&&a.modes)?MODE:'all';fetch('/api/award?band='+encodeURIComponent(band)+'&award='+encodeURIComponent(award)+'&mode='+m).then(r=>r.json()).then(d=>{DATA=d;render();}).catch(e=>{});}
 document.getElementById('band').addEventListener('change',()=>{fillAwards();syncModes();load();});
 document.getElementById('award').addEventListener('change',()=>{syncModes();load();});
-document.getElementById('ndonly').addEventListener('change',render);
-document.querySelectorAll('#modes button').forEach(b=>b.addEventListener('click',()=>{
-  MODE=b.dataset.m;
-  document.querySelectorAll('#modes button').forEach(x=>x.classList.toggle('on',x===b));
-  load();
-}));
-fetch('/api/award?meta=1').then(r=>r.json()).then(c=>{
-  CFG=c; fillBands();
-  document.getElementById('band').value='6m'; fillAwards();
-  document.getElementById('award').value='ffma'; syncModes(); load();
-}).catch(e=>{document.getElementById('grid').innerHTML='<div class="empty">Load failed.</div>';});
+document.querySelectorAll('#modes button').forEach(b=>b.addEventListener('click',()=>{MODE=b.dataset.m;document.querySelectorAll('#modes button').forEach(x=>x.classList.toggle('on',x===b));load();}));
+fetch('/api/award?meta=1').then(r=>r.json()).then(c=>{CFG=c;fillBands();document.getElementById('band').value='6m';fillAwards();document.getElementById('award').value='ffma';syncModes();load();}).catch(e=>{document.getElementById('cards').innerHTML='<div class="ff-empty">Load failed.</div>';});
 </script>
 </body></html>"""
 
