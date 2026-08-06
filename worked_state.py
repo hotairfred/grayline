@@ -448,7 +448,9 @@ def _qrz_country(cty_name: str) -> str:
 # "Bosnia-Herzegovina" from cty.dat) that otherwise scatter a worked entity across
 # three keys and produce false "needed" flags on bands the spot lookup can't find.
 _CTY_FOR_NAMES = None
-def _cty_entity(call: str) -> str:
+def _cty_name_dxcc(call: str):
+    """(canonical entity name, dxcc-number-as-str) for a callsign via cty.dat,
+    or ("", "") if unresolved."""
     global _CTY_FOR_NAMES
     if _CTY_FOR_NAMES is None:
         try:
@@ -458,12 +460,47 @@ def _cty_entity(call: str) -> str:
             log.warning("cty.dat unavailable for country canonicalization: %s", e)
             _CTY_FOR_NAMES = False
     if not _CTY_FOR_NAMES or not call:
-        return ""
+        return "", ""
     try:
         e = _CTY_FOR_NAMES.lookup(call)
-        return (e.entity or "") if e else ""
+        if not e:
+            return "", ""
+        return (e.entity or ""), (str(e.dxcc) if e.dxcc else "")
     except Exception:
-        return ""
+        return "", ""
+
+
+def _cty_entity(call: str) -> str:
+    return _cty_name_dxcc(call)[0]
+
+
+_DXCC_NUM_TO_CTY_NAME = None
+def _cty_name_for_dxcc(dxcc: str) -> str:
+    """cty.dat canonical entity name for a DXCC number (same name-space as
+    _cty_entity), or "". Lets a record trust its LOGGED DXCC over a stale
+    exact-call cty.dat exception (e.g. N5UC->Alaska while the QSO is 291/USA)."""
+    global _DXCC_NUM_TO_CTY_NAME
+    if _DXCC_NUM_TO_CTY_NAME is None:
+        _DXCC_NUM_TO_CTY_NAME = {}
+        _cty_name_dxcc("")  # force-load _CTY_FOR_NAMES
+        if _CTY_FOR_NAMES:
+            try:
+                for ent in _CTY_FOR_NAMES._entities.values():
+                    if ent.dxcc and ent.entity:
+                        _DXCC_NUM_TO_CTY_NAME.setdefault(str(ent.dxcc), ent.entity)
+            except Exception:
+                pass
+    return _DXCC_NUM_TO_CTY_NAME.get(str(dxcc), "")
+
+
+# Callsigns where cty.dat's exact-call exception is stale/wrong for the operator's
+# actual QSO location — verified against the logged DXCC + grid. For these, trust
+# the logged DXCC so a mislocated exception can't phantom-inflate a DXCC entity.
+# (A general fix would resolve entity from the grid; that's a geo lift — this table
+# handles the known offenders without touching prefix/portable-suffix resolution,
+# which cty.dat gets right.)
+#   N5UC: cty maps it to Alaska (6); the QSO is grid EM26 (central US), DXCC 291.
+_BAD_CTY_EXACT_CALL = {"N5UC"}
 
 
 def _norm_band(s: str) -> str:
@@ -776,7 +813,14 @@ class WorkedState:
             # rather than whichever spelling happened to match. Falls back to the
             # COUNTRY-field value above if cty.dat can't resolve the call.
             canon = _cty_entity(q.get("call", ""))
-            if canon:
+            if call in _BAD_CTY_EXACT_CALL and dxcc:
+                # cty.dat carries a stale/wrong exact-call exception for this call
+                # (=N5UC -> Alaska/6), but the QSO's logged DXCC + grid say otherwise
+                # (291/USA, grid EM26 ≈ central US). Trust the logged DXCC so the bad
+                # exception can't phantom-inflate a DXCC entity. Everything else keeps
+                # cty.dat's (correct) prefix/portable resolution below.
+                country = _cty_name_for_dxcc(dxcc) or country
+            elif canon:
                 country = canon
             state = (q.get("state") or "").strip().upper()
             cqz = (q.get("cqz") or "").strip()
