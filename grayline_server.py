@@ -3717,6 +3717,30 @@ def _award_config_json():
     return json.dumps({"awards": awards, "bands": _AWARD_BANDS})
 
 
+def _card_qso_info(fam, band):
+    """slot-id → (call, qso_date) for card-confirmed-but-NOT-LoTW QSOs on this
+    band, so the cards-to-submit list can show which QSO each card is for.
+    Keyed like the award items: DXCC=dxcc-num, WAS=state, grid=grid4."""
+    out = {}
+    if not _worked:
+        return out
+    for q in getattr(_worked, "qsos", []):
+        if (q.get("band") or "").strip().lower() != band:
+            continue
+        if (q.get("qsl_rcvd", "").upper() not in ("Y", "V")
+                or q.get("lotw_qsl_rcvd", "").upper() in ("Y", "V")):
+            continue
+        if fam == "entity":
+            k = (q.get("dxcc") or "").strip()
+        elif fam == "state":
+            k = (q.get("state") or "").strip().upper()
+        else:
+            k = (q.get("grid") or "")[:4].upper()
+        if k and k not in out:
+            out[k] = (q.get("call", "") or "", q.get("qso_date", "") or "")
+    return out
+
+
 def _award_payload(band, award, mode):
     cfg = _AWARD_DEFS.get(award)
     band = (band or "").strip().lower()
@@ -3831,6 +3855,12 @@ def _award_payload(band, award, mode):
                 cards.append({"id": i["id"], "label": i["label"]})
         counts["confirmed_lotw"] = n_lotw
         counts["confirmed_card"] = n_card
+        if cards:
+            _ci = _card_qso_info(fam, band)
+            for c in cards:
+                _q = _ci.get(c["id"])
+                if _q:
+                    c["call"], c["date"] = _q
         out["cards_to_submit"] = cards
     return out
 
@@ -4091,8 +4121,8 @@ function render(){
   }
   const ct=DATA.cards_to_submit||[];
   if(ct.length){
-    const rows=ct.map(x=>'<tr><td class="ff-g">'+x.label+'</td></tr>').join('');
-    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F4C7} Cards to submit <span class="ff-count">'+ct.length+'</span></summary><table class="ff-table"><tr><th>confirmed by card &mdash; not on LoTW</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">Held by paper card but NOT on LoTW &mdash; turn these in for a card-check to earn ARRL credit. (eQSL is excluded; ARRL doesn’t accept it.)</div></details>');
+    const rows=ct.map(x=>'<tr><td class="ff-g">'+x.label+'</td><td class="ff-who">'+(x.call||'')+'</td><td class="ff-when">'+(x.date?fmtQ(x.date):'')+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F4C7} Cards to submit <span class="ff-count">'+ct.length+'</span></summary><table class="ff-table"><tr><th></th><th>worked</th><th>when</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">Held by paper card but NOT on LoTW &mdash; turn these in for a card-check to earn ARRL credit. (eQSL excluded; ARRL doesn’t accept it.)</div></details>');
   }
   const at=DATA.atnos||[];
   if(at.length){
