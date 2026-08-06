@@ -3115,6 +3115,23 @@ def _maybe_alert(s: dict, calling_me: bool = False):
 _LAST_GRID: dict[str, str] = {}
 
 
+_CARD_ONLY_CACHE: dict = {"mtime": object()}  # {mtime, dxcc_band, grid_band} — card→LoTW upgrade targets
+
+
+def _card_only_slots() -> dict:
+    """Band-slots confirmed by paper CARD but NOT on LoTW — the card→LoTW 'upgrade'
+    targets. If a LoTW-using op appears on that entity/grid + band, working them
+    earns LoTW credit for free (no card-check). Cached on worked_state mtime."""
+    mt = getattr(_worked, "_mtime", None) if _worked else None
+    if _CARD_ONLY_CACHE.get("mtime") != mt:
+        cd = getattr(_worked, "confirmed_dxcc_band", set()) if _worked else set()
+        ld = getattr(_worked, "lotw_dxcc_band", set()) if _worked else set()
+        cg = getattr(_worked, "confirmed_grid_band", set()) if _worked else set()
+        lg = getattr(_worked, "lotw_grid_band", set()) if _worked else set()
+        _CARD_ONLY_CACHE.update({"mtime": mt, "dxcc_band": cd - ld, "grid_band": cg - lg})
+    return _CARD_ONLY_CACHE
+
+
 def add_spot(spot, cluster_name, calling_me=False):
     band = dxcluster.freq_to_band(spot.freq_khz)
     if not band:
@@ -3294,6 +3311,15 @@ def add_spot(spot, cluster_name, calling_me=False):
         # no tier (FFMA rarity is source-dependent, so any exact position overclaims).
         _scream = bool(ffma_rank and ffma_rank <= SCREAM_TOP_N and grid_band_status == "new")
         heard_me = psk_heard.heard(spot.dx_call)   # this station reported decoding ME to PSKReporter
+        # Card→LoTW upgrade: this slot is confirmed by paper card ONLY (no LoTW) AND
+        # this op is a LoTW user → working them earns LoTW credit for free, sparing a
+        # card-check. Quiet 📇 badge; counts as a "want" in show-wanted mode.
+        _lotw_days = lotw_activity.days_since_upload(spot.dx_call)
+        _co = _card_only_slots()
+        _card_upgrade = bool(_lotw_days is not None and band and (
+            (dxcc_num and (dxcc_num, band) in _co["dxcc_band"])
+            or (eff_grid and band in VUCC_BANDS  # grid awards (FFMA/VUCC) are VHF+ only
+                and (eff_grid[:4].upper(), band) in _co["grid_band"])))
         _cache[key] = {
             "ts": time.time(),
             "band": band,
@@ -3309,7 +3335,8 @@ def add_spot(spot, cluster_name, calling_me=False):
             "country": country,
             "dxcc": dxcc_num,
             "dxcc_rank": (_DXCC_RARITY.get(dxcc_num) if dxcc_num else None),  # Club Log Most Wanted rank (lower=rarer) or None
-            "lotw_days": lotw_activity.days_since_upload(spot.dx_call),  # days since last LoTW upload, or None if not a LoTW user
+            "lotw_days": _lotw_days,                         # days since last LoTW upload, or None if not a LoTW user
+            "card_upgrade": _card_upgrade,                   # slot held by paper card only + this op uses LoTW → work them to upgrade card→LoTW (quiet 📇 badge)
             "calling_me": calling_me,                       # this station is transmitting MY callsign right now (directed at me) — bypasses filters, red highlight
             "marathon": marathon,                           # CQ DX Marathon need this year: 'DXCC'|'CQz'|'DX+CQz'|None
             "wae_status": wae_status,                        # WAE need: 'new'|'worked'|'confirmed'|None
@@ -5381,6 +5408,7 @@ table.alerts-matrix input[type="checkbox"] { margin: 0; }
   </details>
   <style>
   .dxp-badge{background:#1c3a2a;border:1px solid #2f5a41;border-radius:4px;color:#8ff0be;font-size:10px;font-weight:700;padding:1px 5px;margin-left:5px;letter-spacing:.3px;white-space:nowrap}
+  .card-badge{background:#2a2314;border:1px solid #4a3d1c;border-radius:4px;color:#e0c078;font-size:10px;font-weight:700;padding:1px 5px;margin-left:5px;letter-spacing:.3px;white-space:nowrap}
   .dxp-badge.six{background:#5a2f1f;border-color:#8a4f2f;color:#ffcf9a}
   tr.dxp-row td{background:#111e18}
   tr.dxp-row.dxp-sticky td{background:#0e1a14}
@@ -6314,7 +6342,7 @@ async function refresh() {
     if (s.dxp_needed) return true;   // needed-band DXpedition — pinned past every filter
     if (disabledBands.has(s.band)) { filteredOut++; return false; }
     if (disabledModes.has(s.mode)) { filteredOut++; return false; }
-    if (showWanted && !anyScopeNeeded(s)) { filteredOut++; return false; }
+    if (showWanted && !anyScopeNeeded(s) && !s.card_upgrade) { filteredOut++; return false; }
     if (filterOn) {
       if (s.distance_mi !== null && s.distance_mi !== undefined && s.distance_mi > radiusForBand(s.band)) {
         filteredOut++;
@@ -6523,7 +6551,8 @@ async function refresh() {
       const rowClass = (s.calling_me ? "calling-me " : "") + (s.dxp_needed ? "dxp-row " + (s.dxp_sticky ? "dxp-sticky " : "") : "") + (isUs ? "us-spotted" : "");
       const spotterClass = isUs ? "spotter us" : "spotter";
       const callTag = (s.calling_me ? ` <span class="callsyou" title="This station is calling YOU right now">CALLS YOU</span>` : "")
-        + (s.dxp_needed ? ` <span class="dxp-badge${s.dxp_six ? " six" : ""}" title="Announced DXpedition on a band you NEED${s.dxp_entity ? " — " + escapeHTML(s.dxp_entity) : ""}${s.dxp_sticky ? " (last heard)" : ""} — pinned past every filter">🌍 DXPED</span>` : "");
+        + (s.dxp_needed ? ` <span class="dxp-badge${s.dxp_six ? " six" : ""}" title="Announced DXpedition on a band you NEED${s.dxp_entity ? " — " + escapeHTML(s.dxp_entity) : ""}${s.dxp_sticky ? " (last heard)" : ""} — pinned past every filter">🌍 DXPED</span>` : "")
+        + (s.card_upgrade ? ` <span class="card-badge" title="You hold this slot by paper card only — this op uses LoTW, so working them upgrades it to LoTW credit (no card-check needed)">📇 upgrade</span>` : "");
       const awardCell = scopeTags(s).map(t =>
         `<span class="pill ${t.status}"${t.title ? ` title="${escapeHTML(t.title)}"` : ""}>${escapeHTML(t.label)}</span>`
       ).join("") + marathonBadge(s) + waeBadge(s);   // Marathon + WAE live with the other award pills
