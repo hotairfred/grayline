@@ -712,20 +712,19 @@ class WorkedState:
 
         qsos = list(data.get("qsos", []))
 
-        # --- LoTW is the SOLE confirmation ground truth (Fred 2026-06-23) ---
-        # QRZ's own QSL flags are unreliable: its lotw_qsl_rcvd reads "Y" on
-        # confirmations that aren't actually in LoTW (phantom confirmations —
-        # e.g. rover stations whose TQSL location was wrong, or since-deleted
-        # uploads), and its eQSL / paper-card flags aren't ARRL-valid for
-        # FFMA/DXCC/WAS/VUCC anyway. So QRZ QSOs contribute WORKED status only;
-        # confirmation comes EXCLUSIVELY from lotw_qsl.adi (the authoritative
-        # LoTW download). The dedup OR-merge below restores LoTW's "Y" onto any
-        # QSO that also has a real lotw_qsl.adi record. (Validated: this brought
-        # FFMA confirmed from a phantom-inflated 283 to the LoTW-true 279, the
-        # number Gridzilla's direct LoTW sync independently reports.)
+        # --- Confirmation ground truth (Fred 2026-06-23, refined 2026-08-06) ---
+        # QRZ's own lotw_qsl_rcvd is unreliable: it reads "Y" on confirmations
+        # that aren't actually in LoTW (phantoms — rover TQSL-location errors,
+        # since-deleted uploads), so it's zeroed and LoTW confirmation comes
+        # EXCLUSIVELY from lotw_qsl.adi (the dedup OR-merge below restores the
+        # authoritative "Y"). eQSL is zeroed too — not ARRL-valid.
+        # PAPER CARDS (qsl_rcvd) ARE ARRL-valid for DXCC/WAS/VUCC and Fred sets
+        # them deliberately in QRZ, so they are PRESERVED: they count as confirmed
+        # (card source) and populate the awards "Cards to submit" list — the cards
+        # still needing a card-check for credit. (The phantom-fix that took FFMA
+        # 283→279 was the *lotw* flag; leaving qsl_rcvd on does NOT reintroduce it.)
         for q in qsos:
             q["lotw_qsl_rcvd"] = ""
-            q["qsl_rcvd"] = ""
             q["eqsl_qsl_rcvd"] = ""
 
         # Merge in QSOs from the local Grayline ADIF (qso_logged.adi). These
