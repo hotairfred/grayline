@@ -3119,16 +3119,31 @@ _CARD_ONLY_CACHE: dict = {"mtime": object()}  # {mtime, dxcc_band, grid_band} �
 
 
 def _card_only_slots() -> dict:
-    """Band-slots confirmed by paper CARD but NOT on LoTW — the card→LoTW 'upgrade'
-    targets. If a LoTW-using op appears on that entity/grid + band, working them
-    earns LoTW credit for free (no card-check). Cached on worked_state mtime."""
+    """Band-slots held by paper CARD (QRZ QSL_RCVD=Y) but NOT LoTW-credited — the
+    pending 'submit for a card-check' slots, which double as the card→LoTW upgrade
+    targets (a LoTW op there earns the credit for free). Cached on worked_state
+    mtime. A card isn't ARRL credit until checked and QRZ's flag is unverified, so
+    these never count toward the confirmed total — they're pending only."""
     mt = getattr(_worked, "_mtime", None) if _worked else None
     if _CARD_ONLY_CACHE.get("mtime") != mt:
-        cd = getattr(_worked, "confirmed_dxcc_band", set()) if _worked else set()
-        ld = getattr(_worked, "lotw_dxcc_band", set()) if _worked else set()
-        cg = getattr(_worked, "confirmed_grid_band", set()) if _worked else set()
-        lg = getattr(_worked, "lotw_grid_band", set()) if _worked else set()
-        _CARD_ONLY_CACHE.update({"mtime": mt, "dxcc_band": cd - ld, "grid_band": cg - lg})
+        dxcc_b, grid_b = set(), set()
+        if _worked:
+            conf_d = getattr(_worked, "confirmed_dxcc_band", set())   # LoTW-credited
+            conf_g = getattr(_worked, "confirmed_grid_band", set())
+            for q in getattr(_worked, "qsos", []):
+                if (q.get("qsl_rcvd", "").upper() not in ("Y", "V")
+                        or q.get("lotw_qsl_rcvd", "").upper() in ("Y", "V")):
+                    continue
+                b = (q.get("band") or "").strip().lower()
+                if not b:
+                    continue
+                d = (q.get("dxcc") or "").strip()
+                if d and (d, b) not in conf_d:
+                    dxcc_b.add((d, b))
+                g = (q.get("grid") or "")[:4].upper()
+                if g and (g, b) not in conf_g:
+                    grid_b.add((g, b))
+        _CARD_ONLY_CACHE.update({"mtime": mt, "dxcc_band": dxcc_b, "grid_band": grid_b})
     return _CARD_ONLY_CACHE
 
 
@@ -3717,13 +3732,17 @@ def _award_config_json():
     return json.dumps({"awards": awards, "bands": _AWARD_BANDS})
 
 
-def _card_qso_info(fam, band):
-    """slot-id → (call, qso_date) for card-confirmed-but-NOT-LoTW QSOs on this
-    band, so the cards-to-submit list can show which QSO each card is for.
-    Keyed like the award items: DXCC=dxcc-num, WAS=state, grid=grid4."""
+def _pending_card_slots(fam, band):
+    """slot-id → (label, call, qso_date) for card-in-hand (QRZ QSL_RCVD=Y) QSOs on
+    this band whose slot is NOT LoTW-credited — the cards to turn in for a card-check.
+    A card isn't ARRL credit until checked, and QRZ's flag is unverified, so this is a
+    verify/submit list, NOT part of the confirmed count. Keyed like the award items."""
     out = {}
     if not _worked:
         return out
+    conf = {"entity": getattr(_worked, "confirmed_dxcc_band", set()),
+            "state":  getattr(_worked, "confirmed_state_band", set()),
+            "grid":   getattr(_worked, "confirmed_grid_band", set())}.get(fam, set())
     for q in getattr(_worked, "qsos", []):
         if (q.get("band") or "").strip().lower() != band:
             continue
@@ -3731,13 +3750,15 @@ def _card_qso_info(fam, band):
                 or q.get("lotw_qsl_rcvd", "").upper() in ("Y", "V")):
             continue
         if fam == "entity":
-            k = (q.get("dxcc") or "").strip()
+            sid = (q.get("dxcc") or "").strip()
         elif fam == "state":
-            k = (q.get("state") or "").strip().upper()
+            sid = (q.get("state") or "").strip().upper()
         else:
-            k = (q.get("grid") or "")[:4].upper()
-        if k and k not in out:
-            out[k] = (q.get("call", "") or "", q.get("qso_date", "") or "")
+            sid = (q.get("grid") or "")[:4].upper()
+        if not sid or sid in out or (sid, band) in conf:
+            continue   # blank, dup, or the slot is already LoTW-credited (no card needed)
+        label = _DXCC_NAME.get(sid, sid) if fam == "entity" else sid
+        out[sid] = (label, q.get("call", "") or "", q.get("qso_date", "") or "")
     return out
 
 
@@ -3827,41 +3848,14 @@ def _award_payload(band, award, mode):
     # (eQSL is already excluded upstream.) Skipped for per-band+specific-mode,
     # which isn't a sanctioned band slot.
     if not out["no_target"]:
-        _lotw_d = getattr(_worked, "lotw_dxcc_band", set())
-        _lotw_c = getattr(_worked, "lotw_country_band", set())
-        _lotw_s = getattr(_worked, "lotw_state_band", set())
-        _lotw_g = getattr(_worked, "lotw_grid_band", set())
-
-        def _item_is_lotw(it):
-            # An entity is LoTW-confirmed via EITHER the DXCC-number key OR the
-            # country name — entity_band_status confirms on either path, so a
-            # record whose country resolves one way but carries a different DXCC
-            # number (the N5UC EM26/"Alaska" mislog) still reads as its record's
-            # real source instead of a bogus "card."
-            if fam == "entity":
-                return (it["id"], band) in _lotw_d or (it["label"], band) in _lotw_c
-            if fam == "state":
-                return (it["id"], band) in _lotw_s
-            return (it["id"], band) in _lotw_g
-        n_lotw = n_card = 0
-        cards = []
-        for i in items:
-            if i["status"] != "confirmed":
-                continue
-            if _item_is_lotw(i):
-                i["src"] = "lotw"; n_lotw += 1
-            else:
-                i["src"] = "card"; n_card += 1
-                cards.append({"id": i["id"], "label": i["label"]})
-        counts["confirmed_lotw"] = n_lotw
-        counts["confirmed_card"] = n_card
-        if cards:
-            _ci = _card_qso_info(fam, band)
-            for c in cards:
-                _q = _ci.get(c["id"])
-                if _q:
-                    c["call"], c["date"] = _q
-        out["cards_to_submit"] = cards
+        # Confirmed count is LoTW-only (credited). Cards in hand are NOT ARRL credit
+        # until card-checked (and QRZ's qsl_rcvd flag is unverified), so they're a
+        # separate pending list — never counted in the confirmed total.
+        counts["confirmed_lotw"] = counts.get("confirmed", 0)
+        counts["confirmed_card"] = 0
+        pend = _pending_card_slots(fam, band)
+        out["cards_to_submit"] = [{"id": sid, "label": lbl, "call": cl, "date": dt}
+                                  for sid, (lbl, cl, dt) in sorted(pend.items())]
     return out
 
 
@@ -4106,8 +4100,8 @@ function render(){
       '<div class="ff-pctlabel">count only &mdash; no per-band-'+DATA.mode.toUpperCase()+' award (band slots are any-mode; the real DXCC-'+DATA.mode.toUpperCase()+' is any-band, see "All bands")</div></div>';
   } else {
     const p=(tot?100*have/tot:0),done=have>=tot;
-    const cl=c.confirmed_lotw,cc=c.confirmed_card;
-    const srcLine=(cl===undefined)?'':'<div class="ff-src">'+((cc>0)?('<b>'+cl+'</b> ✅ LoTW &middot; <span class="ff-cardn">'+cc+' \u{1F4C7} card</span> &mdash; card-check pending'):('all <b>'+cl+'</b> ✅ LoTW-backed'))+'</div>';
+    const cl=c.confirmed_lotw,pc=(DATA.cards_to_submit||[]).length;
+    const srcLine=(cl===undefined)?'':'<div class="ff-src">all <b>'+cl+'</b> ✅ LoTW-credited'+(pc>0?(' &middot; <span class="ff-cardn">'+pc+' \u{1F4C7} card'+(pc>1?'s':'')+' pending</span>'):'')+'</div>';
     st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'<span class="ff-of"> / '+tot+'</span></div>'+
       '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+srcLine+
       '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
@@ -4122,7 +4116,7 @@ function render(){
   const ct=DATA.cards_to_submit||[];
   if(ct.length){
     const rows=ct.map(x=>'<tr><td class="ff-g">'+x.label+'</td><td class="ff-who">'+(x.call||'')+'</td><td class="ff-when">'+(x.date?fmtQ(x.date):'')+'</td></tr>').join('');
-    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F4C7} Cards to submit <span class="ff-count">'+ct.length+'</span></summary><table class="ff-table"><tr><th></th><th>worked</th><th>when</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">Held by paper card but NOT on LoTW &mdash; turn these in for a card-check to earn ARRL credit. (eQSL excluded; ARRL doesn’t accept it.)</div></details>');
+    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F4C7} Cards to submit <span class="ff-count">'+ct.length+' pending</span></summary><table class="ff-table"><tr><th></th><th>worked</th><th>when</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">Flagged QSL-received in QRZ but NOT on LoTW &mdash; NOT counted in the total (a card isn’t ARRL credit until card-checked). Verify you hold the card, then turn it in. (eQSL excluded.)</div></details>');
   }
   const at=DATA.atnos||[];
   if(at.length){

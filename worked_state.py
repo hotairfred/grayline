@@ -831,14 +831,16 @@ class WorkedState:
                     cqz = str(cqz_n) if 1 <= cqz_n <= 40 else ""
                 except ValueError:
                     cqz = ""
-            # Per-source confirmation. ARRL awards (DXCC/WAS/VUCC/FFMA/WAC) count
-            # LoTW OR paper card but NOT eQSL — so `confirmed`, the flag every award
-            # set below keys on, is ARRL-eligible (was _is_confirmed_record, which
-            # also counted eQSL and inflated the DXCC/WAS/grid totals). conf_lotw
-            # (LoTW-only) drives the source split (LoTW vs card) + Triple Play.
+            # Confirmation = CREDITED. ARRL credits LoTW automatically; a paper card
+            # is NOT credit until turned in and card-checked, and QRZ's qsl_rcvd flag
+            # is unreliable anyway (it flags QSOs with no card in hand — e.g. a QSO
+            # 6 weeks old). So `confirmed` — the flag every award set below keys on —
+            # is LoTW-only. Cards in hand surface as a separate server-side "pending
+            # — submit" list, never inflating the credited count. (conf_arrl kept for
+            # the per-mode WAS path below.)
             conf_lotw = _confirmed_lotw(q)
             conf_arrl = _confirmed_arrl(q)
-            confirmed = conf_arrl
+            confirmed = conf_lotw
             if confirmed:
                 confirmed_qso_count += 1
 
