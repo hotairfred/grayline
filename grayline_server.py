@@ -3770,6 +3770,41 @@ def _award_payload(band, award, mode):
     if fam == "grid":                                       # rover TQSL grid mismatches — grid-award only
         out["discrepancies"] = [d for d in _build_grid_discrepancies().get("items", [])
                                 if d.get("band") == band]
+    # Confirmation-source split (ARRL credit provenance): tag each confirmed item
+    # ✅LoTW or 📇card, and list cards-to-submit — card-confirmed but NOT yet on
+    # LoTW, i.e. the ones needing a physical card-check for DXCC/WAS/VUCC credit.
+    # (eQSL is already excluded upstream.) Skipped for per-band+specific-mode,
+    # which isn't a sanctioned band slot.
+    if not out["no_target"]:
+        _lotw_d = getattr(_worked, "lotw_dxcc_band", set())
+        _lotw_c = getattr(_worked, "lotw_country_band", set())
+        _lotw_s = getattr(_worked, "lotw_state_band", set())
+        _lotw_g = getattr(_worked, "lotw_grid_band", set())
+
+        def _item_is_lotw(it):
+            # An entity is LoTW-confirmed via EITHER the DXCC-number key OR the
+            # country name — entity_band_status confirms on either path, so a
+            # record whose country resolves one way but carries a different DXCC
+            # number (the N5UC EM26/"Alaska" mislog) still reads as its record's
+            # real source instead of a bogus "card."
+            if fam == "entity":
+                return (it["id"], band) in _lotw_d or (it["label"], band) in _lotw_c
+            if fam == "state":
+                return (it["id"], band) in _lotw_s
+            return (it["id"], band) in _lotw_g
+        n_lotw = n_card = 0
+        cards = []
+        for i in items:
+            if i["status"] != "confirmed":
+                continue
+            if _item_is_lotw(i):
+                i["src"] = "lotw"; n_lotw += 1
+            else:
+                i["src"] = "card"; n_card += 1
+                cards.append({"id": i["id"], "label": i["label"]})
+        counts["confirmed_lotw"] = n_lotw
+        counts["confirmed_card"] = n_card
+        out["cards_to_submit"] = cards
     return out
 
 
@@ -3943,6 +3978,8 @@ _AWARDS_PAGE = r"""<!doctype html>
  .ff-of{font-size:.4em;color:#888;font-weight:600}
  .ff-sub{color:#aaa;font-size:.95em;margin-top:.3em}
  .ff-sub b{color:#f5d76e}
+ .ff-src{color:#9a9a9a;font-size:.82em;margin-top:.25em}
+ .ff-src b{color:#7fd18a}.ff-src .ff-cardn{color:#e0a83c}
  .ff-bar{height:8px;background:#1a1a1a;border-radius:4px;margin:.7em auto .3em;max-width:34em;overflow:hidden}
  .ff-fill{height:100%;background:linear-gradient(90deg,#6b5a1a,#d4af37);border-radius:4px}
  .ff-pctlabel{color:#777;font-size:.75em}
@@ -4012,8 +4049,10 @@ function render(){
       '<div class="ff-pctlabel">count only &mdash; no per-band-'+DATA.mode.toUpperCase()+' award (band slots are any-mode; the real DXCC-'+DATA.mode.toUpperCase()+' is any-band, see "All bands")</div></div>';
   } else {
     const p=(tot?100*have/tot:0),done=have>=tot;
+    const cl=c.confirmed_lotw,cc=c.confirmed_card;
+    const srcLine=(cl===undefined)?'':'<div class="ff-src">'+((cc>0)?('<b>'+cl+'</b> ✅ LoTW &middot; <span class="ff-cardn">'+cc+' \u{1F4C7} card</span> &mdash; card-check pending'):('all <b>'+cl+'</b> ✅ LoTW-backed'))+'</div>';
     st.innerHTML='<div class="ff-standing"><div class="ff-big">'+have+'<span class="ff-of"> / '+tot+'</span></div>'+
-      '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+
+      '<div class="ff-sub">'+DATA.name+' on '+DATA.band+' &middot; '+(c.worked||0)+' worked &middot; <b>'+Math.max(0,tot-have)+' to go</b></div>'+srcLine+
       '<div class="ff-bar"><div class="ff-fill" style="width:'+Math.min(100,p).toFixed(1)+'%"></div></div>'+
       '<div class="ff-pctlabel">'+p.toFixed(1)+(done?'% &mdash; complete ✅':'% of '+DATA.name)+'</div></div>';
   }
@@ -4022,6 +4061,11 @@ function render(){
   if(cf.length){
     const rows=cf.map(c=>'<tr><td class="ff-g">'+c.label+'</td><td class="ff-who">'+c.call+'</td><td>'+(c.kind?'<span class="ff-'+(c.kind==='new-entity'?'newdxcc':'newffma')+'">NEW '+c.kind.replace('new-','').toUpperCase()+'</span>':'<span class="ff-reconf">dupe</span>')+'</td><td class="ff-when">'+fmtISO(c.date)+'</td></tr>').join('');
     cards.push('<details class="score-card ff-collapse"><summary>✅ Latest confirmations <span class="ff-count">last '+cf.length+'</span></summary><table class="ff-table"><tr><th></th><th>via</th><th>what</th><th>when</th></tr>'+rows+'</table></details>');
+  }
+  const ct=DATA.cards_to_submit||[];
+  if(ct.length){
+    const rows=ct.map(x=>'<tr><td class="ff-g">'+x.label+'</td></tr>').join('');
+    cards.push('<details class="score-card ff-collapse" open><summary>\u{1F4C7} Cards to submit <span class="ff-count">'+ct.length+'</span></summary><table class="ff-table"><tr><th>confirmed by card &mdash; not on LoTW</th></tr>'+rows+'</table><div class="ff-pctlabel" style="margin-top:.3em">Held by paper card but NOT on LoTW &mdash; turn these in for a card-check to earn ARRL credit. (eQSL is excluded; ARRL doesn’t accept it.)</div></details>');
   }
   const at=DATA.atnos||[];
   if(at.length){

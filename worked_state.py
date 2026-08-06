@@ -521,11 +521,13 @@ class WorkedState:
         # Indexed by ADIF DXCC ID (the number QRZ uses)
         self.worked_dxcc_band: set[tuple[str, str]] = set()  # (dxcc_id, band)
         self.confirmed_dxcc_band: set[tuple[str, str]] = set()
+        self.lotw_dxcc_band: set[tuple[str, str]] = set()  # LoTW-only subset → source split (LoTW vs card)
         self.slot_calls: dict[tuple[str, str], set] = {}  # (dxcc,band) -> {callsigns}
 
         # Indexed by country/entity name (matches cty.dat's `entity` field)
         self.worked_country_band: set[tuple[str, str]] = set()  # (country, band)
         self.confirmed_country_band: set[tuple[str, str]] = set()
+        self.lotw_country_band: set[tuple[str, str]] = set()  # LoTW-only subset (entity source via country path)
 
         # Per-band-per-mode (for mode-specific awards like DXCC-CW, DXCC-FT8, etc.)
         self.worked_country_band_mode: set[tuple[str, str, str]] = set()  # (country, band, mode)
@@ -550,6 +552,7 @@ class WorkedState:
 
         self.worked_grid_band: set[tuple[str, str]] = set()  # (grid4, band)
         self.confirmed_grid_band: set[tuple[str, str]] = set()
+        self.lotw_grid_band: set[tuple[str, str]] = set()  # LoTW-only subset → FFMA/VUCC card-vs-LoTW split
 
         self.worked_dxcc: set[str] = set()  # DXCC ID ever, any band/mode
         self.confirmed_dxcc: set[str] = set()
@@ -562,6 +565,7 @@ class WorkedState:
         # Per-band-per-state for WAS-by-band (Five-Band WAS / 5BWAS).
         self.worked_state_band: set[tuple[str, str]] = set()
         self.confirmed_state_band: set[tuple[str, str]] = set()
+        self.lotw_state_band: set[tuple[str, str]] = set()  # LoTW-only subset → WAS card-vs-LoTW split
 
         # WAJA — JARL Worked All Japan prefectures. Two-digit ADIF codes ("01"-"47").
         self.worked_prefectures: set[str] = set()
@@ -660,9 +664,11 @@ class WorkedState:
         confirmed_calls_band: set[tuple[str, str]] = set()
         worked_dxcc_band: set[tuple[str, str]] = set()
         confirmed_dxcc_band: set[tuple[str, str]] = set()
+        lotw_dxcc_band: set[tuple[str, str]] = set()
         slot_calls: dict[tuple[str, str], set] = {}  # (dxcc,band) -> {callsigns worked there}
         worked_country_band: set[tuple[str, str]] = set()
         confirmed_country_band: set[tuple[str, str]] = set()
+        lotw_country_band: set[tuple[str, str]] = set()
         worked_country_band_mode: set[tuple[str, str, str]] = set()
         confirmed_country_band_mode: set[tuple[str, str, str]] = set()
         worked_country_band_modeclass: set[tuple[str, str, str]] = set()
@@ -671,6 +677,7 @@ class WorkedState:
         confirmed_dxcc_modeclass: set[tuple[str, str]] = set()
         worked_grid_band: set[tuple[str, str]] = set()
         confirmed_grid_band: set[tuple[str, str]] = set()
+        lotw_grid_band: set[tuple[str, str]] = set()
         worked_dxcc: set[str] = set()
         confirmed_dxcc: set[str] = set()
         worked_countries: set[str] = set()
@@ -679,6 +686,7 @@ class WorkedState:
         confirmed_states: set[str] = set()
         worked_state_band: set[tuple[str, str]] = set()
         confirmed_state_band: set[tuple[str, str]] = set()
+        lotw_state_band: set[tuple[str, str]] = set()
         worked_prefectures: set[str] = set()
         confirmed_prefectures: set[str] = set()
         worked_prefecture_band: set[tuple[str, str]] = set()
@@ -780,11 +788,14 @@ class WorkedState:
                     cqz = str(cqz_n) if 1 <= cqz_n <= 40 else ""
                 except ValueError:
                     cqz = ""
-            confirmed = _is_confirmed_record(q)
-            # Per-source confirmation: LoTW-only (Triple Play) vs ARRL-eligible
-            # (LoTW or card, no eQSL — WAS / per-mode WAS).
+            # Per-source confirmation. ARRL awards (DXCC/WAS/VUCC/FFMA/WAC) count
+            # LoTW OR paper card but NOT eQSL — so `confirmed`, the flag every award
+            # set below keys on, is ARRL-eligible (was _is_confirmed_record, which
+            # also counted eQSL and inflated the DXCC/WAS/grid totals). conf_lotw
+            # (LoTW-only) drives the source split (LoTW vs card) + Triple Play.
             conf_lotw = _confirmed_lotw(q)
             conf_arrl = _confirmed_arrl(q)
+            confirmed = conf_arrl
             if confirmed:
                 confirmed_qso_count += 1
 
@@ -829,6 +840,8 @@ class WorkedState:
                         slot_calls.setdefault((dxcc, band), set()).add(call)
                     if confirmed:
                         confirmed_dxcc_band.add((dxcc, band))
+                    if conf_lotw:
+                        lotw_dxcc_band.add((dxcc, band))
                 if mode:
                     cls = mode_class(mode)
                     worked_dxcc_modeclass.add((dxcc, cls))
@@ -843,6 +856,8 @@ class WorkedState:
                     worked_country_band.add((country, band))
                     if confirmed:
                         confirmed_country_band.add((country, band))
+                    if conf_lotw:
+                        lotw_country_band.add((country, band))
                 if band and mode:
                     worked_country_band_mode.add((country, band, mode))
                     if confirmed:
@@ -861,6 +876,8 @@ class WorkedState:
                 worked_grid_band.add((grid4, band))
                 if confirmed:
                     confirmed_grid_band.add((grid4, band))
+                if conf_lotw:
+                    lotw_grid_band.add((grid4, band))
             # VUCC_GRIDS — a rover / grid-line confirmation can report multiple
             # grids (e.g. "DM76XR,DM86AR") in VUCC_GRIDS while GRIDSQUARE holds
             # only one, so the others get silently missed. Credit every 4-char
@@ -873,6 +890,8 @@ class WorkedState:
                         worked_grid_band.add((_vg4, band))
                         if confirmed:
                             confirmed_grid_band.add((_vg4, band))
+                        if conf_lotw:
+                            lotw_grid_band.add((_vg4, band))
 
             # WAS — the 50 US states. Alaska (DXCC 6) and Hawaii (DXCC 110) are
             # SEPARATE DXCC entities but valid WAS states, so the gate must allow
@@ -887,6 +906,8 @@ class WorkedState:
                     worked_state_band.add((state, band))
                     if confirmed:
                         confirmed_state_band.add((state, band))
+                    if conf_lotw:
+                        lotw_state_band.add((state, band))
                 # Per-mode WAS + Triple Play, keyed by (state, modeclass).
                 # confirmed_state_modeclass = ARRL-eligible (LoTW or card, no
                 # eQSL); lotw_state_modeclass = LoTW-only (Triple Play rule).
@@ -960,9 +981,11 @@ class WorkedState:
         self.confirmed_calls_band = confirmed_calls_band
         self.worked_dxcc_band = worked_dxcc_band
         self.confirmed_dxcc_band = confirmed_dxcc_band
+        self.lotw_dxcc_band = lotw_dxcc_band
         self.slot_calls = slot_calls
         self.worked_country_band = worked_country_band
         self.confirmed_country_band = confirmed_country_band
+        self.lotw_country_band = lotw_country_band
         self.worked_country_band_mode = worked_country_band_mode
         self.confirmed_country_band_mode = confirmed_country_band_mode
         self.worked_country_band_modeclass = worked_country_band_modeclass
@@ -974,6 +997,7 @@ class WorkedState:
         self.confirmed_dxcc_modeclass = confirmed_dxcc_modeclass
         self.worked_grid_band = worked_grid_band
         self.confirmed_grid_band = confirmed_grid_band
+        self.lotw_grid_band = lotw_grid_band
         self.worked_dxcc = worked_dxcc
         self.confirmed_dxcc = confirmed_dxcc
         self.worked_countries = worked_countries
@@ -982,6 +1006,7 @@ class WorkedState:
         self.confirmed_states = confirmed_states
         self.worked_state_band = worked_state_band
         self.confirmed_state_band = confirmed_state_band
+        self.lotw_state_band = lotw_state_band
         self.worked_prefectures = worked_prefectures
         self.confirmed_prefectures = confirmed_prefectures
         self.worked_prefecture_band = worked_prefecture_band
